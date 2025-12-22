@@ -88,16 +88,6 @@ static void *hotkey_thread_func(void *arg) {
 
 // --- WebSocket Callbacks ---
 
-static int callback_http(struct lws *wsi, enum lws_callback_reasons reason,
-                         void *user, void *in, size_t len) {
-  (void)wsi;
-  (void)reason;
-  (void)user;
-  (void)in;
-  (void)len;
-  return 0;
-}
-
 static int callback_minimal(struct lws *wsi, enum lws_callback_reasons reason,
                             void *user, void *in, size_t len) {
   (void)user;
@@ -134,12 +124,7 @@ static int callback_minimal(struct lws *wsi, enum lws_callback_reasons reason,
 static struct lws_protocols protocols[] = {{.name = "minimal",
                                             .callback = callback_minimal,
                                             .per_session_data_size = 0,
-                                            .rx_buffer_size = 0},
-                                           {.name = "http",
-                                            .callback = callback_http,
-                                            .per_session_data_size = 0,
-                                            .rx_buffer_size = 0},
-                                           LWS_PROTOCOL_LIST_TERM};
+                                            .rx_buffer_size = 0}};
 
 void sigint_handler(int sig) {
   (void)sig;
