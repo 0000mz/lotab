@@ -1,3 +1,4 @@
+#include "config.h"
 #include <Carbon/Carbon.h>
 #include <errno.h>
 #include <libwebsockets.h>
@@ -168,6 +169,10 @@ int main(void) {
 
   // Initialize UDS Connection to the App
   init_uds_client();
+
+#ifdef APP_PATH
+  lwsl_user("Daemon: Known App Path: %s\n", APP_PATH);
+#endif
 
   // Start Hotkey Thread
   pthread_t hotkey_thread;
