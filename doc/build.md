@@ -71,3 +71,38 @@ The daemon is designed to be the primary entry point. It automatically verifies 
 ```
 
 The Chrome extension must be loaded manually into Chrome via "Load unpacked" from the `extension/` directory.
+
+---
+
+## Testing
+
+The project includes automated functional tests integrated into the Meson build system.
+
+### Prerequisites for Testing
+- [uv](https://github.com/astral-sh/uv): Used to manage Python test dependencies (`psutil`).
+  - Install via: `curl -LsSf https://astral.sh/uv/install.sh | sh` (or brew, pip, etc.)
+
+### Running Tests
+To run the full test suite via Meson:
+
+```bash
+meson test -C build
+```
+
+or for verbose output:
+
+```bash
+meson test -C build -v
+```
+
+### UI Tests (macOS)
+The suite includes interaction tests (`tests/ui_test_quit.py`) that verify the daemon and GUI application behavior using AppleScript.
+> [!IMPORTANT]
+> Use of accessibility features (via `osascript`) requires granting "Accessibility" permissions to your terminal or editor in System Settings -> Privacy & Security.
+
+#### Manual Execution
+You can also run the test script manually using `uv`. You must provide the path to the daemon executable:
+
+```bash
+uv run tests/ui_test_quit.py ./build/daemon
+```

@@ -64,3 +64,13 @@ foreach s, suffix : sanitizers
              override_options : ['b_sanitize=' + s],
              install : true)
 endforeach
+
+# --- Tests ---
+uv_prog = find_program('uv', required : false)
+if uv_prog.found()
+  test('ui_test_quit', uv_prog,
+       args : ['run', meson.current_source_dir() / 'tests/ui_test_quit.py', meson.current_build_dir() / 'daemon'],
+       is_parallel : false)
+else
+  message('uv not found, skipping python UI tests')
+endif

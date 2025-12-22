@@ -6,6 +6,7 @@
 - Hide the window controls on the GUI.
 - Have the daemon show its active at the top-right of the MacOS.
 - daemon: Combine the sanitizer header into the config.h.
+- GUI testing with AppleScript.
 
 2025-Dec-21:
 - Initialize project
@@ -21,3 +22,4 @@ TODO:
 - Restrict triggering of global keybind to only browser sessions.
 - Use case 1: creation of new task
   - Sketch out workflow of creating a new task and assigning tabs to each task.
+- Separate the daemon engine from the OS interactions to make unit-testable.
