@@ -33,6 +33,21 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         DispatchQueue.main.async {
             NSApp.activate(ignoringOtherApps: true)
             if let window = NSApp.windows.first {
+                // Center the window
+                if let screen = NSScreen.main {
+                    let screenRect = screen.visibleFrame
+                    let windowRect = window.frame
+
+                    let x = screenRect.origin.x + (screenRect.width - windowRect.width) / 2
+                    let y = screenRect.origin.y + (screenRect.height - windowRect.height) / 2
+
+                    window.setFrameOrigin(NSPoint(x: x, y: y))
+                }
+
+                // Disable movement
+                window.isMovable = false
+                window.isMovableByWindowBackground = false
+
                 window.level = .floating
                 window.makeKeyAndOrderFront(nil)
             }

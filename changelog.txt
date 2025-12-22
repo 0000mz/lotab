@@ -1,6 +1,7 @@
 2025-Dec-22:
 - Hide the GUI until the keybind is triggered.
 - Do not make the icon show up in the MacOS taskbar when the GUI is shown.
+- Always center the GUI when it appears and make it unmoveable.
 
 2025-Dec-21:
 - Initialize project
@@ -15,4 +16,5 @@
 TODO:
 - Restrict triggering of global keybind to only browser sessions.
 - Have the daemon show its active at the top left of the MacOS.
-- Always center the GUI when it appears and make it unmoveable.
+- Hide the window controls on the GUI.
+- When the GUI is in focus and visible, any click out of focus should hide the application.
