@@ -31,7 +31,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func showUI() {
         DispatchQueue.main.async {
-            NSApp.setActivationPolicy(.regular)
             NSApp.activate(ignoringOtherApps: true)
             if let window = NSApp.windows.first {
                 window.level = .floating
@@ -45,7 +44,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             if let window = NSApp.windows.first {
                 window.orderOut(nil)
             }
-            NSApp.setActivationPolicy(.accessory)
         }
     }
 

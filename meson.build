@@ -6,6 +6,7 @@ lws_dep = dependency('libwebsockets')
 carbon_dep = dependency('appleframeworks', modules : 'Carbon')
 
 # --- GUI ---
+# --- GUI ---
 # Link required frameworks for a SwiftUI app
 apple_frameworks = dependency('appleframeworks', modules : ['Foundation', 'AppKit', 'SwiftUI'])
 
@@ -14,9 +15,13 @@ app_src = [
   'app/ContentView.swift'
 ]
 
+info_plist_path = meson.current_source_dir() / 'app/Info.plist'
+tab_manager_linker_args = ['-Xlinker', '-sectcreate', '-Xlinker', '__TEXT', '-Xlinker', '__info_plist', '-Xlinker', info_plist_path]
+
 app_target = executable('TabManager',
            app_src,
            dependencies : apple_frameworks,
+           link_args : tab_manager_linker_args,
            install : true)
 
 # --- Daemon ---
@@ -43,6 +48,7 @@ foreach s, suffix : sanitizers
              app_src,
              dependencies : apple_frameworks,
              override_options : ['b_sanitize=' + s],
+             link_args : tab_manager_linker_args,
              install : true)
 
   # Daemon Variant
