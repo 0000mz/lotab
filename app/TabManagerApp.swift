@@ -52,6 +52,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 window.isMovable = false
                 window.isMovableByWindowBackground = false
 
+                // Hide window controls
+                window.styleMask.remove([.titled, .closable, .miniaturizable, .resizable])
+                window.titlebarAppearsTransparent = true
+                window.titleVisibility = .hidden
+
                 window.level = .floating
                 window.makeKeyAndOrderFront(nil)
             }
