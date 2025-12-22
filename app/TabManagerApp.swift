@@ -9,12 +9,44 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private let socketPath = "/tmp/tabmanager.sock"
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        NSApp.setActivationPolicy(.regular)
-        DispatchQueue.main.async {
-            NSRunningApplication.current.activate(options: .activateIgnoringOtherApps)
-            NSApp.windows.first?.makeKeyAndOrderFront(nil)
+        // Start as a background/accessory app
+        NSApp.setActivationPolicy(.accessory)
+
+        // Setup ESC key monitor to hide the UI
+        NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            if event.keyCode == 53 { // ESC key
+                self.hideUI()
+                return nil // Swallow the event
+            }
+            return event
         }
+
         startUDSServer()
+
+        // Explicitly hide any windows that SwiftUI might have shown during startup
+        DispatchQueue.main.async {
+            self.hideUI()
+        }
+    }
+
+    private func showUI() {
+        DispatchQueue.main.async {
+            NSApp.setActivationPolicy(.regular)
+            NSApp.activate(ignoringOtherApps: true)
+            if let window = NSApp.windows.first {
+                window.level = .floating
+                window.makeKeyAndOrderFront(nil)
+            }
+        }
+    }
+
+    private func hideUI() {
+        DispatchQueue.main.async {
+            if let window = NSApp.windows.first {
+                window.orderOut(nil)
+            }
+            NSApp.setActivationPolicy(.accessory)
+        }
     }
 
     private func startUDSServer() {
@@ -93,6 +125,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 let data = Data(bytes: buffer, count: bytesRead)
                 if let message = String(data: data, encoding: .utf8) {
                     print("App: Received UDS message: \(message)")
+                    if message.contains("ui_visibility_toggle") {
+                        showUI()
+                    }
                     // Verification log
                     let logMsg = "[\(Date())] UDS Data: \(message)\n"
                     try? logMsg.appendLineTo(path: "/tmp/tabmanager_uds.log")

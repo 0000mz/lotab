@@ -1,3 +1,6 @@
+2025-Dec-22:
+  - Hide the GUI until the keybind is triggered.
+
 2025-Dec-21:
 - Initialize project
   - Create browser extension for forwarding browser tab events.
@@ -10,3 +13,5 @@
 
 TODO:
 - Restrict triggering of global keybind to only browser sessions.
+- Do not make the icon show up in the MacOS taskbar when the GUI is shown.
+- Have the daemon show its active at the top left of the MacOS.

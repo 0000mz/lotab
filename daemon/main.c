@@ -42,7 +42,7 @@ static OSStatus HotKeyHandler(EventHandlerCallRef nextHandler,
     lwsl_user("Daemon: Global Hotkey Triggered!\n");
     if (uds_fd >= 0) {
       const char *msg =
-          "{\"event\":\"hotkey_triggered\",\"data\":\"Cmd+Shift+J\"}";
+          "{\"event\":\"ui_visibility_toggle\",\"data\":\"Cmd+Shift+J\"}";
       send(uds_fd, msg, strlen(msg), 0);
       lwsl_user("Daemon: Forwarded hotkey event to App via UDS\n");
     } else {
