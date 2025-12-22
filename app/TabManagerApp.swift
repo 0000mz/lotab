@@ -29,6 +29,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    func applicationDidResignActive(_ notification: Notification) {
+        hideUI()
+    }
+
     private func showUI() {
         DispatchQueue.main.async {
             NSApp.activate(ignoringOtherApps: true)
@@ -55,6 +59,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func hideUI() {
+        print("App: Hiding UI")
         DispatchQueue.main.async {
             if let window = NSApp.windows.first {
                 window.orderOut(nil)
