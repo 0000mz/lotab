@@ -11,4 +11,7 @@ typedef void (*StatusBarOptionCallback)(void);
 void run_daemon_cocoa_app(StatusBarOptionCallback on_toggle,
                           StatusBarOptionCallback on_quit);
 
+// Signals the Cocoa application to terminate (can be called from any thread)
+void stop_daemon_cocoa_app(void);
+
 #endif // STATUSBAR_H

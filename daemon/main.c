@@ -171,6 +171,11 @@ static void *lws_thread_func(void *arg) {
 
   lws_context_destroy(lws_ctx);
   lws_ctx = NULL;
+
+  // Signal the Cocoa app to stop, in case we are exiting due to SIGINT or error
+  // in LWS
+  stop_daemon_cocoa_app();
+
   return NULL;
 }
 

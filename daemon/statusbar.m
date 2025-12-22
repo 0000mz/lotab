@@ -118,3 +118,9 @@ void run_daemon_cocoa_app(StatusBarOptionCallback on_toggle,
     [app run];
   }
 }
+
+void stop_daemon_cocoa_app(void) {
+  dispatch_async(dispatch_get_main_queue(), ^{
+    [NSApp terminate:nil];
+  });
+}
