@@ -1,0 +1,6 @@
+2025-Dec-21:
+- Initialize project
+  - Create browser extension for forwarding browser tab events.
+  - Create daemon for handling websocket server and controlling the
+    application GUI.
+  - Start prototype GUI SwiftUI (inside app/ dir).
