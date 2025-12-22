@@ -22,6 +22,7 @@ static int interrupted;
 static int uds_fd = -1;
 static const char *uds_path = "/tmp/tabmanager.sock";
 static struct lws_context *lws_ctx = NULL;
+static pid_t app_pid = -1; // Global PID for spawned app
 
 // Forward declaration
 
@@ -92,6 +93,23 @@ static void cleanup_and_exit(void) {
     uds_fd = -1;
   }
 
+  // Terminate spawned app if running
+  if (app_pid > 0) {
+    printf("Daemon: Terminating child process %d...\n", app_pid);
+    if (kill(app_pid, SIGTERM) == 0) {
+      // Wait for it to exit to avoid zombie?
+      // waitpid(app_pid, NULL, WNOHANG);
+      // Since we are exiting, init will eventually reap, but waitpid is better
+      // if we have time.
+      int status;
+      waitpid(app_pid, &status, 0);
+      printf("Daemon: Child process terminated.\n");
+    } else {
+      perror("Daemon: Failed to kill child process");
+    }
+    app_pid = -1;
+  }
+
   printf("Daemon: Cleanup complete.\n");
 }
 
@@ -108,6 +126,10 @@ void sigint_handler(int sig) {
   if (lws_ctx) {
     lws_cancel_service(lws_ctx);
   }
+  // Allow Cocoa runloop to unblock if possible, or force exit/cleanup call from
+  // here if main loop ignores interrupt. Actually, run_daemon_cocoa_app blocks.
+  // We should signal it to stop.
+  stop_daemon_cocoa_app();
 }
 
 static void init_uds_client(void) {
@@ -212,11 +234,10 @@ int main(void) {
   printf("Daemon: Global App Path: %s\n", APP_PATH);
 
   // Spawn the TabManager App
-  pid_t pid;
   char *argv[] = {(char *)APP_PATH, NULL};
-  int spawn_status = posix_spawn(&pid, APP_PATH, NULL, NULL, argv, environ);
+  int spawn_status = posix_spawn(&app_pid, APP_PATH, NULL, NULL, argv, environ);
   if (spawn_status == 0) {
-    printf("Daemon: Successfully spawned TabManager (PID: %d)\n", pid);
+    printf("Daemon: Successfully spawned TabManager (PID: %d)\n", app_pid);
     sleep(1);
     init_uds_client();
   } else {
