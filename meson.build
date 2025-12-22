@@ -15,6 +15,7 @@ app_src = [
   'app/TabManagerApp.swift',
   'app/ContentView.swift'
 ]
+daemon_src = ['daemon/main.c', 'daemon/statusbar.m']
 
 info_plist_path = meson.current_source_dir() / 'app/Info.plist'
 tab_manager_linker_args = ['-Xlinker', '-sectcreate', '-Xlinker', '__TEXT', '-Xlinker', '__info_plist', '-Xlinker', info_plist_path]
@@ -32,8 +33,7 @@ conf_data.set_quoted('APP_PATH', app_target.full_path())
 configure_file(output : 'config.h',
                configuration : conf_data)
 
-executable('daemon',
-           ['daemon/main.c', 'daemon/statusbar.m'],
+executable('daemon', daemon_src,
            dependencies : [lws_dep, carbon_dep, cocoa_dep],
            install : true)
 
@@ -59,8 +59,7 @@ foreach s, suffix : sanitizers
   configure_file(output : conf_var_output,
                  configuration : conf_var_data)
 
-  executable('daemon' + suffix,
-             ['daemon/main.c', 'daemon/statusbar.m'],
+  executable('daemon' + suffix, daemon_src,
              dependencies : [lws_dep, carbon_dep, cocoa_dep],
              c_args : ['-DSANITIZER_CONFIG_H="' + conf_var_output + '"'],
              override_options : ['b_sanitize=' + s],
