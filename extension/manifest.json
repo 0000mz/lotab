@@ -1,0 +1,13 @@
+{
+  "manifest_version": 3,
+  "name": "Tab Manager",
+  "version": "1.0",
+  "description": "Manage tabs like you manage your tasks.",
+  "permissions": [
+    "tabs",
+    "tabGroups"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  }
+}
