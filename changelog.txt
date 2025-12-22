@@ -6,6 +6,7 @@
   - Start prototype GUI SwiftUI (inside app/ dir).
   - Using Unix Domain Sockets (UDS) to communicate b/w the daemon and the GUI.
   - Using Carbon to register global keybind (Ctrl+Shift+J for now) to trigger program callback.
+  - Daemon controls the process of the TabManager GUI.
 
 TODO:
 - Restrict triggering of global keybind to only browser sessions.
