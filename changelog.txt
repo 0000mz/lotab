@@ -5,6 +5,7 @@
 - When the GUI is in focus and visible, any click out of focus should hide the application.
 - Hide the window controls on the GUI.
 - Have the daemon show its active at the top-right of the MacOS.
+- daemon: Combine the sanitizer header into the config.h.
 
 2025-Dec-21:
 - Initialize project
@@ -20,4 +21,3 @@ TODO:
 - Restrict triggering of global keybind to only browser sessions.
 - Use case 1: creation of new task
   - Sketch out workflow of creating a new task and assigning tabs to each task.
-- daemon: Combine the sanitizer header into the config.h.

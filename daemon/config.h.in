@@ -1,0 +1,9 @@
+#pragma once
+
+#if defined(SANITIZER_ADDRESS)
+#define APP_PATH "@APP_PATH_ASAN@"
+#elif defined(SANITIZER_THREAD)
+#define APP_PATH "@APP_PATH_TSAN@"
+#else
+#define APP_PATH "@APP_PATH_DEFAULT@"
+#endif
