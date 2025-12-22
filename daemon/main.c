@@ -20,10 +20,15 @@ static int callback_minimal(struct lws *wsi, enum lws_callback_reasons reason,
   (void)user;
   switch (reason) {
   case LWS_CALLBACK_ESTABLISHED:
-    lwsl_user("LWS_CALLBACK_ESTABLISHED\n");
+    lwsl_user("LWS_CALLBACK_ESTABLISHED (new connection)\n");
+    break;
+  case LWS_CALLBACK_CLOSED:
+    lwsl_user("LWS_CALLBACK_CLOSED (connection lost)\n");
     break;
   case LWS_CALLBACK_RECEIVE:
-    lwsl_user("LWS_CALLBACK_RECEIVE: %s\n", (const char *)in);
+    lwsl_user("LWS_CALLBACK_RECEIVE (%lu bytes): %s\n", (unsigned long)len,
+              (const char *)in);
+    // Echo back for testing
     lws_write(wsi, in, len, LWS_WRITE_TEXT);
     break;
   default:
@@ -33,12 +38,12 @@ static int callback_minimal(struct lws *wsi, enum lws_callback_reasons reason,
   return 0;
 }
 
-static struct lws_protocols protocols[] = {{.name = "http",
-                                            .callback = callback_http,
+static struct lws_protocols protocols[] = {{.name = "minimal",
+                                            .callback = callback_minimal,
                                             .per_session_data_size = 0,
                                             .rx_buffer_size = 0},
-                                           {.name = "minimal",
-                                            .callback = callback_minimal,
+                                           {.name = "http",
+                                            .callback = callback_http,
                                             .per_session_data_size = 0,
                                             .rx_buffer_size = 0},
                                            LWS_PROTOCOL_LIST_TERM};
@@ -56,6 +61,8 @@ int main(void) {
   signal(SIGINT, sigint_handler);
 
   memset(&info, 0, sizeof info);
+  // TODO: Put the websocket port in some configuratble location so that the
+  // extension and the daemon are consistently using the same settings.
   info.port = 9001;
   info.protocols = protocols;
   info.gid = -1;
@@ -75,6 +82,5 @@ int main(void) {
   }
 
   lws_context_destroy(ctx);
-
   return 0;
 }

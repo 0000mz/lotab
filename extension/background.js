@@ -1,7 +1,61 @@
-// Helper to log events with timestamp
+let socket = null;
+const DAEMON_URL = 'ws://localhost:9001';
+let reconnectInterval = 1000;
+let eventQueue = [];
+
+function connectToDaemon() {
+    socket = new WebSocket(DAEMON_URL);
+
+    socket.onopen = () => {
+        console.log(`[${new Date().toISOString()}] Connected to Daemon WebSocket`);
+        reconnectInterval = 1000;
+
+        // Flush queue
+        while (eventQueue.length > 0 && socket.readyState === WebSocket.OPEN) {
+            socket.send(JSON.stringify(eventQueue.shift()));
+        }
+    };
+
+    socket.onmessage = (event) => {
+        console.log(`[${new Date().toISOString()}] Message from Daemon:`, event.data);
+    };
+
+    socket.onclose = (event) => {
+        console.log(`[${new Date().toISOString()}] Daemon WebSocket closed. Reconnecting in ${reconnectInterval}ms...`, event.reason);
+        setTimeout(connectToDaemon, reconnectInterval);
+        reconnectInterval = Math.min(reconnectInterval * 2, 30000);
+    };
+
+    socket.onerror = (error) => {
+        console.error(`[${new Date().toISOString()}] Daemon WebSocket error:`, error);
+    };
+}
+
+// Helper to log events with timestamp and send to daemon
 const logEvent = (eventName, data) => {
-    console.log(`[${new Date().toISOString()}] ${eventName}`, data);
+    const timestamp = new Date().toISOString();
+    const eventPayload = {
+        event: eventName,
+        timestamp: timestamp,
+        data: data
+    };
+
+    console.log(`[${timestamp}] ${eventName}`, data);
+
+    if (socket && socket.readyState === WebSocket.OPEN) {
+        socket.send(JSON.stringify(eventPayload));
+    } else {
+        console.log(`[${timestamp}] WebSocket not open, queuing event: ${eventName}`);
+        eventQueue.push(eventPayload);
+        // Limit queue size to avoid memory issues (e.g., 1000 events)
+        if (eventQueue.length > 1000) {
+            eventQueue.shift();
+        }
+    }
 };
+
+// Initial connection
+connectToDaemon();
 
 // --- Tab Events ---
 
