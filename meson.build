@@ -13,8 +13,8 @@ executable('daemon',
 apple_frameworks = dependency('appleframeworks', modules : ['Foundation', 'AppKit', 'SwiftUI'])
 
 app_src = [
-  'app/Sources/TabManager/TabManagerApp.swift',
-  'app/Sources/TabManager/ContentView.swift'
+  'app/TabManagerApp.swift',
+  'app/ContentView.swift'
 ]
 
 executable('TabManager',
