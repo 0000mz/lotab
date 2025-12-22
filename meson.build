@@ -7,7 +7,6 @@ carbon_dep = dependency('appleframeworks', modules : 'Carbon')
 cocoa_dep = dependency('appleframeworks', modules : 'Cocoa')
 
 # --- GUI ---
-# --- GUI ---
 # Link required frameworks for a SwiftUI app
 apple_frameworks = dependency('appleframeworks', modules : ['Foundation', 'AppKit', 'SwiftUI'])
 
