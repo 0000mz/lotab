@@ -3,7 +3,7 @@
 #else
 #include "config.h"
 #endif
-#include <Carbon/Carbon.h>
+#include "statusbar.h"
 #include <errno.h>
 #include <libwebsockets.h>
 #include <pthread.h>
@@ -16,82 +16,16 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
-// Explicitly declare these as they are sometimes missing from modern headers
-// in certain build environments (e.g. when building as a pure C binary).
-extern void RunApplicationEventLoop(void);
-extern void QuitApplicationEventLoop(void);
+extern char **environ;
 
 static int interrupted;
 static int uds_fd = -1;
 static const char *uds_path = "/tmp/tabmanager.sock";
+static struct lws_context *lws_ctx = NULL;
 
-// --- Hotkey Logic ---
+// Forward declaration
 
-static OSStatus HotKeyHandler(EventHandlerCallRef nextHandler,
-                              EventRef theEvent, void *userData) {
-  (void)nextHandler;
-  (void)userData;
-
-  EventHotKeyID hkID;
-  GetEventParameter(theEvent, kEventParamDirectObject, typeEventHotKeyID, NULL,
-                    sizeof(hkID), NULL, &hkID);
-
-  lwsl_user("Daemon: Hotkey event detected (ID: %d)\n", hkID.id);
-
-  if (hkID.id == 1) {
-    lwsl_user("Daemon: Global Hotkey Triggered!\n");
-    if (uds_fd >= 0) {
-      const char *msg =
-          "{\"event\":\"ui_visibility_toggle\",\"data\":\"Cmd+Shift+J\"}";
-      send(uds_fd, msg, strlen(msg), 0);
-      lwsl_user("Daemon: Forwarded hotkey event to App via UDS\n");
-    } else {
-      lwsl_warn("Daemon: Hotkey triggered but UDS is not connected\n");
-    }
-  }
-
-  return noErr;
-}
-
-static void *hotkey_thread_func(void *arg) {
-  (void)arg;
-
-  // Transform process to allow UI-less background app capabilities
-  ProcessSerialNumber psn = {0, kCurrentProcess};
-  TransformProcessType(&psn, kProcessTransformToUIElementApplication);
-
-  EventHotKeyRef gMyHotKeyRef;
-  EventHotKeyID gMyHotKeyID;
-  EventTypeSpec eventType;
-
-  eventType.eventClass = kEventClassKeyboard;
-  eventType.eventKind = kEventHotKeyPressed;
-
-  InstallApplicationEventHandler(NewEventHandlerUPP(HotKeyHandler), 1,
-                                 &eventType, NULL, NULL);
-
-  gMyHotKeyID.signature = 'htk1';
-  gMyHotKeyID.id = 1;
-
-  // Register Cmd+Shift+J
-  // kVK_ANSI_J is 38
-  OSStatus status =
-      RegisterEventHotKey(38, cmdKey | shiftKey, gMyHotKeyID,
-                          GetApplicationEventTarget(), 0, &gMyHotKeyRef);
-
-  if (status != noErr) {
-    lwsl_err("Daemon: Failed to register hotkey: %d\n", (int)status);
-    return NULL;
-  }
-
-  lwsl_user("Daemon: Hotkey thread started (Cmd+Shift+J)\n");
-
-  // Run the Carbon event loop
-  RunApplicationEventLoop();
-
-  lwsl_user("Daemon: Hotkey thread exiting\n");
-  return NULL;
-}
+static pthread_t ws_thread;
 
 // --- WebSocket Callbacks ---
 
@@ -119,7 +53,8 @@ static int callback_minimal(struct lws *wsi, enum lws_callback_reasons reason,
     }
 
     // Echo back for testing
-    lws_write(wsi, in, len, LWS_WRITE_TEXT);
+    // lws_write(wsi, in, len, LWS_WRITE_TEXT);
+    // Commented out echo to avoid confusion/loops, enable if needed for tests
     break;
   default:
     break;
@@ -134,10 +69,45 @@ static struct lws_protocols protocols[] = {{.name = "minimal",
                                             .rx_buffer_size = 0},
                                            LWS_PROTOCOL_LIST_TERM};
 
+static void cleanup_and_exit(void) {
+  if (!interrupted) {
+    interrupted = 1;
+  }
+
+  // Stop LWS loop
+  if (lws_ctx) {
+    lws_cancel_service(lws_ctx);
+  }
+
+  // Join LWS thread
+  // Note: We check if we are NOT the ws_thread to avoid deadlock if called from
+  // within it (unlikely here)
+  if (ws_thread) {
+    pthread_join(ws_thread, NULL);
+    ws_thread = NULL;
+  }
+
+  if (uds_fd >= 0) {
+    close(uds_fd);
+    uds_fd = -1;
+  }
+
+  printf("Daemon: Cleanup complete.\n");
+}
+
 void sigint_handler(int sig) {
   (void)sig;
+  printf("Daemon: Caught SIGINT\n");
   interrupted = 1;
-  QuitApplicationEventLoop();
+  // We cannot easily join thread in signal handler, so we just set flag and let
+  // lws close? Or we rely on main() falling through if possible. However, since
+  // main() is blocked in [App run], SIGINT might need to kill the app or let
+  // Cocoa handle it. Ideally Cocoa apps don't use SIGINT handler this way, but
+  // for a daemon it's okay. We'll trust the OS to cleanup on immediate exit if
+  // we can't join.
+  if (lws_ctx) {
+    lws_cancel_service(lws_ctx);
+  }
 }
 
 static void init_uds_client(void) {
@@ -174,12 +144,11 @@ static void init_uds_client(void) {
           "Daemon: Failed to connect to App UDS after multiple attempts\n");
 }
 
-int main(void) {
+// Thread function to run the LWS service
+static void *lws_thread_func(void *arg) {
+  (void)arg;
   struct lws_context_creation_info info;
-  struct lws_context *ctx;
   int n = 0;
-
-  signal(SIGINT, sigint_handler);
 
   memset(&info, 0, sizeof info);
   info.port = 9001;
@@ -190,11 +159,45 @@ int main(void) {
   lws_set_log_level(LLL_USER | LLL_ERR | LLL_WARN | LLL_NOTICE, NULL);
   lwsl_user("Starting Daemon WebSocket server on port %d\n", info.port);
 
-  ctx = lws_create_context(&info);
-  if (!ctx) {
+  lws_ctx = lws_create_context(&info);
+  if (!lws_ctx) {
     lwsl_err("lws init failed\n");
-    return 1;
+    return NULL;
   }
+
+  while (n >= 0 && !interrupted) {
+    n = lws_service(lws_ctx, 100);
+  }
+
+  lws_context_destroy(lws_ctx);
+  lws_ctx = NULL;
+  return NULL;
+}
+
+// Callback implementation
+static void send_toggle_event(void) {
+  if (uds_fd >= 0) {
+    const char *msg =
+        "{\"event\":\"ui_visibility_toggle\",\"data\":\"toggle\"}";
+    send(uds_fd, msg, strlen(msg), 0);
+    printf("Daemon: Sent toggle command to App\n");
+  } else {
+    printf("Daemon: Warning - Cannot Toggle, UDS not connected.\n");
+  }
+}
+
+static void on_status_toggle(void) {
+  printf("Daemon: Toggle Requested via Hotkey\n");
+  send_toggle_event();
+}
+
+static void on_status_quit(void) {
+  printf("Daemon: Quit Requested via Menu\n");
+  cleanup_and_exit();
+}
+
+int main(void) {
+  signal(SIGINT, sigint_handler);
 
 #ifndef APP_PATH
   fprintf(stderr, "Error: APP_PATH is not defined. Daemon cannot continue.\n");
@@ -206,40 +209,33 @@ int main(void) {
   // Spawn the TabManager App
   pid_t pid;
   char *argv[] = {(char *)APP_PATH, NULL};
-  extern char **environ;
   int spawn_status = posix_spawn(&pid, APP_PATH, NULL, NULL, argv, environ);
   if (spawn_status == 0) {
     printf("Daemon: Successfully spawned TabManager (PID: %d)\n", pid);
-    // Wait a bit for the app to initialize its UDS server
     sleep(1);
     init_uds_client();
   } else {
     fprintf(stderr, "Daemon: Failed to spawn TabManager: %s\n",
             strerror(spawn_status));
-    // Try to connect anyway in case it's already running
     init_uds_client();
   }
 
-  // Start Hotkey Thread
-  pthread_t hotkey_thread = 0;
-  int hotkey_thread_started = 0;
-  if (pthread_create(&hotkey_thread, NULL, hotkey_thread_func, NULL) != 0) {
-    fprintf(stderr, "Daemon: Failed to start hotkey thread\n");
-  } else {
-    hotkey_thread_started = 1;
+  // Start LWS in background thread
+  if (pthread_create(&ws_thread, NULL, lws_thread_func, NULL) != 0) {
+    fprintf(stderr, "Failed to start WebSocket thread\n");
+    return 1;
   }
 
-  while (n >= 0 && !interrupted) {
-    n = lws_service(ctx, 0);
-  }
+  // Run Cocoa App (Main Thread)
+  // This blocks until termination
+  printf("Daemon: Starting Cocoa Event Loop\n");
+  run_daemon_cocoa_app(on_status_toggle, on_status_quit);
 
-  if (hotkey_thread_started) {
-    pthread_join(hotkey_thread, NULL);
-  }
+  printf("Daemon: Exiting (Normally shouldn't reach here if terminated via "
+         "Menu)\n");
 
-  if (uds_fd >= 0) {
-    close(uds_fd);
-  }
-  lws_context_destroy(ctx);
+  // Just in case we fall through (e.g. invalid Quit logic in future)
+  cleanup_and_exit();
+
   return 0;
 }

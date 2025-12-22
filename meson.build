@@ -1,9 +1,10 @@
-project('tab_manager', 'c', 'swift',
+project('tab_manager', 'c', 'swift', 'objc',
   version : '0.1',
   default_options : ['warning_level=3'])
 
 lws_dep = dependency('libwebsockets')
 carbon_dep = dependency('appleframeworks', modules : 'Carbon')
+cocoa_dep = dependency('appleframeworks', modules : 'Cocoa')
 
 # --- GUI ---
 # --- GUI ---
@@ -32,8 +33,8 @@ configure_file(output : 'config.h',
                configuration : conf_data)
 
 executable('daemon',
-           'daemon/main.c',
-           dependencies : [lws_dep, carbon_dep],
+           ['daemon/main.c', 'daemon/statusbar.m'],
+           dependencies : [lws_dep, carbon_dep, cocoa_dep],
            install : true)
 
 # --- Sanitizer Variants ---
@@ -59,8 +60,8 @@ foreach s, suffix : sanitizers
                  configuration : conf_var_data)
 
   executable('daemon' + suffix,
-             'daemon/main.c',
-             dependencies : [lws_dep, carbon_dep],
+             ['daemon/main.c', 'daemon/statusbar.m'],
+             dependencies : [lws_dep, carbon_dep, cocoa_dep],
              c_args : ['-DSANITIZER_CONFIG_H="' + conf_var_output + '"'],
              override_options : ['b_sanitize=' + s],
              install : true)
