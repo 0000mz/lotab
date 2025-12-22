@@ -1,4 +1,8 @@
+#ifdef SANITIZER_CONFIG_H
+#include SANITIZER_CONFIG_H
+#else
 #include "config.h"
+#endif
 #include <Carbon/Carbon.h>
 #include <errno.h>
 #include <libwebsockets.h>

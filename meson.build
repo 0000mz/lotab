@@ -30,3 +30,32 @@ executable('daemon',
            'daemon/main.c',
            dependencies : [lws_dep, carbon_dep],
            install : true)
+
+# --- Sanitizer Variants ---
+sanitizers = {
+  'address': '_asan',
+  'thread' : '_tsan'
+}
+
+foreach s, suffix : sanitizers
+  # App Variant
+  app_var = executable('TabManager' + suffix,
+             app_src,
+             dependencies : apple_frameworks,
+             override_options : ['b_sanitize=' + s],
+             install : true)
+
+  # Daemon Variant
+  conf_var_data = configuration_data()
+  conf_var_data.set_quoted('APP_PATH', app_var.full_path())
+  conf_var_output = 'config' + suffix + '.h'
+  configure_file(output : conf_var_output,
+                 configuration : conf_var_data)
+
+  executable('daemon' + suffix,
+             'daemon/main.c',
+             dependencies : [lws_dep, carbon_dep],
+             c_args : ['-DSANITIZER_CONFIG_H="' + conf_var_output + '"'],
+             override_options : ['b_sanitize=' + s],
+             install : true)
+endforeach
