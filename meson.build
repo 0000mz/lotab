@@ -5,6 +5,6 @@ project('tab_manager_daemon', 'c',
 lws_dep = dependency('libwebsockets')
 
 executable('daemon',
-           'main.c',
+           'daemon/main.c',
            dependencies : lws_dep,
            install : true)
