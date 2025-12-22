@@ -4,3 +4,4 @@
   - Create daemon for handling websocket server and controlling the
     application GUI.
   - Start prototype GUI SwiftUI (inside app/ dir).
+  - Using Unix Domain Sockets (UDS) to communicate b/w the daemon and the GUI.
