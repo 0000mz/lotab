@@ -221,13 +221,20 @@ int main(void) {
   }
 
   // Start Hotkey Thread
-  pthread_t hotkey_thread;
+  pthread_t hotkey_thread = 0;
+  int hotkey_thread_started = 0;
   if (pthread_create(&hotkey_thread, NULL, hotkey_thread_func, NULL) != 0) {
     fprintf(stderr, "Daemon: Failed to start hotkey thread\n");
+  } else {
+    hotkey_thread_started = 1;
   }
 
   while (n >= 0 && !interrupted) {
     n = lws_service(ctx, 0);
+  }
+
+  if (hotkey_thread_started) {
+    pthread_join(hotkey_thread, NULL);
   }
 
   if (uds_fd >= 0) {
