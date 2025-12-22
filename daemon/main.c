@@ -1,5 +1,7 @@
+#include <Carbon/Carbon.h>
 #include <errno.h>
 #include <libwebsockets.h>
+#include <pthread.h>
 #include <signal.h>
 #include <stdio.h>
 #include <string.h>
@@ -7,9 +9,84 @@
 #include <sys/un.h>
 #include <unistd.h>
 
+// Explicitly declare these as they are sometimes missing from modern headers
+// in certain build environments (e.g. when building as a pure C binary).
+extern void RunApplicationEventLoop(void);
+extern void QuitApplicationEventLoop(void);
+
 static int interrupted;
 static int uds_fd = -1;
 static const char *uds_path = "/tmp/tabmanager.sock";
+
+// --- Hotkey Logic ---
+
+static OSStatus HotKeyHandler(EventHandlerCallRef nextHandler,
+                              EventRef theEvent, void *userData) {
+  (void)nextHandler;
+  (void)userData;
+
+  EventHotKeyID hkID;
+  GetEventParameter(theEvent, kEventParamDirectObject, typeEventHotKeyID, NULL,
+                    sizeof(hkID), NULL, &hkID);
+
+  lwsl_user("Daemon: Hotkey event detected (ID: %d)\n", hkID.id);
+
+  if (hkID.id == 1) {
+    lwsl_user("Daemon: Global Hotkey Triggered!\n");
+    if (uds_fd >= 0) {
+      const char *msg =
+          "{\"event\":\"hotkey_triggered\",\"data\":\"Cmd+Shift+J\"}";
+      send(uds_fd, msg, strlen(msg), 0);
+      lwsl_user("Daemon: Forwarded hotkey event to App via UDS\n");
+    } else {
+      lwsl_warn("Daemon: Hotkey triggered but UDS is not connected\n");
+    }
+  }
+
+  return noErr;
+}
+
+static void *hotkey_thread_func(void *arg) {
+  (void)arg;
+
+  // Transform process to allow UI-less background app capabilities
+  ProcessSerialNumber psn = {0, kCurrentProcess};
+  TransformProcessType(&psn, kProcessTransformToUIElementApplication);
+
+  EventHotKeyRef gMyHotKeyRef;
+  EventHotKeyID gMyHotKeyID;
+  EventTypeSpec eventType;
+
+  eventType.eventClass = kEventClassKeyboard;
+  eventType.eventKind = kEventHotKeyPressed;
+
+  InstallApplicationEventHandler(NewEventHandlerUPP(HotKeyHandler), 1,
+                                 &eventType, NULL, NULL);
+
+  gMyHotKeyID.signature = 'htk1';
+  gMyHotKeyID.id = 1;
+
+  // Register Cmd+Shift+J
+  // kVK_ANSI_J is 38
+  OSStatus status =
+      RegisterEventHotKey(38, cmdKey | shiftKey, gMyHotKeyID,
+                          GetApplicationEventTarget(), 0, &gMyHotKeyRef);
+
+  if (status != noErr) {
+    lwsl_err("Daemon: Failed to register hotkey: %d\n", (int)status);
+    return NULL;
+  }
+
+  lwsl_user("Daemon: Hotkey thread started (Cmd+Shift+J)\n");
+
+  // Run the Carbon event loop
+  RunApplicationEventLoop();
+
+  lwsl_user("Daemon: Hotkey thread exiting\n");
+  return NULL;
+}
+
+// --- WebSocket Callbacks ---
 
 static int callback_http(struct lws *wsi, enum lws_callback_reasons reason,
                          void *user, void *in, size_t len) {
@@ -67,6 +144,7 @@ static struct lws_protocols protocols[] = {{.name = "minimal",
 void sigint_handler(int sig) {
   (void)sig;
   interrupted = 1;
+  QuitApplicationEventLoop();
 }
 
 static void init_uds_client(void) {
@@ -106,9 +184,13 @@ int main(void) {
   // Initialize UDS Connection to the App
   init_uds_client();
 
+  // Start Hotkey Thread
+  pthread_t hotkey_thread;
+  if (pthread_create(&hotkey_thread, NULL, hotkey_thread_func, NULL) != 0) {
+    lwsl_err("Daemon: Failed to start hotkey thread\n");
+  }
+
   memset(&info, 0, sizeof info);
-  // TODO: Put the websocket port in some configuratble location so that the
-  // extension and the daemon are consistently using the same settings.
   info.port = 9001;
   info.protocols = protocols;
   info.gid = -1;
