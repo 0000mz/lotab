@@ -3,53 +3,44 @@
 #import <Cocoa/Cocoa.h>
 
 // Forward declaration
-OSStatus HotKeyHandler(EventHandlerCallRef nextHandler, EventRef theEvent,
-                       void *userData);
-
-static StatusBarOptionCallback g_on_toggle = NULL;
-static StatusBarOptionCallback g_on_quit = NULL;
+OSStatus HotKeyHandler(EventHandlerCallRef nextHandler, EventRef theEvent, void* userData);
 
 @interface StatusBarDelegate : NSObject <NSApplicationDelegate>
-@property(strong, nonatomic) NSStatusItem *statusItem;
+@property(strong, nonatomic) NSStatusItem* statusItem;
+@property(nonatomic, assign) StatusBarRunContext* context;
 @end
 
 @implementation StatusBarDelegate
 
-- (void)applicationDidFinishLaunching:(NSNotification *)aNotification {
+- (void)applicationDidFinishLaunching:(NSNotification*)aNotification {
   // Determine activation policy
   [NSApp setActivationPolicy:NSApplicationActivationPolicyAccessory];
 
   // Create Status Item
   // NSVariableStatusItemLength is the correct constant for variable length
   // status items
-  self.statusItem = [[NSStatusBar systemStatusBar]
-      statusItemWithLength:NSVariableStatusItemLength];
+  self.statusItem = [[NSStatusBar systemStatusBar] statusItemWithLength:NSVariableStatusItemLength];
 
   // Set Icon
   if (self.statusItem.button) {
     if (@available(macOS 11.0, *)) {
-      self.statusItem.button.image =
-          [NSImage imageWithSystemSymbolName:@"rectangle.stack"
-                    accessibilityDescription:@"Tab Manager"];
+      self.statusItem.button.image = [NSImage imageWithSystemSymbolName:@"rectangle.stack"
+                                               accessibilityDescription:@"Tab Manager"];
     } else {
       self.statusItem.button.title = @"TM";
     }
   }
 
   // Create Menu
-  NSMenu *menu = [[NSMenu alloc] init];
+  NSMenu* menu = [[NSMenu alloc] init];
 
-  NSMenuItem *headerItem = [[NSMenuItem alloc] initWithTitle:@"Tab Manager"
-                                                      action:nil
-                                               keyEquivalent:@""];
+  NSMenuItem* headerItem = [[NSMenuItem alloc] initWithTitle:@"Tab Manager" action:nil keyEquivalent:@""];
   [headerItem setEnabled:NO];
   [menu addItem:headerItem];
 
   [menu addItem:[NSMenuItem separatorItem]];
 
-  NSMenuItem *quitItem = [[NSMenuItem alloc] initWithTitle:@"Quit"
-                                                    action:@selector(quitAction)
-                                             keyEquivalent:@"q"];
+  NSMenuItem* quitItem = [[NSMenuItem alloc] initWithTitle:@"Quit" action:@selector(quitAction) keyEquivalent:@"q"];
   [quitItem setTarget:self];
   [menu addItem:quitItem];
 
@@ -62,29 +53,27 @@ static StatusBarOptionCallback g_on_quit = NULL;
   eventType.eventClass = kEventClassKeyboard;
   eventType.eventKind = kEventHotKeyPressed;
 
-  InstallApplicationEventHandler(NewEventHandlerUPP(HotKeyHandler), 1,
-                                 &eventType, NULL, NULL);
+  InstallApplicationEventHandler(NewEventHandlerUPP(HotKeyHandler), 1, &eventType, (__bridge void*)self, NULL);
 
   gMyHotKeyID.signature = 'htk1';
   gMyHotKeyID.id = 1;
-  RegisterEventHotKey(38, cmdKey | shiftKey, gMyHotKeyID,
-                      GetApplicationEventTarget(), 0, &gMyHotKeyRef);
+  RegisterEventHotKey(38, cmdKey | shiftKey, gMyHotKeyID, GetApplicationEventTarget(), 0, &gMyHotKeyRef);
 }
 
 - (void)toggleAction {
-  if (g_on_toggle) {
-    g_on_toggle();
+  if (self.context->on_toggle) {
+    self.context->on_toggle(self.context->privdata);
   }
 }
 
 - (void)quitAction {
-  if (g_on_quit) {
-    g_on_quit(); // Signal main loop to exit if possible, or perform cleanup
+  if (self.context->on_quit) {
+    self.context->on_quit(self.context->privdata);  // Signal main loop to exit if possible, or perform cleanup
   }
   [NSApp terminate:nil];
 }
 
-- (void)applicationWillTerminate:(NSNotification *)notification {
+- (void)applicationWillTerminate:(NSNotification*)notification {
   // Optional: Log or finalize hooks
   // OS cleans up memory/sockets on exit
 }
@@ -92,28 +81,22 @@ static StatusBarOptionCallback g_on_quit = NULL;
 @end
 
 // Global C-function callback for HotKeys
-OSStatus HotKeyHandler(EventHandlerCallRef nextHandler, EventRef theEvent,
-                       void *userData) {
+OSStatus HotKeyHandler(EventHandlerCallRef nextHandler, EventRef theEvent, void* userData) {
   EventHotKeyID hkID;
-  GetEventParameter(theEvent, kEventParamDirectObject, typeEventHotKeyID, NULL,
-                    sizeof(hkID), NULL, &hkID);
+  GetEventParameter(theEvent, kEventParamDirectObject, typeEventHotKeyID, NULL, sizeof(hkID), NULL, &hkID);
 
   if (hkID.id == 1) {
-    if (g_on_toggle) {
-      g_on_toggle();
-    }
+    StatusBarDelegate* delegate = (__bridge StatusBarDelegate*)userData;
+    [delegate toggleAction];
   }
   return noErr;
 }
 
-void run_daemon_cocoa_app(StatusBarOptionCallback on_toggle,
-                          StatusBarOptionCallback on_quit) {
-  g_on_toggle = on_toggle;
-  g_on_quit = on_quit;
-
+void run_daemon_cocoa_app(StatusBarRunContext* context) {
   @autoreleasepool {
-    NSApplication *app = [NSApplication sharedApplication];
-    StatusBarDelegate *delegate = [[StatusBarDelegate alloc] init];
+    NSApplication* app = [NSApplication sharedApplication];
+    StatusBarDelegate* delegate = [[StatusBarDelegate alloc] init];
+    delegate.context = context;
     app.delegate = delegate;
     [app run];
   }
