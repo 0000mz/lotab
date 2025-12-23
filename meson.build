@@ -6,6 +6,7 @@ lws_dep = dependency('libwebsockets')
 cjson_dep = dependency('libcjson')
 carbon_dep = dependency('appleframeworks', modules : 'Carbon')
 cocoa_dep = dependency('appleframeworks', modules : 'Cocoa')
+argparse_dep = dependency('argparse')
 
 # --- GUI ---
 # Link required frameworks for a SwiftUI app
@@ -15,8 +16,14 @@ app_src = [
   'app/TabManagerApp.swift',
   'app/ContentView.swift'
 ]
-daemon_src = ['daemon/main.c', 'daemon/statusbar.m', 'daemon/engine.c']
-daemon_deps = [lws_dep, cjson_dep, carbon_dep, cocoa_dep]
+
+daemon_src = [
+  'daemon/main.c',
+  'daemon/statusbar.m',
+  'daemon/engine.c'
+]
+
+daemon_deps = [lws_dep, cjson_dep, carbon_dep, cocoa_dep, argparse_dep]
 
 info_plist_path = meson.current_source_dir() / 'app/Info.plist'
 tab_manager_linker_args = ['-Xlinker', '-sectcreate', '-Xlinker', '__TEXT', '-Xlinker', '__info_plist', '-Xlinker', info_plist_path]

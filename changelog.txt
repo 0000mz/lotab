@@ -10,6 +10,8 @@
 - Make daemon engine unit-testable.
 - Separate the daemon engine from the OS interactions to make unit-testable.
 - Setup clang format and use raw-string-literal decoration support.
+- Add loglevel to daemon to reduce spam of weboscket messages.
+- Create log function that will automatically handle whether or not to log based on loglevel.
 
 2025-Dec-21:
 - Initialize project
@@ -26,4 +28,3 @@ TODO:
 - Use case 1: creation of new task
   - Sketch out workflow of creating a new task and assigning tabs to each task.
 - When the GUI is escaped, return focus to last focused application before the interruption.
-- Add loglevel to daemon to reduce spam of weboscket messages.

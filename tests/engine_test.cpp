@@ -1,5 +1,7 @@
 #include "engine.h"
+
 #include <gtest/gtest.h>
+
 #include <string>
 #include <vector>
 
@@ -11,23 +13,19 @@ struct MockAdapter {
   int app_quit_count = 0;
 
   static void log(const char *msg) {
-    if (GlobalMock)
-      GlobalMock->logs.push_back(msg);
+    if (GlobalMock) GlobalMock->logs.push_back(msg);
   }
 
   static void send_uds(const char *data) {
-    if (GlobalMock)
-      GlobalMock->uds_messages.push_back(data);
+    if (GlobalMock) GlobalMock->uds_messages.push_back(data);
   }
 
   static void kill_gui() {
-    if (GlobalMock)
-      GlobalMock->gui_kill_count++;
+    if (GlobalMock) GlobalMock->gui_kill_count++;
   }
 
   static void quit_app() {
-    if (GlobalMock)
-      GlobalMock->app_quit_count++;
+    if (GlobalMock) GlobalMock->app_quit_count++;
   }
 
   static MockAdapter *GlobalMock;
@@ -36,7 +34,7 @@ struct MockAdapter {
 MockAdapter *MockAdapter::GlobalMock = nullptr;
 
 class EngineTest : public ::testing::Test {
-protected:
+ protected:
   MockAdapter mock;
   PlatformAdapter adapter;
 
@@ -45,14 +43,16 @@ protected:
 
     adapter.log = MockAdapter::log;
     adapter.send_uds = MockAdapter::send_uds;
-    adapter.spawn_gui = nullptr; // Not used yet
+    adapter.spawn_gui = nullptr;  // Not used yet
     adapter.kill_gui = MockAdapter::kill_gui;
     adapter.quit_app = MockAdapter::quit_app;
 
     engine_init(&adapter);
   }
 
-  void TearDown() override { MockAdapter::GlobalMock = nullptr; }
+  void TearDown() override {
+    MockAdapter::GlobalMock = nullptr;
+  }
 };
 
 TEST_F(EngineTest, AppStartedLog) {
@@ -64,8 +64,7 @@ TEST_F(EngineTest, AppStartedLog) {
 TEST_F(EngineTest, HotkeyToggleSendsUDS) {
   engine_handle_event(EVENT_HOTKEY_TOGGLE, nullptr);
   ASSERT_FALSE(mock.uds_messages.empty());
-  EXPECT_NE(mock.uds_messages.back().find("ui_visibility_toggle"),
-            std::string::npos);
+  EXPECT_NE(mock.uds_messages.back().find("ui_visibility_toggle"), std::string::npos);
 }
 
 TEST_F(EngineTest, MenuQuitTerminatesApp) {
@@ -76,9 +75,22 @@ TEST_F(EngineTest, MenuQuitTerminatesApp) {
 
 TEST_F(EngineTest, WSMessageForwarded) {
   const char *msg = "test_message";
+  engine_set_log_level(LOG_LEVEL_TRACE);  // Enable trace to see logs
   engine_handle_event(EVENT_WS_MESSAGE_RECEIVED, (void *)msg);
-  ASSERT_FALSE(mock.uds_messages.empty());
-  EXPECT_EQ(mock.uds_messages.back(), "test_message");
+
+  // Should NOT forward to UDS anymore (user change)
+  EXPECT_TRUE(mock.uds_messages.empty());
+
+  // Should log the raw message
+  ASSERT_FALSE(mock.logs.empty());
+  bool found_log = false;
+  for (const auto &log : mock.logs) {
+    if (log.find("test_message") != std::string::npos) {
+      found_log = true;
+      break;
+    }
+  }
+  EXPECT_TRUE(found_log);
 }
 
 TEST_F(EngineTest, ParseTabActivated) {
@@ -88,8 +100,7 @@ TEST_F(EngineTest, ParseTabActivated) {
   // Should log "WS Message Received" AND "Tab Activated"
   bool found_activation = false;
   for (const auto &log : mock.logs) {
-    if (log == "Engine: Tab Activated")
-      found_activation = true;
+    if (log == "Engine: Tab Activated") found_activation = true;
   }
   EXPECT_TRUE(found_activation);
 }
