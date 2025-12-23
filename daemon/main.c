@@ -16,22 +16,22 @@
 #include "engine.h"
 #include "statusbar.h"
 
-extern char **environ;
+extern char** environ;
 
 static int interrupted;
 static int uds_fd = -1;
-static const char *uds_path = "/tmp/tabmanager.sock";
-static struct lws_context *lws_ctx = NULL;
+static const char* uds_path = "/tmp/tabmanager.sock";
+static struct lws_context* lws_ctx = NULL;
 static pid_t app_pid = -1;  // Global PID for spawned app
 static pthread_t ws_thread;
 
 // --- Adapter Implementations ---
 
-static void adapter_log(const char *msg) {
+static void adapter_log(const char* msg) {
   printf("Daemon: %s\n", msg);
 }
 
-static void adapter_send_uds(const char *data) {
+static void adapter_send_uds(const char* data) {
   if (uds_fd >= 0) {
     if (send(uds_fd, data, strlen(data), 0) < 0) {
       fprintf(stderr, "Daemon: Failed to send data to App via UDS: %s\n", strerror(errno));
@@ -115,7 +115,7 @@ static void cleanup_and_exit(void) {
 
 // --- WebSocket Callbacks ---
 
-static int callback_minimal(struct lws *wsi, enum lws_callback_reasons reason, void *user, void *in, size_t len) {
+static int callback_minimal(struct lws* wsi, enum lws_callback_reasons reason, void* user, void* in, size_t len) {
   (void)user;
   switch (reason) {
     case LWS_CALLBACK_ESTABLISHED:
@@ -130,7 +130,7 @@ static int callback_minimal(struct lws *wsi, enum lws_callback_reasons reason, v
       // We'll trust source is text or handle it carefully.
       // wrapper for safety:
       {
-        char *msg = malloc(len + 1);
+        char* msg = malloc(len + 1);
         if (msg) {
           memcpy(msg, in, len);
           msg[len] = '\0';
@@ -170,11 +170,11 @@ static void init_uds_client(void) {
       return;
     }
 
-    if (connect(uds_fd, (struct sockaddr *)&addr, sizeof(addr)) == 0) {
+    if (connect(uds_fd, (struct sockaddr*)&addr, sizeof(addr)) == 0) {
       printf("Daemon: Connected to App UDS at %s\n", uds_path);
       // Send startup ping - maybe engine should do this on EVENT_APP_STARTED?
       // For now, keep it here or send EVENT_APP_STARTED.
-      const char *ping = "{\"event\":\"daemon_startup\",\"data\":\"ping\"}";
+      const char* ping = "{\"event\":\"daemon_startup\",\"data\":\"ping\"}";
       send(uds_fd, ping, strlen(ping), 0);
       return;
     }
@@ -188,7 +188,7 @@ static void init_uds_client(void) {
   fprintf(stderr, "Daemon: Failed to connect to App UDS after multiple attempts\n");
 }
 
-static void *lws_thread_func(void *arg) {
+static void* lws_thread_func(void* arg) {
   (void)arg;
   struct lws_context_creation_info info;
   int n = 0;
@@ -230,7 +230,7 @@ static void on_status_quit(void) {
   engine_handle_event(EVENT_MENU_QUIT, NULL);
 }
 
-int main(int argc, const char **argv) {
+int main(int argc, const char** argv) {
   signal(SIGINT, sigint_handler);
 
 #ifndef APP_PATH
@@ -239,7 +239,7 @@ int main(int argc, const char **argv) {
 #endif
 
   // Arg Parse
-  const char *loglevel_str = NULL;
+  const char* loglevel_str = NULL;
 
   struct argparse_option options[] = {
       OPT_HELP(),
@@ -248,7 +248,7 @@ int main(int argc, const char **argv) {
   };
 
   struct argparse argparse;
-  static const char *const usages[] = {
+  static const char* const usages[] = {
       "daemon [options]",
       NULL,
   };
@@ -274,7 +274,7 @@ int main(int argc, const char **argv) {
   printf("Daemon: Global App Path: %s\n", APP_PATH);
 
   // Spawn the TabManager App
-  char *spawn_args[] = {(char *)APP_PATH, NULL};
+  char* spawn_args[] = {(char*)APP_PATH, NULL};
   int spawn_status = posix_spawn(&app_pid, APP_PATH, NULL, NULL, spawn_args, environ);
   if (spawn_status == 0) {
     printf("Daemon: Successfully spawned TabManager (PID: %d)\n", app_pid);

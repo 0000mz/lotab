@@ -12,26 +12,30 @@ struct MockAdapter {
   int gui_kill_count = 0;
   int app_quit_count = 0;
 
-  static void log(const char *msg) {
-    if (GlobalMock) GlobalMock->logs.push_back(msg);
+  static void log(const char* msg) {
+    if (GlobalMock)
+      GlobalMock->logs.push_back(msg);
   }
 
-  static void send_uds(const char *data) {
-    if (GlobalMock) GlobalMock->uds_messages.push_back(data);
+  static void send_uds(const char* data) {
+    if (GlobalMock)
+      GlobalMock->uds_messages.push_back(data);
   }
 
   static void kill_gui() {
-    if (GlobalMock) GlobalMock->gui_kill_count++;
+    if (GlobalMock)
+      GlobalMock->gui_kill_count++;
   }
 
   static void quit_app() {
-    if (GlobalMock) GlobalMock->app_quit_count++;
+    if (GlobalMock)
+      GlobalMock->app_quit_count++;
   }
 
-  static MockAdapter *GlobalMock;
+  static MockAdapter* GlobalMock;
 };
 
-MockAdapter *MockAdapter::GlobalMock = nullptr;
+MockAdapter* MockAdapter::GlobalMock = nullptr;
 
 class EngineTest : public ::testing::Test {
  protected:
@@ -74,9 +78,9 @@ TEST_F(EngineTest, MenuQuitTerminatesApp) {
 }
 
 TEST_F(EngineTest, WSMessageForwarded) {
-  const char *msg = "test_message";
+  const char* msg = "test_message";
   engine_set_log_level(LOG_LEVEL_TRACE);  // Enable trace to see logs
-  engine_handle_event(EVENT_WS_MESSAGE_RECEIVED, (void *)msg);
+  engine_handle_event(EVENT_WS_MESSAGE_RECEIVED, (void*)msg);
 
   // Should NOT forward to UDS anymore (user change)
   EXPECT_TRUE(mock.uds_messages.empty());
@@ -84,7 +88,7 @@ TEST_F(EngineTest, WSMessageForwarded) {
   // Should log the raw message
   ASSERT_FALSE(mock.logs.empty());
   bool found_log = false;
-  for (const auto &log : mock.logs) {
+  for (const auto& log : mock.logs) {
     if (log.find("test_message") != std::string::npos) {
       found_log = true;
       break;
@@ -94,18 +98,22 @@ TEST_F(EngineTest, WSMessageForwarded) {
 }
 
 TEST_F(EngineTest, ParseTabActivated) {
-  const char *json = R"json({"event":"tabs.onActivated","data":{}})json";
-  engine_handle_event(EVENT_WS_MESSAGE_RECEIVED, (void *)json);
+  const char* json = R"json({
+      "event": "tabs.onActivated",
+               "data": {}
+    })json";
+  engine_handle_event(EVENT_WS_MESSAGE_RECEIVED, (void*)json);
   ASSERT_FALSE(mock.logs.empty());
   // Should log "WS Message Received" AND "Tab Activated"
   bool found_activation = false;
-  for (const auto &log : mock.logs) {
-    if (log == "Engine: Tab Activated") found_activation = true;
+  for (const auto& log : mock.logs) {
+    if (log == "Engine: Tab Activated")
+      found_activation = true;
   }
   EXPECT_TRUE(found_activation);
 }
 
-int main(int argc, char **argv) {
+int main(int argc, char** argv) {
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();
 }

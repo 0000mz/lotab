@@ -9,8 +9,8 @@ typedef enum { EVENT_APP_STARTED, EVENT_HOTKEY_TOGGLE, EVENT_MENU_QUIT, EVENT_WS
 
 // Interface for platform-specific operations
 typedef struct {
-  void (*log)(const char *msg);
-  void (*send_uds)(const char *data);
+  void (*log)(const char* msg);
+  void (*send_uds)(const char* data);
   void (*spawn_gui)(void);
   void (*kill_gui)(void);
   void (*quit_app)(void);
@@ -29,19 +29,19 @@ typedef enum {
 typedef enum { LOG_LEVEL_INFO = 0, LOG_LEVEL_TRACE = 1 } LogLevel;
 
 // Initialize the engine with the platform adapter
-void engine_init(PlatformAdapter *adapter);
+void engine_init(PlatformAdapter* adapter);
 
 // Set the log level
 void engine_set_log_level(LogLevel level);
 
 // Log a message with the specified level
-void vlog(LogLevel level, const char *fmt, ...);
+void vlog(LogLevel level, const char* fmt, ...);
 
 // Handle an incoming event
-void engine_handle_event(DaemonEvent event, void *data);
+void engine_handle_event(DaemonEvent event, void* data);
 
 // Handle a parsed tab event
-void engine_handle_tab_event(TabEventType type, const char *json_data);
+void engine_handle_tab_event(TabEventType type, const char* json_data);
 
 #ifdef __cplusplus
 }

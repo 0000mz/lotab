@@ -1,4 +1,4 @@
-BasedOnStyle: Google
+BasedOnStyle: Chromium
 IndentWidth: 2
 ColumnLimit: 120
 AllowShortFunctionsOnASingleLine: None
