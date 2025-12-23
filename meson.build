@@ -19,8 +19,7 @@ app_src = [
 
 daemon_src = [
   'daemon/main.c',
-  'daemon/statusbar.m',
-  'daemon/engine.c'
+  'daemon/statusbar.m'
 ]
 
 daemon_deps = [lws_dep, cjson_dep, carbon_dep, cocoa_dep, argparse_dep]
@@ -41,7 +40,18 @@ conf_data.set_quoted('APP_PATH', app_target.full_path())
 configure_file(output : 'config.h',
                configuration : conf_data)
 
-executable('daemon', daemon_src, dependencies : daemon_deps, install : true)
+engine_lib = static_library('daemon_engine',
+    'daemon/engine.c',
+    dependencies : [lws_dep, cjson_dep],
+    install : false)
+
+engine_dep = declare_dependency(
+  link_with : engine_lib,
+  include_directories : include_directories('daemon'),
+  dependencies : [lws_dep, cjson_dep]
+)
+
+executable('daemon', daemon_src, dependencies : [daemon_deps, engine_dep], install : true)
 
 # --- Sanitizer Variants ---
 sanitizers = {
@@ -65,7 +75,7 @@ foreach s, suffix : sanitizers
   configure_file(output : conf_var_output,
                  configuration : conf_var_data)
 
-  executable('daemon' + suffix, daemon_src,
+  executable('daemon' + suffix, daemon_src + ['daemon/engine.c'],
              dependencies : daemon_deps,
              c_args : ['-DSANITIZER_CONFIG_H="' + conf_var_output + '"'],
              override_options : ['b_sanitize=' + s],
@@ -76,9 +86,8 @@ endforeach
 gtest_dep = dependency('gtest', main : true, required : false)
 if gtest_dep.found()
   e_test = executable('engine_test',
-                      ['tests/engine_test.cpp', 'daemon/engine.c'],
-                      dependencies : [gtest_dep, cjson_dep],
-                      include_directories : include_directories('daemon'))
+                      ['tests/engine_test.cpp'],
+                      dependencies : [gtest_dep, engine_dep])
   test('engine_test', e_test)
 else
   message('gtest not found, skipping unit tests')
