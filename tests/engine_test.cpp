@@ -81,6 +81,19 @@ TEST_F(EngineTest, WSMessageForwarded) {
   EXPECT_EQ(mock.uds_messages.back(), "test_message");
 }
 
+TEST_F(EngineTest, ParseTabActivated) {
+  const char *json = R"json({"event":"tabs.onActivated","data":{}})json";
+  engine_handle_event(EVENT_WS_MESSAGE_RECEIVED, (void *)json);
+  ASSERT_FALSE(mock.logs.empty());
+  // Should log "WS Message Received" AND "Tab Activated"
+  bool found_activation = false;
+  for (const auto &log : mock.logs) {
+    if (log == "Engine: Tab Activated")
+      found_activation = true;
+  }
+  EXPECT_TRUE(found_activation);
+}
+
 int main(int argc, char **argv) {
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();

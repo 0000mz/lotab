@@ -8,6 +8,7 @@
 - daemon: Combine the sanitizer header into the config.h.
 - GUI testing with AppleScript.
 - Make daemon engine unit-testable.
+- Separate the daemon engine from the OS interactions to make unit-testable.
 
 2025-Dec-21:
 - Initialize project
@@ -23,4 +24,6 @@ TODO:
 - Restrict triggering of global keybind to only browser sessions.
 - Use case 1: creation of new task
   - Sketch out workflow of creating a new task and assigning tabs to each task.
-- Separate the daemon engine from the OS interactions to make unit-testable.
+- When the GUI is escaped, return focus to last focused application before the interruption.
+- Setup clang format and use raw-string-literal decoration support.
+- Add loglevel to daemon to reduce spam of weboscket messages.

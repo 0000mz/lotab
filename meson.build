@@ -3,6 +3,7 @@ project('tab_manager', 'c', 'cpp', 'swift', 'objc',
   default_options : ['warning_level=3', 'cpp_std=c++17'])
 
 lws_dep = dependency('libwebsockets')
+cjson_dep = dependency('libcjson')
 carbon_dep = dependency('appleframeworks', modules : 'Carbon')
 cocoa_dep = dependency('appleframeworks', modules : 'Cocoa')
 
@@ -15,6 +16,7 @@ app_src = [
   'app/ContentView.swift'
 ]
 daemon_src = ['daemon/main.c', 'daemon/statusbar.m', 'daemon/engine.c']
+daemon_deps = [lws_dep, cjson_dep, carbon_dep, cocoa_dep]
 
 info_plist_path = meson.current_source_dir() / 'app/Info.plist'
 tab_manager_linker_args = ['-Xlinker', '-sectcreate', '-Xlinker', '__TEXT', '-Xlinker', '__info_plist', '-Xlinker', info_plist_path]
@@ -32,9 +34,7 @@ conf_data.set_quoted('APP_PATH', app_target.full_path())
 configure_file(output : 'config.h',
                configuration : conf_data)
 
-executable('daemon', daemon_src,
-           dependencies : [lws_dep, carbon_dep, cocoa_dep],
-           install : true)
+executable('daemon', daemon_src, dependencies : daemon_deps, install : true)
 
 # --- Sanitizer Variants ---
 sanitizers = {
@@ -59,7 +59,7 @@ foreach s, suffix : sanitizers
                  configuration : conf_var_data)
 
   executable('daemon' + suffix, daemon_src,
-             dependencies : [lws_dep, carbon_dep, cocoa_dep],
+             dependencies : daemon_deps,
              c_args : ['-DSANITIZER_CONFIG_H="' + conf_var_output + '"'],
              override_options : ['b_sanitize=' + s],
              install : true)
@@ -70,7 +70,7 @@ gtest_dep = dependency('gtest', main : true, required : false)
 if gtest_dep.found()
   e_test = executable('engine_test',
                       ['tests/engine_test.cpp', 'daemon/engine.c'],
-                      dependencies : [gtest_dep],
+                      dependencies : [gtest_dep, cjson_dep],
                       include_directories : include_directories('daemon'))
   test('engine_test', e_test)
 else

@@ -1,0 +1,7 @@
+[wrap-git]
+url = https://github.com/DaveGamble/cJSON.git
+revision = head
+depth = 1
+
+[provide]
+cjson = libcjson_dep

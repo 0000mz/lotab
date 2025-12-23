@@ -21,11 +21,23 @@ typedef struct {
   void (*quit_app)(void);
 } PlatformAdapter;
 
+// Tab-specific events
+typedef enum {
+  TAB_EVENT_ACTIVATED,
+  TAB_EVENT_UPDATED,
+  TAB_EVENT_HIGHLIGHTED,
+  TAB_EVENT_ZOOM_CHANGE,
+  TAB_EVENT_UNKNOWN
+} TabEventType;
+
 // Initialize the engine with the platform adapter
 void engine_init(PlatformAdapter *adapter);
 
 // Handle an incoming event
 void engine_handle_event(DaemonEvent event, void *data);
+
+// Handle a parsed tab event
+void engine_handle_tab_event(TabEventType type, const char *json_data);
 
 #ifdef __cplusplus
 }
