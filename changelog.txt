@@ -7,6 +7,7 @@
 - Have the daemon show its active at the top-right of the MacOS.
 - daemon: Combine the sanitizer header into the config.h.
 - GUI testing with AppleScript.
+- Make daemon engine unit-testable.
 
 2025-Dec-21:
 - Initialize project

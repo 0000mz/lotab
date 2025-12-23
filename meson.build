@@ -1,6 +1,6 @@
-project('tab_manager', 'c', 'swift', 'objc',
+project('tab_manager', 'c', 'cpp', 'swift', 'objc',
   version : '0.1',
-  default_options : ['warning_level=3'])
+  default_options : ['warning_level=3', 'cpp_std=c++17'])
 
 lws_dep = dependency('libwebsockets')
 carbon_dep = dependency('appleframeworks', modules : 'Carbon')
@@ -14,7 +14,7 @@ app_src = [
   'app/TabManagerApp.swift',
   'app/ContentView.swift'
 ]
-daemon_src = ['daemon/main.c', 'daemon/statusbar.m']
+daemon_src = ['daemon/main.c', 'daemon/statusbar.m', 'daemon/engine.c']
 
 info_plist_path = meson.current_source_dir() / 'app/Info.plist'
 tab_manager_linker_args = ['-Xlinker', '-sectcreate', '-Xlinker', '__TEXT', '-Xlinker', '__info_plist', '-Xlinker', info_plist_path]
@@ -64,6 +64,18 @@ foreach s, suffix : sanitizers
              override_options : ['b_sanitize=' + s],
              install : true)
 endforeach
+
+# --- Unit Tests ---
+gtest_dep = dependency('gtest', main : true, required : false)
+if gtest_dep.found()
+  e_test = executable('engine_test',
+                      ['tests/engine_test.cpp', 'daemon/engine.c'],
+                      dependencies : [gtest_dep],
+                      include_directories : include_directories('daemon'))
+  test('engine_test', e_test)
+else
+  message('gtest not found, skipping unit tests')
+endif
 
 # --- Tests ---
 uv_prog = find_program('uv', required : false)

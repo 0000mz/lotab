@@ -1,4 +1,5 @@
 #include "config.h"
+#include "engine.h"
 #include "statusbar.h"
 #include <errno.h>
 #include <libwebsockets.h>
@@ -6,6 +7,7 @@
 #include <signal.h>
 #include <spawn.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
 #include <sys/un.h>
@@ -19,10 +21,94 @@ static int uds_fd = -1;
 static const char *uds_path = "/tmp/tabmanager.sock";
 static struct lws_context *lws_ctx = NULL;
 static pid_t app_pid = -1; // Global PID for spawned app
-
-// Forward declaration
-
 static pthread_t ws_thread;
+
+// --- Adapter Implementations ---
+
+static void adapter_log(const char *msg) { printf("Daemon: %s\n", msg); }
+
+static void adapter_send_uds(const char *data) {
+  if (uds_fd >= 0) {
+    if (send(uds_fd, data, strlen(data), 0) < 0) {
+      fprintf(stderr, "Daemon: Failed to send data to App via UDS: %s\n",
+              strerror(errno));
+    } else {
+      // lwsl_user is acceptable here too if we want LWS logs, but standard
+      // printf matches previous behavior better for adapter actually previous
+      // code used lwsl_user in callback_minimal, but printf in toggle. Let's
+      // stick to simple printf for the adapter log or lwsl_user if context
+      // exists? "adapter_log" above uses printf. For UDS send success, previous
+      // code logged "Daemon: Forwarded message..."
+      printf("Daemon: Sent UDS message: %s\n", data); // Simplified log
+    }
+  } else {
+    printf("Daemon: Warning - Cannot send UDS, not connected.\n");
+  }
+}
+
+static void adapter_spawn_gui(void) {
+  // Currently spawn is done in main() init, not requested by engine yet.
+  // If engine asks for it, we could move logic here.
+  // For now, no-op or implementation if we move logic.
+}
+
+static void adapter_kill_gui(void) {
+  if (app_pid > 0) {
+    printf("Daemon: Terminating child process %d...\n", app_pid);
+    if (kill(app_pid, SIGTERM) == 0) {
+      int status;
+      waitpid(app_pid, &status, 0);
+      printf("Daemon: Child process terminated.\n");
+    } else {
+      perror("Daemon: Failed to kill child process");
+    }
+    app_pid = -1;
+  }
+}
+
+static void adapter_quit_app(void) {
+  // Stop LWS loop
+  if (lws_ctx) {
+    lws_cancel_service(lws_ctx);
+  }
+  interrupted = 1;
+
+  // We can't easily join ws_thread if we are called FROM ws_thread.
+  // engine_handle_event might be called from WS callback.
+  // So we just set interrupted = 1 and cancel service. main() loop will handle
+  // cleanup. But if we are called from Menu (main thread), we might want to
+  // exit main loop.
+
+  // The Cocoa app run loop is blocking main(). We need to stop it.
+  stop_daemon_cocoa_app();
+}
+
+static void cleanup_and_exit(void) {
+  if (!interrupted) {
+    interrupted = 1;
+  }
+
+  // Stop LWS loop
+  if (lws_ctx) {
+    lws_cancel_service(lws_ctx);
+  }
+
+  // Join LWS thread
+  if (ws_thread) {
+    pthread_join(ws_thread, NULL);
+    ws_thread = NULL;
+  }
+
+  if (uds_fd >= 0) {
+    close(uds_fd);
+    uds_fd = -1;
+  }
+
+  // Helper to kill GUI directly if not done by engine
+  adapter_kill_gui();
+
+  printf("Daemon: Cleanup complete.\n");
+}
 
 // --- WebSocket Callbacks ---
 
@@ -37,21 +123,19 @@ static int callback_minimal(struct lws *wsi, enum lws_callback_reasons reason,
     lwsl_user("LWS_CALLBACK_CLOSED (connection lost)\n");
     break;
   case LWS_CALLBACK_RECEIVE:
-    lwsl_user("LWS_CALLBACK_RECEIVE (%lu bytes): %s\n", (unsigned long)len,
-              (const char *)in);
-
-    if (uds_fd >= 0) {
-      if (send(uds_fd, in, len, 0) < 0) {
-        lwsl_err("Daemon: Failed to send data to App via UDS: %s\n",
-                 strerror(errno));
-      } else {
-        lwsl_user("Daemon: Forwarded message to App via UDS\n");
+    // Ensure null termination for engine string handling if needed,
+    // though 'in' is not guaranteed null terminated by LWS, usually text.
+    // We'll trust source is text or handle it carefully.
+    // wrapper for safety:
+    {
+      char *msg = malloc(len + 1);
+      if (msg) {
+        memcpy(msg, in, len);
+        msg[len] = '\0';
+        engine_handle_event(EVENT_WS_MESSAGE_RECEIVED, msg);
+        free(msg);
       }
     }
-
-    // Echo back for testing
-    // lws_write(wsi, in, len, LWS_WRITE_TEXT);
-    // Commented out echo to avoid confusion/loops, enable if needed for tests
     break;
   default:
     break;
@@ -66,66 +150,10 @@ static struct lws_protocols protocols[] = {{.name = "minimal",
                                             .rx_buffer_size = 0},
                                            LWS_PROTOCOL_LIST_TERM};
 
-static void cleanup_and_exit(void) {
-  if (!interrupted) {
-    interrupted = 1;
-  }
-
-  // Stop LWS loop
-  if (lws_ctx) {
-    lws_cancel_service(lws_ctx);
-  }
-
-  // Join LWS thread
-  // Note: We check if we are NOT the ws_thread to avoid deadlock if called from
-  // within it (unlikely here)
-  if (ws_thread) {
-    pthread_join(ws_thread, NULL);
-    ws_thread = NULL;
-  }
-
-  if (uds_fd >= 0) {
-    close(uds_fd);
-    uds_fd = -1;
-  }
-
-  // Terminate spawned app if running
-  if (app_pid > 0) {
-    printf("Daemon: Terminating child process %d...\n", app_pid);
-    if (kill(app_pid, SIGTERM) == 0) {
-      // Wait for it to exit to avoid zombie?
-      // waitpid(app_pid, NULL, WNOHANG);
-      // Since we are exiting, init will eventually reap, but waitpid is better
-      // if we have time.
-      int status;
-      waitpid(app_pid, &status, 0);
-      printf("Daemon: Child process terminated.\n");
-    } else {
-      perror("Daemon: Failed to kill child process");
-    }
-    app_pid = -1;
-  }
-
-  printf("Daemon: Cleanup complete.\n");
-}
-
 void sigint_handler(int sig) {
   (void)sig;
   printf("Daemon: Caught SIGINT\n");
-  interrupted = 1;
-  // We cannot easily join thread in signal handler, so we just set flag and let
-  // lws close? Or we rely on main() falling through if possible. However, since
-  // main() is blocked in [App run], SIGINT might need to kill the app or let
-  // Cocoa handle it. Ideally Cocoa apps don't use SIGINT handler this way, but
-  // for a daemon it's okay. We'll trust the OS to cleanup on immediate exit if
-  // we can't join.
-  if (lws_ctx) {
-    lws_cancel_service(lws_ctx);
-  }
-  // Allow Cocoa runloop to unblock if possible, or force exit/cleanup call from
-  // here if main loop ignores interrupt. Actually, run_daemon_cocoa_app blocks.
-  // We should signal it to stop.
-  stop_daemon_cocoa_app();
+  adapter_quit_app();
 }
 
 static void init_uds_client(void) {
@@ -145,7 +173,8 @@ static void init_uds_client(void) {
 
     if (connect(uds_fd, (struct sockaddr *)&addr, sizeof(addr)) == 0) {
       printf("Daemon: Connected to App UDS at %s\n", uds_path);
-      // Send startup ping
+      // Send startup ping - maybe engine should do this on EVENT_APP_STARTED?
+      // For now, keep it here or send EVENT_APP_STARTED.
       const char *ping = "{\"event\":\"daemon_startup\",\"data\":\"ping\"}";
       send(uds_fd, ping, strlen(ping), 0);
       return;
@@ -162,7 +191,6 @@ static void init_uds_client(void) {
           "Daemon: Failed to connect to App UDS after multiple attempts\n");
 }
 
-// Thread function to run the LWS service
 static void *lws_thread_func(void *arg) {
   (void)arg;
   struct lws_context_creation_info info;
@@ -190,34 +218,18 @@ static void *lws_thread_func(void *arg) {
   lws_context_destroy(lws_ctx);
   lws_ctx = NULL;
 
-  // Signal the Cocoa app to stop, in case we are exiting due to SIGINT or error
-  // in LWS
+  // Ensure app quits if thread exits
   stop_daemon_cocoa_app();
 
   return NULL;
 }
 
-// Callback implementation
-static void send_toggle_event(void) {
-  if (uds_fd >= 0) {
-    const char *msg =
-        "{\"event\":\"ui_visibility_toggle\",\"data\":\"toggle\"}";
-    send(uds_fd, msg, strlen(msg), 0);
-    printf("Daemon: Sent toggle command to App\n");
-  } else {
-    printf("Daemon: Warning - Cannot Toggle, UDS not connected.\n");
-  }
-}
-
+// GUI Callbacks
 static void on_status_toggle(void) {
-  printf("Daemon: Toggle Requested via Hotkey\n");
-  send_toggle_event();
+  engine_handle_event(EVENT_HOTKEY_TOGGLE, NULL);
 }
 
-static void on_status_quit(void) {
-  printf("Daemon: Quit Requested via Menu\n");
-  cleanup_and_exit();
-}
+static void on_status_quit(void) { engine_handle_event(EVENT_MENU_QUIT, NULL); }
 
 int main(void) {
   signal(SIGINT, sigint_handler);
@@ -226,6 +238,14 @@ int main(void) {
   fprintf(stderr, "Error: APP_PATH is not defined. Daemon cannot continue.\n");
   return 1;
 #endif
+
+  // Init Engine
+  PlatformAdapter adapter = {.log = adapter_log,
+                             .send_uds = adapter_send_uds,
+                             .spawn_gui = adapter_spawn_gui,
+                             .kill_gui = adapter_kill_gui,
+                             .quit_app = adapter_quit_app};
+  engine_init(&adapter);
 
   printf("Daemon: Global App Path: %s\n", APP_PATH);
 
@@ -236,27 +256,22 @@ int main(void) {
     printf("Daemon: Successfully spawned TabManager (PID: %d)\n", app_pid);
     sleep(1);
     init_uds_client();
+    engine_handle_event(EVENT_APP_STARTED, NULL);
   } else {
     fprintf(stderr, "Daemon: Failed to spawn TabManager: %s\n",
             strerror(spawn_status));
-    init_uds_client();
+    init_uds_client(); // Try to connect anyway?
   }
 
-  // Start LWS in background thread
   if (pthread_create(&ws_thread, NULL, lws_thread_func, NULL) != 0) {
     fprintf(stderr, "Failed to start WebSocket thread\n");
     return 1;
   }
 
-  // Run Cocoa App (Main Thread)
-  // This blocks until termination
   printf("Daemon: Starting Cocoa Event Loop\n");
   run_daemon_cocoa_app(on_status_toggle, on_status_quit);
 
-  printf("Daemon: Exiting (Normally shouldn't reach here if terminated via "
-         "Menu)\n");
-
-  // Just in case we fall through (e.g. invalid Quit logic in future)
+  printf("Daemon: Exiting\n");
   cleanup_and_exit();
 
   return 0;
