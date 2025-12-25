@@ -72,7 +72,7 @@ static int setup_uds_client(ServerContext* sctx) {
 
     if (connect(uds_fd, (struct sockaddr*)&addr, sizeof(addr)) == 0) {
       vlog(LOG_LEVEL_INFO, "Daemon: Connected to App UDS at %s\n", uds_path);
-      const char* ping = "{\"event\":\"daemon_startup\",\"data\":\"ping\"}";
+      const char* ping = "{\"event\":\"daemon_startup\",\"data\":\"ping\"}\n";
       send(uds_fd, ping, strlen(ping), 0);
       sctx->uds_fd = uds_fd;
       return 0;
@@ -90,11 +90,23 @@ static int setup_uds_client(ServerContext* sctx) {
 
 static void send_uds(const int uds_fd, const cJSON* json_data) {
   if (uds_fd >= 0) {
-    char* data = cJSON_Print(json_data);
-    if (send(uds_fd, data, strlen(data), 0) < 0) {
-      vlog(LOG_LEVEL_ERROR, "Daemon: Failed to send data to App via UDS: %s\n", strerror(errno));
-    } else {
-      vlog(LOG_LEVEL_INFO, "Daemon: Sent UDS message: %s\n", data);  // Simplified log
+    char* json_str = cJSON_PrintUnformatted(json_data);
+    if (json_str) {
+      size_t len = strlen(json_str);
+      char* msg = malloc(len + 2);  // +1 for \n, +1 for \0
+      if (msg) {
+        strcpy(msg, json_str);
+        msg[len] = '\n';
+        msg[len + 1] = '\0';
+
+        if (send(uds_fd, msg, len + 1, 0) < 0) {
+          vlog(LOG_LEVEL_ERROR, "Daemon: Failed to send data to App via UDS: %s\n", strerror(errno));
+        } else {
+          vlog(LOG_LEVEL_INFO, "Daemon: Sent UDS message: %s\n", json_str);
+        }
+        free(msg);
+      }
+      free(json_str);
     }
   } else {
     vlog(LOG_LEVEL_WARN, "Daemon: Warning - Cannot send UDS, not connected.\n");
@@ -655,14 +667,40 @@ void engine_handle_event(EngineContext* ectx, DaemonEvent event, void* data) {
   assert(ectx != NULL);
 
   switch (event) {
-    case EVENT_HOTKEY_TOGGLE:
+    case EVENT_HOTKEY_TOGGLE: {
       vlog(LOG_LEVEL_INFO, "Engine: Toggle Requested\n");
-      cJSON* message = cJSON_CreateObject();
-      cJSON_AddStringToObject(message, "event", "ui_visibility_toggle");
-      cJSON_AddStringToObject(message, "data", "toggle");
-      send_uds(ectx->serv_ctx->uds_fd, message);
-      cJSON_Delete(message);
-      break;
+
+      // 1. Send Tab Update
+      cJSON* tab_update_msg = cJSON_CreateObject();
+      cJSON_AddStringToObject(tab_update_msg, "event", "tabs_update");
+
+      cJSON* event_data = cJSON_CreateObject();
+      cJSON_AddItemToObject(tab_update_msg, "data", event_data);
+
+      cJSON* tabs_array = cJSON_CreateArray();
+      cJSON_AddItemToObject(event_data, "tabs", tabs_array);
+
+      if (ectx->tab_state) {
+        TabInfo* current = ectx->tab_state->tabs;
+        while (current) {
+          cJSON* tab_obj = cJSON_CreateObject();
+          cJSON_AddNumberToObject(tab_obj, "id", (double)current->id);
+          cJSON_AddStringToObject(tab_obj, "title", current->title ? current->title : "Unknown");
+          cJSON_AddBoolToObject(tab_obj, "active", current->active);
+          cJSON_AddItemToArray(tabs_array, tab_obj);
+          current = current->next;
+        }
+      }
+      send_uds(ectx->serv_ctx->uds_fd, tab_update_msg);
+      cJSON_Delete(tab_update_msg);
+
+      // 2. Send Toggle
+      cJSON* toggle_msg = cJSON_CreateObject();
+      cJSON_AddStringToObject(toggle_msg, "event", "ui_visibility_toggle");
+      cJSON_AddStringToObject(toggle_msg, "data", "toggle");
+      send_uds(ectx->serv_ctx->uds_fd, toggle_msg);
+      cJSON_Delete(toggle_msg);
+    } break;
 
     case EVENT_WS_MESSAGE_RECEIVED:
       if (data) {

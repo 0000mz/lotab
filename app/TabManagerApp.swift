@@ -135,6 +135,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private func handleClient(_ clientSocket: Int32) {
         let bufferSize = 4096
         let buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: bufferSize)
+        var accumulator = Data()
+
         defer {
             buffer.deallocate()
             close(clientSocket)
@@ -144,14 +146,31 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             let bytesRead = read(clientSocket, buffer, bufferSize)
             if bytesRead > 0 {
                 let data = Data(bytes: buffer, count: bytesRead)
-                if let message = String(data: data, encoding: .utf8) {
-                    print("App: Received UDS message: \(message)")
-                    if message.contains("ui_visibility_toggle") {
-                        showUI()
+                accumulator.append(data)
+
+                while let range = accumulator.range(of: Data([0x0A])) { // Newline \n
+                    let messageData = accumulator.subdata(in: 0..<range.lowerBound)
+                    accumulator.removeSubrange(0..<range.upperBound)
+
+                    if let message = String(data: messageData, encoding: .utf8) {
+                        print("App: Received UDS message: \(message)")
+                        if message.contains("tabs_update") {
+                            // Decode tabs
+                            if let jsonData = message.data(using: .utf8) {
+                                do {
+                                    let payload = try JSONDecoder().decode(TabListPayload.self, from: jsonData)
+                                    print("App: Successfully decoded \(payload.data.tabs.count) tabs")
+                                    DispatchQueue.main.async {
+                                        TabManager.shared.tabs = payload.data.tabs
+                                    }
+                                } catch {
+                                    print("App: JSON Decoding Error for tabs_update: \(error)")
+                                }
+                            }
+                        } else if message.contains("ui_visibility_toggle") {
+                            showUI()
+                        }
                     }
-                    // Verification log
-                    let logMsg = "[\(Date())] UDS Data: \(message)\n"
-                    try? logMsg.appendLineTo(path: "/tmp/tabmanager_uds.log")
                 }
             } else if bytesRead == 0 {
                 print("App: UDS connection closed by peer")
@@ -162,6 +181,24 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
     }
+}
+
+struct Tab: Identifiable, Decodable, Hashable {
+    let id: Int
+    let title: String
+    let active: Bool
+}
+
+struct TabListPayload: Decodable {
+    struct Data: Decodable {
+        let tabs: [Tab]
+    }
+    let data: Data
+}
+
+class TabManager: ObservableObject {
+    static let shared = TabManager()
+    @Published var tabs: [Tab] = []
 }
 
 extension String {
@@ -183,7 +220,7 @@ struct TabManagerApp: App {
 
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            ContentView(tabManager: TabManager.shared)
         }
     }
 }
