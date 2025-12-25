@@ -1,3 +1,6 @@
+2025-Dec-25:
+- When the GUI is escaped, return focus to last focused application before the interruption.
+
 2025-Dec-22:
 - Hide the GUI until the keybind is triggered.
 - Do not make the icon show up in the MacOS taskbar when the GUI is shown.
@@ -28,7 +31,6 @@ TODO:
 - Restrict triggering of global keybind to only browser sessions.
 - Use case 1: creation of new task
   - Sketch out workflow of creating a new task and assigning tabs to each task.
-- When the GUI is escaped, return focus to last focused application before the interruption.
 - Use nullability annotation and in/out annotation for C function parameters.
 - Find another way of writing unit tests for the daemon's engine after the refactor.
 - Use C attributes to annotate sync objects.

@@ -66,9 +66,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private func hideUI() {
         print("App: Hiding UI")
         DispatchQueue.main.async {
-            if let window = NSApp.windows.first {
-                window.orderOut(nil)
-            }
+            NSApp.hide(nil)
         }
     }
 
