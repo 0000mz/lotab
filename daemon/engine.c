@@ -243,6 +243,7 @@ int engine_init(EngineContext** ectx) {
   memset(sc, 0, sizeof(ServerContext));
   lws_set_log_level(LLL_USER | LLL_ERR | LLL_WARN | LLL_NOTICE, NULL);
 
+  ec->serv_ctx = sc;
   memset(&info, 0, sizeof info);
   info.port = 9001;
   info.protocols = protocols;
@@ -281,7 +282,6 @@ int engine_init(EngineContext** ectx) {
   }
   vlog(LOG_LEVEL_INFO, "Engine initialized.\n");
 
-  ec->serv_ctx = sc;
   *ectx = ec;
   return 0;
 
