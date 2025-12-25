@@ -4,7 +4,6 @@
 
 class EngineTest : public ::testing::Test {
  protected:
-  PlatformAdapter adapter;
 };
 
 int main(int argc, char** argv) {

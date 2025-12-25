@@ -7,11 +7,6 @@ extern "C" {
 // Events that can trigger engine actions
 typedef enum { EVENT_HOTKEY_TOGGLE, EVENT_WS_MESSAGE_RECEIVED } DaemonEvent;
 
-// Interface for platform-specific operations
-typedef struct {
-  void (*quit_cb)(void);
-} PlatformAdapter;
-
 // Tab-specific events
 typedef enum {
   TAB_EVENT_ACTIVATED,
@@ -28,7 +23,6 @@ struct StatusBarRunContext;
 typedef struct EngineContext {
   struct ServerContext* serv_ctx;
   struct StatusBarRunContext* run_ctx;
-  PlatformAdapter* adapter;
   int app_pid;  // TODO: internalize this
   int destroyed;
 } EngineContext;
@@ -37,7 +31,7 @@ typedef struct EngineContext {
 // @param ectx (out) - Will be allocated if engine initialization is successful.
 //
 // @returns 1 on success and negative value on error.
-int engine_init(EngineContext** ectx, PlatformAdapter* adapter);
+int engine_init(EngineContext** ectx);
 void engine_run(EngineContext* ectx);
 void engine_destroy(EngineContext* ectx);
 void engine_set_log_level(LogLevel level);

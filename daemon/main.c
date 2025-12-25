@@ -16,14 +16,9 @@
 EngineContext* ectx = NULL;
 
 // --- Adapter Implementations ---
-static void adapter_quit_app(void) {
-  // stop_daemon_cocoa_app();
-}
-
 void sigint_handler(int sig) {
   (void)sig;
   printf("Daemon: Caught SIGINT\n");
-  adapter_quit_app();
 }
 
 int main(int argc, const char** argv) {
@@ -55,8 +50,7 @@ int main(int argc, const char** argv) {
   engine_set_log_level(loglevel);
 
   // Init Engine
-  PlatformAdapter adapter = {.quit_cb = adapter_quit_app};
-  engine_init(&ectx, &adapter);
+  engine_init(&ectx);
   engine_run(ectx);
   printf("Daemon: Exiting\n");
   if (ectx != NULL) {

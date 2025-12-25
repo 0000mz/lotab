@@ -145,7 +145,7 @@ static void* ws_thread_run(void* arg) {
   return NULL;
 }
 
-int engine_init(EngineContext** ectx, PlatformAdapter* adapter) {
+int engine_init(EngineContext** ectx) {
   assert(ectx != NULL);
   assert(*ectx == NULL);
 
@@ -162,7 +162,6 @@ int engine_init(EngineContext** ectx, PlatformAdapter* adapter) {
   }
   memset(ec, 0, sizeof(EngineContext));
   ec->app_pid = -1;
-  ec->adapter = adapter;
 
   // Setup websocket server
   vlog(LOG_LEVEL_INFO, "Setting up websocket server.\n");
@@ -275,8 +274,6 @@ void engine_destroy(EngineContext* ectx) {
     free(ectx->serv_ctx);
     ectx->serv_ctx = NULL;
   }
-  if (ectx->adapter && ectx->adapter->quit_cb)
-    ectx->adapter->quit_cb();
   if (ectx->run_ctx) {
     free(ectx->run_ctx);
     ectx->run_ctx = NULL;
