@@ -12,6 +12,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+#include <sys/_types/_va_list.h>
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <sys/wait.h>
@@ -40,6 +41,15 @@ typedef struct PerSessionData {
   char* msg;
   size_t len;
 } PerSessionData;
+
+struct TabInfo {
+  uint64_t id;
+  char* title;
+};
+typedef struct TabState {
+  int nb_tabs;
+  struct TabInfo tabs[1024];
+} TabState;
 
 static int setup_uds_client(ServerContext* sctx) {
   int retries = 5;
@@ -231,6 +241,8 @@ int engine_init(EngineContext** ectx) {
   }
   memset(ec, 0, sizeof(EngineContext));
   ec->app_pid = -1;
+  ec->tab_state = malloc(sizeof(struct TabState));
+  memset(ec->tab_state, 0, sizeof(struct TabState));
 
   // Setup websocket server
   vlog(LOG_LEVEL_INFO, "Setting up websocket server.\n");
@@ -281,7 +293,6 @@ int engine_init(EngineContext** ectx) {
     goto fail;
   }
   vlog(LOG_LEVEL_INFO, "Engine initialized.\n");
-
   *ectx = ec;
   return 0;
 
@@ -295,6 +306,9 @@ fail:
   }
   if (sc) {
     free(sc);
+  }
+  if (ec->tab_state) {
+    free(ec->tab_state);
   }
   if (ec) {
     free(ec);
@@ -346,6 +360,10 @@ void engine_destroy(EngineContext* ectx) {
   if (ectx->run_ctx) {
     free(ectx->run_ctx);
     ectx->run_ctx = NULL;
+  }
+  if (ectx->tab_state) {
+    free(ectx->tab_state);
+    ectx->tab_state = NULL;
   }
   ectx->destroyed = 1;
 }
@@ -405,36 +423,64 @@ static TabEventType parse_event_type(cJSON* json) {
   return type;
 }
 
-void tab_event__handle_all_tabs(cJSON* json_data) {
-  struct TabInfo {
-    const char* title;
-    uint64_t id;
-  } tab_info[256];
+struct TabInfo* tab_state_find_tab(TabState* ts, const uint64_t id) {
+  assert(ts);
+  for (int i = 0; i < ts->nb_tabs; ++i) {
+    if (ts->tabs[i].id == id)
+      return ts->tabs + i;
+  }
+  return NULL;
+}
 
+void tab_state_update_tab(TabState* ts, const char* title, const uint64_t id) {
+  struct TabInfo* ti = tab_state_find_tab(ts, id);
+  if (strcmp(title, ti->title) != 0) {
+    free(ti->title);
+    ti->title = strdup(title);
+  }
+}
+
+void tab_state_add_tab(TabState* ts, const char* title, const uint64_t id) {
+  struct TabInfo* ti = &ts->tabs[ts->nb_tabs++];
+  ti->title = strdup(title);
+  ti->id = id;
+}
+
+void tab_event__handle_all_tabs(TabState* ts, cJSON* json_data) {
   vlog(LOG_LEVEL_INFO, "TODO handle all-tabs evt.\n");
   cJSON* data = cJSON_GetObjectItem(json_data, "data");
   if (data && cJSON_IsArray(data)) {
     int count = cJSON_GetArraySize(data);
     vlog(LOG_LEVEL_INFO, "Received %d tabs\n", count);
+    int tabs_added = 0, tabs_updated = 0;
 
     for (int i = 0; i < count && i < 256; i++) {
       cJSON* item = cJSON_GetArrayItem(data, i);
       cJSON* title_json = cJSON_GetObjectItemCaseSensitive(item, "title");
       cJSON* id_json = cJSON_GetObjectItemCaseSensitive(item, "id");
 
+      char* tab_title = NULL;
+      uint64_t tab_id = 0;
+
       if (cJSON_IsString(title_json) && (title_json->valuestring != NULL)) {
-        tab_info[i].title = title_json->valuestring;
-      } else {
-        tab_info[i].title = "Unknown";
+        tab_title = title_json->valuestring;
+      }
+      if (cJSON_IsNumber(id_json)) {
+        tab_id = (uint64_t)id_json->valuedouble;
+      }
+      if (!tab_title || !tab_id) {
+        vlog(LOG_LEVEL_TRACE, "Unknown tab found: id=%d\n", tab_id);
       }
 
-      if (cJSON_IsNumber(id_json)) {
-        tab_info[i].id = (uint64_t)id_json->valuedouble;
+      if (tab_state_find_tab(ts, tab_id) != NULL) {
+        tab_state_update_tab(ts, tab_title, tab_id);
+        ++tabs_updated;
       } else {
-        tab_info[i].id = 0;
+        tab_state_add_tab(ts, tab_title, tab_id);
+        ++tabs_added;
       }
-      vlog(LOG_LEVEL_INFO, "Tab[%d]: ID=%llu, Title=%s\n", i, tab_info[i].id, tab_info[i].title);
     }
+    vlog(LOG_LEVEL_INFO, "tabs_updated=%d, tabs_added=%d\n", tabs_updated, tabs_added);
   } else {
     vlog(LOG_LEVEL_WARN, "onAllTabs: 'data' key missing or not an array.\n");
   }
@@ -442,17 +488,17 @@ void tab_event__handle_all_tabs(cJSON* json_data) {
 
 static struct {
   TabEventType type;
-  void (*event_handler)(cJSON* json_data);
+  void (*event_handler)(TabState* ts, cJSON* json_data);
 } TAB_EVENT_HANDLERS[] = {
     {TAB_EVENT_ALL_TABS, tab_event__handle_all_tabs},
     {TAB_EVENT_UNKNOWN, NULL},
 };
 
-void tab_event_handle(TabEventType type, cJSON* json_data) {
+void tab_event_handle(TabState* ts, TabEventType type, cJSON* json_data) {
   int event_handled = 0;
   for (int i = 0; TAB_EVENT_HANDLERS[i].type != TAB_EVENT_UNKNOWN; ++i) {
     if (TAB_EVENT_HANDLERS[i].type == type) {
-      TAB_EVENT_HANDLERS[i].event_handler(json_data);
+      TAB_EVENT_HANDLERS[i].event_handler(ts, json_data);
       event_handled = 1;
       break;
     }
@@ -483,7 +529,7 @@ void engine_handle_event(EngineContext* ectx, DaemonEvent event, void* data) {
         if (json) {
           TabEventType type = parse_event_type(json);
           if (type != TAB_EVENT_UNKNOWN) {
-            tab_event_handle(type, json);
+            tab_event_handle(ectx->tab_state, type, json);
           }
           cJSON_Delete(json);
         } else {
