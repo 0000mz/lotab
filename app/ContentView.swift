@@ -9,15 +9,25 @@ struct ContentView: View {
                 Text("No tabs found")
                     .foregroundColor(.secondary)
             } else {
-                List(tabManager.tabs) { tab in
-                    HStack {
-                        Text(tab.title)
-                            .lineLimit(1)
-                            .truncationMode(.tail)
-                        Spacer()
-                        if tab.active {
-                            Image(systemName: "checkmark.circle.fill")
-                                .foregroundColor(.blue)
+                List {
+                    if let activeTab = tabManager.tabs.first(where: { $0.active }) {
+                        Section(header: Text("Active Tab")) {
+                            HStack {
+                                Text(activeTab.title)
+                                    .lineLimit(1)
+                                    .truncationMode(.tail)
+                                Spacer()
+                                Image(systemName: "checkmark.circle.fill")
+                                    .foregroundColor(.blue)
+                            }
+                        }
+                    }
+
+                    Section(header: Text("Other Tabs")) {
+                        ForEach(tabManager.tabs.filter { !$0.active }) { tab in
+                            Text(tab.title)
+                                .lineLimit(1)
+                                .truncationMode(.tail)
                         }
                     }
                 }
