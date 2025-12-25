@@ -66,6 +66,7 @@ typedef struct TaskState {
 } TaskState;
 
 void task_state_add(TaskState* ts, const char* task_name);
+void tab_state_update_active(TabState* ts, const cJSON* json_data);
 
 static void tab_state_free(TabState* ts) {
   if (!ts)
@@ -505,18 +506,6 @@ void tab_state_remove_tab(TabState* ts, const uint64_t id) {
   }
 }
 
-void tab_state_set_active(TabState* ts, const uint64_t id) {
-  TabInfo* current = ts->tabs;
-  while (current) {
-    if (current->id == id) {
-      current->active = 1;
-    } else {
-      current->active = 0;
-    }
-    current = current->next;
-  }
-}
-
 void task_state_add(TaskState* ts, const char* task_name) {
   TaskInfo* new_task = malloc(sizeof(TaskInfo));
   if (new_task) {
@@ -561,6 +550,36 @@ void tab_event__handle_all_tabs(TabState* ts, const cJSON* json_data) {
   } else {
     vlog(LOG_LEVEL_WARN, "onAllTabs: 'data' key missing or not an array.\n");
   }
+  tab_state_update_active(ts, json_data);
+}
+
+void tab_state_update_active(TabState* ts, const cJSON* json_data) {
+  cJSON* active_tabs_json = cJSON_GetObjectItem(json_data, "activeTabIds");
+  if (!active_tabs_json || !cJSON_IsArray(active_tabs_json))
+    return;
+
+#define MAX_ACTIVE_TAB_IDS_SIZE 64
+  uint64_t active_tab_ids[MAX_ACTIVE_TAB_IDS_SIZE];
+  int active_count = 0;
+  int array_size = cJSON_GetArraySize(active_tabs_json);
+
+  for (int i = 0; i < array_size && i < MAX_ACTIVE_TAB_IDS_SIZE; i++) {
+    cJSON* item = cJSON_GetArrayItem(active_tabs_json, i);
+    if (cJSON_IsNumber(item)) {
+      active_tab_ids[active_count++] = (uint64_t)item->valuedouble;
+    }
+  }
+  TabInfo* current = ts->tabs;
+  while (current) {
+    current->active = 0;
+    for (int i = 0; i < active_count; i++) {
+      if (current->id == active_tab_ids[i]) {
+        current->active = 1;
+        break;
+      }
+    }
+    current = current->next;
+  }
 }
 
 void tab_event__handle_remove_tab(TabState* ts, const cJSON* json_data) {
@@ -576,6 +595,7 @@ void tab_event__handle_remove_tab(TabState* ts, const cJSON* json_data) {
       vlog(LOG_LEVEL_WARN, "onRemoved: tabId missing or invalid\n");
     }
   }
+  tab_state_update_active(ts, json_data);
 }
 
 void tab_event__handle_activated(TabState* ts, const cJSON* json_data) {
@@ -585,12 +605,12 @@ void tab_event__handle_activated(TabState* ts, const cJSON* json_data) {
     cJSON* tabIdJson = cJSON_GetObjectItem(data, "tabId");
     if (cJSON_IsNumber(tabIdJson)) {
       uint64_t id = (uint64_t)tabIdJson->valuedouble;
-      tab_state_set_active(ts, id);
       vlog(LOG_LEVEL_INFO, "Tab Activated: %llu\n", id);
     } else {
       vlog(LOG_LEVEL_WARN, "onActivated: tabId missing or invalid\n");
     }
   }
+  tab_state_update_active(ts, json_data);
 }
 
 void tab_event__handle_created(TabState* ts, const cJSON* json_data) {
@@ -612,6 +632,7 @@ void tab_event__handle_created(TabState* ts, const cJSON* json_data) {
       vlog(LOG_LEVEL_WARN, "onCreated: id missing or invalid\n");
     }
   }
+  tab_state_update_active(ts, json_data);
 }
 
 void tab_event__do_nothing(TabState* ts, const cJSON* json_data) {
@@ -645,6 +666,7 @@ void tab_event__handle_updated(TabState* ts, const cJSON* json_data) {
     tab_state_add_tab(ts, title, id);
     vlog(LOG_LEVEL_INFO, "Tab Updated (New): %llu, Title: %s\n", id, title);
   }
+  tab_state_update_active(ts, json_data);
 }
 
 struct TabEventMapEntry {

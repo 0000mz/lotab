@@ -12,12 +12,15 @@ struct ContentView: View {
                 Spacer()
             } else {
                 List {
-                    if let activeTab = tabManager.tabs.first(where: { $0.active }) {
-                        Section(header: Text("Active Tab")) {
-                            HStack {
-                                Text(activeTab.title)
-                                    .lineLimit(1)
-                                    .truncationMode(.tail)
+                    let activeTabs = tabManager.tabs.filter { $0.active }
+                    if !activeTabs.isEmpty {
+                        Section(header: Text("Active Tabs")) {
+                            ForEach(activeTabs) { tab in
+                                HStack {
+                                    Text(tab.title)
+                                        .lineLimit(1)
+                                        .truncationMode(.tail)
+                                }
                             }
                         }
                     }

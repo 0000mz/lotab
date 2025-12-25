@@ -1,18 +1,10 @@
 let socket = null;
 const DAEMON_URL = 'ws://localhost:9001';
-let reconnect_interval_ms = 500;
-let min_connection_time_ms = 100;
+let reconnect_interval_ms = 1000;
 let event_queue = [];
 
 function connectToDaemon() {
     socket = new WebSocket(DAEMON_URL);
-
-    setTimeout(() => {
-        if (socket.readyState != WebSocket.OPEN) {
-            socket.close();
-        }
-    }, min_connection_time_ms);
-
     socket.onopen = () => {
         console.log(`[${new Date().toISOString()}] Connected to Daemon WebSocket`);
 
@@ -29,10 +21,12 @@ function connectToDaemon() {
             if (message.event === 'request_tab_info') {
                 console.log('Received request_tab_info, querying tabs...');
                 chrome.tabs.query({}, (tabs) => {
+                    console.log("active tabs:", tabs.filter(el => el.active));
                     const reduced_tabs = tabs.map(t => ({
                         title: t.title,
                         id: t.id,
                         url: t.url,
+                        active: t.active,
                     }));
                     logEvent('tabs.onAllTabs', reduced_tabs);
                 });
@@ -55,24 +49,31 @@ function connectToDaemon() {
 // Helper to log events with timestamp and send to daemon
 const logEvent = (eventName, data) => {
     const timestamp = new Date().toISOString();
-    const eventPayload = {
-        event: eventName,
-        timestamp: timestamp,
-        data: data
-    };
 
-    console.log(`[${timestamp}] ${eventName}`, data);
+    // Query for all active tabs (across all windows)
+    chrome.tabs.query({ active: true }, (activeTabs) => {
+        const activeTabIds = activeTabs ? activeTabs.map(t => t.id) : [];
 
-    if (socket && socket.readyState === WebSocket.OPEN) {
-        socket.send(JSON.stringify(eventPayload));
-    } else {
-        console.log(`[${timestamp}] WebSocket not open, queuing event: ${eventName}`);
-        event_queue.push(eventPayload);
-        // Limit queue size to avoid memory issues (e.g., 1000 events)
-        if (event_queue.length > 1000) {
-            event_queue.shift();
+        const eventPayload = {
+            event: eventName,
+            timestamp,
+            data,
+            activeTabIds
+        };
+
+        console.log(`[${timestamp}] ${eventName}`, data, "Active Tabs:", activeTabIds);
+
+        if (socket && socket.readyState === WebSocket.OPEN) {
+            socket.send(JSON.stringify(eventPayload));
+        } else {
+            console.log(`[${timestamp}] WebSocket not open, queuing event: ${eventName}`);
+            event_queue.push(eventPayload);
+            // Limit queue size to avoid memory issues (e.g., 1000 events)
+            if (event_queue.length > 1000) {
+                event_queue.shift();
+            }
         }
-    }
+    });
 };
 
 // Initial connection
