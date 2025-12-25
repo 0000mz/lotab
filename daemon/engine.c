@@ -42,13 +42,15 @@ typedef struct PerSessionData {
   size_t len;
 } PerSessionData;
 
-struct TabInfo {
+typedef struct TabInfo {
   uint64_t id;
   char* title;
-};
+  struct TabInfo* next;
+} TabInfo;
+
 typedef struct TabState {
   int nb_tabs;
-  struct TabInfo tabs[1024];
+  TabInfo* tabs;
 } TabState;
 
 static int setup_uds_client(ServerContext* sctx) {
@@ -241,8 +243,10 @@ int engine_init(EngineContext** ectx) {
   }
   memset(ec, 0, sizeof(EngineContext));
   ec->app_pid = -1;
-  ec->tab_state = malloc(sizeof(struct TabState));
-  memset(ec->tab_state, 0, sizeof(struct TabState));
+  ec->tab_state = malloc(sizeof(TabState));
+  if (ec->tab_state) {
+    memset(ec->tab_state, 0, sizeof(TabState));
+  }
 
   // Setup websocket server
   vlog(LOG_LEVEL_INFO, "Setting up websocket server.\n");
@@ -362,6 +366,14 @@ void engine_destroy(EngineContext* ectx) {
     ectx->run_ctx = NULL;
   }
   if (ectx->tab_state) {
+    TabInfo* current = ectx->tab_state->tabs;
+    while (current) {
+      TabInfo* next = current->next;
+      if (current->title)
+        free(current->title);
+      free(current);
+      current = next;
+    }
     free(ectx->tab_state);
     ectx->tab_state = NULL;
   }
@@ -388,18 +400,126 @@ void vlog(LogLevel level, const char* fmt, ...) {
   fprintf(f, "%s", buf);
 }
 
+TabInfo* tab_state_find_tab(TabState* ts, const uint64_t id) {
+  assert(ts);
+  TabInfo* current = ts->tabs;
+  while (current) {
+    if (current->id == id)
+      return current;
+    current = current->next;
+  }
+  return NULL;
+}
+
+void tab_state_update_tab(TabState* ts, const char* title, const uint64_t id) {
+  TabInfo* ti = tab_state_find_tab(ts, id);
+  if (ti && ti->title && strcmp(title, ti->title) != 0) {
+    free(ti->title);
+    ti->title = strdup(title);
+  }
+}
+
+void tab_state_add_tab(TabState* ts, const char* title, const uint64_t id) {
+  TabInfo* new_tab = malloc(sizeof(TabInfo));
+  if (new_tab) {
+    new_tab->id = id;
+    new_tab->title = strdup(title);
+    new_tab->next = ts->tabs;
+    ts->tabs = new_tab;
+    ts->nb_tabs++;
+  }
+}
+
+void tab_state_remove_tab(TabState* ts, const uint64_t id) {
+  TabInfo* current = ts->tabs;
+  TabInfo* prev = NULL;
+  while (current) {
+    if (current->id == id) {
+      if (prev) {
+        prev->next = current->next;
+      } else {
+        ts->tabs = current->next;
+      }
+      if (current->title)
+        free(current->title);
+      free(current);
+      ts->nb_tabs--;
+      return;
+    }
+    prev = current;
+    current = current->next;
+  }
+}
+
+void tab_event__handle_all_tabs(TabState* ts, const cJSON* json_data) {
+  cJSON* data = cJSON_GetObjectItem(json_data, "data");
+  if (data && cJSON_IsArray(data)) {
+    int count = cJSON_GetArraySize(data);
+    vlog(LOG_LEVEL_INFO, "Received %d tabs (current state: %d)\n", count, ts->nb_tabs);
+    int tabs_added = 0, tabs_updated = 0;
+
+    for (int i = 0; i < count; i++) {
+      cJSON* item = cJSON_GetArrayItem(data, i);
+      cJSON* title_json = cJSON_GetObjectItemCaseSensitive(item, "title");
+      cJSON* id_json = cJSON_GetObjectItemCaseSensitive(item, "id");
+
+      char* tab_title = NULL;
+      uint64_t tab_id = 0;
+
+      if (cJSON_IsString(title_json) && (title_json->valuestring != NULL)) {
+        tab_title = title_json->valuestring;
+      }
+      if (cJSON_IsNumber(id_json)) {
+        tab_id = (uint64_t)id_json->valuedouble;
+      }
+
+      if (tab_state_find_tab(ts, tab_id) != NULL) {
+        tab_state_update_tab(ts, tab_title ? tab_title : "Unknown", tab_id);
+        ++tabs_updated;
+      } else {
+        tab_state_add_tab(ts, tab_title ? tab_title : "Unknown", tab_id);
+        ++tabs_added;
+      }
+    }
+    vlog(LOG_LEVEL_INFO, "Tab State Synced: %d updated, %d added. Total: %d\n", tabs_updated, tabs_added, ts->nb_tabs);
+  } else {
+    vlog(LOG_LEVEL_WARN, "onAllTabs: 'data' key missing or not an array.\n");
+  }
+}
+
+void tab_event__handle_remove_tab(TabState* ts, const cJSON* json_data) {
+  // {"event": "tabs.onRemoved", "data": {"tabId": 123, "removeInfo": {...}}}
+  cJSON* data = cJSON_GetObjectItem(json_data, "data");
+  if (data) {
+    cJSON* tabIdJson = cJSON_GetObjectItem(data, "tabId");
+    if (cJSON_IsNumber(tabIdJson)) {
+      uint64_t id = (uint64_t)tabIdJson->valuedouble;
+      tab_state_remove_tab(ts, id);
+      vlog(LOG_LEVEL_INFO, "Tab Removed: %llu. Remaining: %d\n", id, ts->nb_tabs);
+    } else {
+      vlog(LOG_LEVEL_WARN, "onRemoved: tabId missing or invalid\n");
+    }
+  }
+}
+
 struct TabEventMapEntry {
   const char* event_name;
   TabEventType type;
 };
 static const struct TabEventMapEntry TAB_EVENT_MAP[] = {
-    {"tabs.onActivated", TAB_EVENT_ACTIVATED},
-    {"tabs.onUpdated", TAB_EVENT_UPDATED},
-    {"tabs.onCreated", TAB_EVENT_CREATED},
-    {"tabs.onHighlighted", TAB_EVENT_HIGHLIGHTED},
-    {"tabs.onZoomChange", TAB_EVENT_ZOOM_CHANGE},
-    {"tabs.onAllTabs", TAB_EVENT_ALL_TABS},
-    {NULL, TAB_EVENT_UNKNOWN},
+    {"tabs.onActivated", TAB_EVENT_ACTIVATED},    {"tabs.onUpdated", TAB_EVENT_UPDATED},
+    {"tabs.onCreated", TAB_EVENT_CREATED},        {"tabs.onHighlighted", TAB_EVENT_HIGHLIGHTED},
+    {"tabs.onZoomChange", TAB_EVENT_ZOOM_CHANGE}, {"tabs.onAllTabs", TAB_EVENT_ALL_TABS},
+    {"tabs.onRemoved", TAB_EVENT_TAB_REMOVED},    {NULL, TAB_EVENT_UNKNOWN},
+};
+
+static struct {
+  TabEventType type;
+  void (*event_handler)(TabState* ts, const cJSON* json_data);
+} TAB_EVENT_HANDLERS[] = {
+    {TAB_EVENT_ALL_TABS, tab_event__handle_all_tabs},
+    {TAB_EVENT_TAB_REMOVED, tab_event__handle_remove_tab},
+    {TAB_EVENT_UNKNOWN, NULL},
 };
 
 // Helper to determine event type from JSON string
@@ -422,77 +542,6 @@ static TabEventType parse_event_type(cJSON* json) {
   }
   return type;
 }
-
-struct TabInfo* tab_state_find_tab(TabState* ts, const uint64_t id) {
-  assert(ts);
-  for (int i = 0; i < ts->nb_tabs; ++i) {
-    if (ts->tabs[i].id == id)
-      return ts->tabs + i;
-  }
-  return NULL;
-}
-
-void tab_state_update_tab(TabState* ts, const char* title, const uint64_t id) {
-  struct TabInfo* ti = tab_state_find_tab(ts, id);
-  if (strcmp(title, ti->title) != 0) {
-    free(ti->title);
-    ti->title = strdup(title);
-  }
-}
-
-void tab_state_add_tab(TabState* ts, const char* title, const uint64_t id) {
-  struct TabInfo* ti = &ts->tabs[ts->nb_tabs++];
-  ti->title = strdup(title);
-  ti->id = id;
-}
-
-void tab_event__handle_all_tabs(TabState* ts, cJSON* json_data) {
-  vlog(LOG_LEVEL_INFO, "TODO handle all-tabs evt.\n");
-  cJSON* data = cJSON_GetObjectItem(json_data, "data");
-  if (data && cJSON_IsArray(data)) {
-    int count = cJSON_GetArraySize(data);
-    vlog(LOG_LEVEL_INFO, "Received %d tabs\n", count);
-    int tabs_added = 0, tabs_updated = 0;
-
-    for (int i = 0; i < count && i < 256; i++) {
-      cJSON* item = cJSON_GetArrayItem(data, i);
-      cJSON* title_json = cJSON_GetObjectItemCaseSensitive(item, "title");
-      cJSON* id_json = cJSON_GetObjectItemCaseSensitive(item, "id");
-
-      char* tab_title = NULL;
-      uint64_t tab_id = 0;
-
-      if (cJSON_IsString(title_json) && (title_json->valuestring != NULL)) {
-        tab_title = title_json->valuestring;
-      }
-      if (cJSON_IsNumber(id_json)) {
-        tab_id = (uint64_t)id_json->valuedouble;
-      }
-      if (!tab_title || !tab_id) {
-        vlog(LOG_LEVEL_TRACE, "Unknown tab found: id=%d\n", tab_id);
-      }
-
-      if (tab_state_find_tab(ts, tab_id) != NULL) {
-        tab_state_update_tab(ts, tab_title, tab_id);
-        ++tabs_updated;
-      } else {
-        tab_state_add_tab(ts, tab_title, tab_id);
-        ++tabs_added;
-      }
-    }
-    vlog(LOG_LEVEL_INFO, "tabs_updated=%d, tabs_added=%d\n", tabs_updated, tabs_added);
-  } else {
-    vlog(LOG_LEVEL_WARN, "onAllTabs: 'data' key missing or not an array.\n");
-  }
-}
-
-static struct {
-  TabEventType type;
-  void (*event_handler)(TabState* ts, cJSON* json_data);
-} TAB_EVENT_HANDLERS[] = {
-    {TAB_EVENT_ALL_TABS, tab_event__handle_all_tabs},
-    {TAB_EVENT_UNKNOWN, NULL},
-};
 
 void tab_event_handle(TabState* ts, TabEventType type, cJSON* json_data) {
   int event_handled = 0;

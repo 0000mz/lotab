@@ -17,10 +17,11 @@ typedef enum {
   TAB_EVENT_HIGHLIGHTED,
   TAB_EVENT_ZOOM_CHANGE,
   TAB_EVENT_ALL_TABS,
+  TAB_EVENT_TAB_REMOVED,
   TAB_EVENT_UNKNOWN
 } TabEventType;
 
-typedef enum { LOG_LEVEL_INFO = 0, LOG_LEVEL_ERROR = 1, LOG_LEVEL_WARN = 3, LOG_LEVEL_TRACE = 2 } LogLevel;
+typedef enum { LOG_LEVEL_WARN = 0, LOG_LEVEL_ERROR = 1, LOG_LEVEL_INFO = 2, LOG_LEVEL_TRACE = 3 } LogLevel;
 
 struct ServerContext;
 struct StatusBarRunContext;
