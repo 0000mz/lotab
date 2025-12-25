@@ -9,6 +9,7 @@
 #include <spawn.h>
 #include <stdarg.h>
 #include <stddef.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/socket.h>
@@ -28,10 +29,17 @@ static const char* uds_path = "/tmp/tabmanager.sock";  // TODO: Do not use globa
 
 typedef struct ServerContext {
   struct lws_context* lws_ctx;
+  struct lws* client_wsi;
   pthread_t ws_thread;
   int uds_fd;
   int ws_thread_exit;  // TODO: this should be protected by mutex.
+  int send_tab_request;
 } ServerContext;
+
+typedef struct PerSessionData {
+  char* msg;
+  size_t len;
+} PerSessionData;
 
 static int setup_uds_client(ServerContext* sctx) {
   int retries = 5;
@@ -80,24 +88,82 @@ static void send_uds(const int uds_fd, const cJSON* json_data) {
   }
 }
 
+static void pss_clear_message(PerSessionData* pss, int should_free) {
+  assert(pss);
+  if (should_free && pss->msg) {
+    free(pss->msg);
+  }
+  pss->msg = NULL;
+  pss->len = 0;
+}
+
 static int callback_minimal(struct lws* wsi, enum lws_callback_reasons reason, void* _user, void* in, size_t len) {
   EngineContext* ec = (EngineContext*)lws_context_user(lws_get_context(wsi));
-  (void)_user;
+  ServerContext* sc = (ServerContext*)ec->serv_ctx;
+  PerSessionData* pss = (PerSessionData*)_user;
 
   switch (reason) {
     case LWS_CALLBACK_ESTABLISHED:
       lwsl_user("LWS_CALLBACK_ESTABLISHED (new connection)\n");
+      sc->client_wsi = wsi;
+      sc->send_tab_request = 1;
+      if (pss) {
+        pss_clear_message(pss, 0);
+      }
+      lws_callback_on_writable(wsi);
       break;
+
     case LWS_CALLBACK_CLOSED:
       lwsl_user("LWS_CALLBACK_CLOSED (connection lost)\n");
+      if (sc->client_wsi == wsi) {
+        sc->client_wsi = NULL;
+      }
+      if (pss && pss->msg) {
+        pss_clear_message(pss, 1);
+      }
       break;
+
+    case LWS_CALLBACK_SERVER_WRITEABLE:
+      if (sc->send_tab_request) {
+        const char* msg = "{\"event\":\"request_tab_info\"}";
+        size_t msg_len = strlen(msg);
+        unsigned char buf[LWS_PRE + 256];
+        memset(buf, 0, sizeof(buf));
+        memcpy(&buf[LWS_PRE], msg, msg_len);
+        lws_write(wsi, &buf[LWS_PRE], msg_len, LWS_WRITE_TEXT);
+        sc->send_tab_request = 0;
+        vlog(LOG_LEVEL_INFO, "Daemon: Sent request_tab_info to extension\n");
+      }
+      break;
+
     case LWS_CALLBACK_RECEIVE: {
-      char* msg = malloc(len + 1);
-      if (msg) {
-        memcpy(msg, in, len);
-        msg[len] = '\0';
-        engine_handle_event(ec, EVENT_WS_MESSAGE_RECEIVED, msg);
-        free(msg);
+      const size_t remaining = lws_remaining_packet_payload(wsi);
+      int is_final = lws_is_final_fragment(wsi);
+
+      if (!pss->msg) {
+        pss_clear_message(pss, 0);
+        pss->msg = malloc(len + remaining + 1);
+        if (!pss->msg) {
+          lwsl_err("OOM: dropping\n");
+          return -1;
+        }
+      } else {
+        char* new_msg = realloc(pss->msg, pss->len + len + remaining + 1);
+        if (!new_msg) {
+          lwsl_err("OOM: dropping\n");
+          pss_clear_message(pss, 1);
+          return -1;
+        }
+        pss->msg = new_msg;
+      }
+
+      memcpy(pss->msg + pss->len, in, len);
+      pss->len += len;
+
+      if (is_final && remaining == 0) {
+        pss->msg[pss->len] = '\0';
+        engine_handle_event(ec, EVENT_WS_MESSAGE_RECEIVED, pss->msg);
+        pss_clear_message(pss, 1);
       }
     } break;
     default:
@@ -107,9 +173,11 @@ static int callback_minimal(struct lws* wsi, enum lws_callback_reasons reason, v
   return 0;
 }
 
-static struct lws_protocols protocols[] = {
-    {.name = "minimal", .callback = callback_minimal, .per_session_data_size = 0, .rx_buffer_size = 0},
-    LWS_PROTOCOL_LIST_TERM};
+static struct lws_protocols protocols[] = {{.name = "minimal",
+                                            .callback = callback_minimal,
+                                            .per_session_data_size = sizeof(PerSessionData),
+                                            .rx_buffer_size = 0},
+                                           LWS_PROTOCOL_LIST_TERM};
 
 static void kill_process(const int pid) {
   if (pid >= 0) {
@@ -302,52 +370,95 @@ void vlog(LogLevel level, const char* fmt, ...) {
   fprintf(f, "%s", buf);
 }
 
-// Helper to determine event type from JSON string
-static TabEventType parse_event_type(const char* json_str) {
-  cJSON* json = cJSON_Parse(json_str);
-  if (!json) {
-    return TAB_EVENT_UNKNOWN;
-  }
+struct TabEventMapEntry {
+  const char* event_name;
+  TabEventType type;
+};
+static const struct TabEventMapEntry TAB_EVENT_MAP[] = {
+    {"tabs.onActivated", TAB_EVENT_ACTIVATED},
+    {"tabs.onUpdated", TAB_EVENT_UPDATED},
+    {"tabs.onCreated", TAB_EVENT_CREATED},
+    {"tabs.onHighlighted", TAB_EVENT_HIGHLIGHTED},
+    {"tabs.onZoomChange", TAB_EVENT_ZOOM_CHANGE},
+    {"tabs.onAllTabs", TAB_EVENT_ALL_TABS},
+    {NULL, TAB_EVENT_UNKNOWN},
+};
 
+// Helper to determine event type from JSON string
+static TabEventType parse_event_type(cJSON* json) {
   TabEventType type = TAB_EVENT_UNKNOWN;
   cJSON* event = cJSON_GetObjectItemCaseSensitive(json, "event");
 
   if (cJSON_IsString(event) && (event->valuestring != NULL)) {
-    if (strcmp(event->valuestring, "tabs.onActivated") == 0) {
-      type = TAB_EVENT_ACTIVATED;
-    } else if (strcmp(event->valuestring, "tabs.onUpdated") == 0) {
-      type = TAB_EVENT_UPDATED;
-    } else if (strcmp(event->valuestring, "tabs.onHighlighted") == 0) {
-      type = TAB_EVENT_HIGHLIGHTED;
-    } else if (strcmp(event->valuestring, "tabs.onZoomChange") == 0) {
-      type = TAB_EVENT_ZOOM_CHANGE;
+    int found = 0;
+    for (int i = 0; TAB_EVENT_MAP[i].event_name != NULL; ++i) {
+      if (strcmp(event->valuestring, TAB_EVENT_MAP[i].event_name) == 0) {
+        type = TAB_EVENT_MAP[i].type;
+        found = 1;
+        break;
+      }
+    }
+    if (!found) {
+      vlog(LOG_LEVEL_WARN, "Unknown tab event: %s\n", event->valuestring);
     }
   }
-
-  cJSON_Delete(json);
   return type;
 }
 
-void engine_handle_tab_event(TabEventType type, const char* json_data) {
-  (void)json_data;  // Unused for now
+void tab_event__handle_all_tabs(cJSON* json_data) {
+  struct TabInfo {
+    const char* title;
+    uint64_t id;
+  } tab_info[256];
 
-  switch (type) {
-    case TAB_EVENT_ACTIVATED:
-      vlog(LOG_LEVEL_INFO, "Engine: Tab Activated\n");
+  vlog(LOG_LEVEL_INFO, "TODO handle all-tabs evt.\n");
+  cJSON* data = cJSON_GetObjectItem(json_data, "data");
+  if (data && cJSON_IsArray(data)) {
+    int count = cJSON_GetArraySize(data);
+    vlog(LOG_LEVEL_INFO, "Received %d tabs\n", count);
+
+    for (int i = 0; i < count && i < 256; i++) {
+      cJSON* item = cJSON_GetArrayItem(data, i);
+      cJSON* title_json = cJSON_GetObjectItemCaseSensitive(item, "title");
+      cJSON* id_json = cJSON_GetObjectItemCaseSensitive(item, "id");
+
+      if (cJSON_IsString(title_json) && (title_json->valuestring != NULL)) {
+        tab_info[i].title = title_json->valuestring;
+      } else {
+        tab_info[i].title = "Unknown";
+      }
+
+      if (cJSON_IsNumber(id_json)) {
+        tab_info[i].id = (uint64_t)id_json->valuedouble;
+      } else {
+        tab_info[i].id = 0;
+      }
+      vlog(LOG_LEVEL_INFO, "Tab[%d]: ID=%llu, Title=%s\n", i, tab_info[i].id, tab_info[i].title);
+    }
+  } else {
+    vlog(LOG_LEVEL_WARN, "onAllTabs: 'data' key missing or not an array.\n");
+  }
+}
+
+static struct {
+  TabEventType type;
+  void (*event_handler)(cJSON* json_data);
+} TAB_EVENT_HANDLERS[] = {
+    {TAB_EVENT_ALL_TABS, tab_event__handle_all_tabs},
+    {TAB_EVENT_UNKNOWN, NULL},
+};
+
+void tab_event_handle(TabEventType type, cJSON* json_data) {
+  int event_handled = 0;
+  for (int i = 0; TAB_EVENT_HANDLERS[i].type != TAB_EVENT_UNKNOWN; ++i) {
+    if (TAB_EVENT_HANDLERS[i].type == type) {
+      TAB_EVENT_HANDLERS[i].event_handler(json_data);
+      event_handled = 1;
       break;
-    case TAB_EVENT_UPDATED:
-      vlog(LOG_LEVEL_INFO, "Engine: Tab Updated\n");
-      break;
-    case TAB_EVENT_HIGHLIGHTED:
-      vlog(LOG_LEVEL_INFO, "Engine: Tab Highlighted\n");
-      break;
-    case TAB_EVENT_ZOOM_CHANGE:
-      vlog(LOG_LEVEL_INFO, "Engine: Tab Zoom Change\n");
-      break;
-    case TAB_EVENT_UNKNOWN:
-    default:
-      vlog(LOG_LEVEL_INFO, "Engine: Unknown Tab Event\n");
-      break;
+    }
+  }
+  if (!event_handled) {
+    vlog(LOG_LEVEL_WARN, "Unhandled tab event type: %d\n", type);
   }
 }
 
@@ -356,7 +467,7 @@ void engine_handle_event(EngineContext* ectx, DaemonEvent event, void* data) {
 
   switch (event) {
     case EVENT_HOTKEY_TOGGLE:
-      vlog(LOG_LEVEL_INFO, "Engine: Toggle Requestedh\n");
+      vlog(LOG_LEVEL_INFO, "Engine: Toggle Requested\n");
       cJSON* message = cJSON_CreateObject();
       cJSON_AddStringToObject(message, "event", "ui_visibility_toggle");
       cJSON_AddStringToObject(message, "data", "toggle");
@@ -368,9 +479,15 @@ void engine_handle_event(EngineContext* ectx, DaemonEvent event, void* data) {
       if (data) {
         vlog(LOG_LEVEL_TRACE, "Engine: WS Message Received: %s\n", (const char*)data);
         const char* json_msg = (const char*)data;
-        TabEventType type = parse_event_type(json_msg);
-        if (type != TAB_EVENT_UNKNOWN) {
-          engine_handle_tab_event(type, json_msg);
+        cJSON* json = cJSON_Parse(json_msg);
+        if (json) {
+          TabEventType type = parse_event_type(json);
+          if (type != TAB_EVENT_UNKNOWN) {
+            tab_event_handle(type, json);
+          }
+          cJSON_Delete(json);
+        } else {
+          vlog(LOG_LEVEL_ERROR, "Failed to parse json from websocket message.\n");
         }
       }
       break;

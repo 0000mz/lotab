@@ -18,6 +18,22 @@ function connectToDaemon() {
 
     socket.onmessage = (event) => {
         console.log(`[${new Date().toISOString()}] Message from Daemon:`, event.data);
+        try {
+            const message = JSON.parse(event.data);
+            if (message.event === 'request_tab_info') {
+                console.log('Received request_tab_info, querying tabs...');
+                chrome.tabs.query({}, (tabs) => {
+                    const reduced_tabs = tabs.map(t => ({
+                        title: t.title,
+                        id: t.id,
+                        url: t.url,
+                    }));
+                    logEvent('tabs.onAllTabs', reduced_tabs);
+                });
+            }
+        } catch (e) {
+            console.error('Failed to parse message from daemon:', e);
+        }
     };
 
     socket.onclose = (event) => {

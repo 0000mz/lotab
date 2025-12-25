@@ -13,8 +13,10 @@ typedef enum { EVENT_HOTKEY_TOGGLE, EVENT_WS_MESSAGE_RECEIVED } DaemonEvent;
 typedef enum {
   TAB_EVENT_ACTIVATED,
   TAB_EVENT_UPDATED,
+  TAB_EVENT_CREATED,
   TAB_EVENT_HIGHLIGHTED,
   TAB_EVENT_ZOOM_CHANGE,
+  TAB_EVENT_ALL_TABS,
   TAB_EVENT_UNKNOWN
 } TabEventType;
 
@@ -38,7 +40,6 @@ void engine_run(EngineContext* ectx);
 void engine_destroy(EngineContext* ectx);
 void engine_set_log_level(LogLevel level);
 void engine_handle_event(EngineContext* ectx, DaemonEvent event, void* data);
-void engine_handle_tab_event(TabEventType type, const char* json_data);
 
 // Log a message with the specified level
 void vlog(LogLevel level, const char* fmt, ...);
