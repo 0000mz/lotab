@@ -4,6 +4,8 @@
 extern "C" {
 #endif
 
+#define OUT __attribute__((annotate("out")))
+
 // Events that can trigger engine actions
 typedef enum { EVENT_HOTKEY_TOGGLE, EVENT_WS_MESSAGE_RECEIVED } DaemonEvent;
 
@@ -31,7 +33,7 @@ typedef struct EngineContext {
 // @param ectx (out) - Will be allocated if engine initialization is successful.
 //
 // @returns 1 on success and negative value on error.
-int engine_init(EngineContext** ectx);
+int engine_init(OUT EngineContext** ectx);
 void engine_run(EngineContext* ectx);
 void engine_destroy(EngineContext* ectx);
 void engine_set_log_level(LogLevel level);
