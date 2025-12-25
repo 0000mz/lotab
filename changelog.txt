@@ -31,3 +31,4 @@ TODO:
 - When the GUI is escaped, return focus to last focused application before the interruption.
 - Use nullability annotation and in/out annotation for C function parameters.
 - Find another way of writing unit tests for the daemon's engine after the refactor.
+- Use C attributes to annotate sync objects.

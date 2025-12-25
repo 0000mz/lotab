@@ -67,8 +67,9 @@ static int setup_uds_client(ServerContext* sctx) {
   return -1;
 }
 
-static void send_uds(const int uds_fd, const char* data) {
+static void send_uds(const int uds_fd, const cJSON* json_data) {
   if (uds_fd >= 0) {
+    char* data = cJSON_Print(json_data);
     if (send(uds_fd, data, strlen(data), 0) < 0) {
       vlog(LOG_LEVEL_ERROR, "Daemon: Failed to send data to App via UDS: %s\n", strerror(errno));
     } else {
@@ -356,9 +357,11 @@ void engine_handle_event(EngineContext* ectx, DaemonEvent event, void* data) {
   switch (event) {
     case EVENT_HOTKEY_TOGGLE:
       vlog(LOG_LEVEL_INFO, "Engine: Toggle Requestedh\n");
-      // TODO: Find a better way to formulate these json messages.
-      const char* msg = "{\"event\":\"ui_visibility_toggle\",\"data\":\"toggle\"}";
-      send_uds(ectx->serv_ctx->uds_fd, msg);
+      cJSON* message = cJSON_CreateObject();
+      cJSON_AddStringToObject(message, "event", "ui_visibility_toggle");
+      cJSON_AddStringToObject(message, "data", "toggle");
+      send_uds(ectx->serv_ctx->uds_fd, message);
+      cJSON_Delete(message);
       break;
 
     case EVENT_WS_MESSAGE_RECEIVED:
