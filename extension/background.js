@@ -1,18 +1,24 @@
 let socket = null;
 const DAEMON_URL = 'ws://localhost:9001';
-let reconnectInterval = 1000;
-let eventQueue = [];
+let reconnect_interval_ms = 500;
+let min_connection_time_ms = 100;
+let event_queue = [];
 
 function connectToDaemon() {
     socket = new WebSocket(DAEMON_URL);
 
+    setTimeout(() => {
+        if (socket.readyState != WebSocket.OPEN) {
+            socket.close();
+        }
+    }, min_connection_time_ms);
+
     socket.onopen = () => {
         console.log(`[${new Date().toISOString()}] Connected to Daemon WebSocket`);
-        reconnectInterval = 1000;
 
         // Flush queue
-        while (eventQueue.length > 0 && socket.readyState === WebSocket.OPEN) {
-            socket.send(JSON.stringify(eventQueue.shift()));
+        while (event_queue.length > 0 && socket.readyState === WebSocket.OPEN) {
+            socket.send(JSON.stringify(event_queue.shift()));
         }
     };
 
@@ -37,9 +43,8 @@ function connectToDaemon() {
     };
 
     socket.onclose = (event) => {
-        console.log(`[${new Date().toISOString()}] Daemon WebSocket closed. Reconnecting in ${reconnectInterval}ms...`, event.reason);
-        setTimeout(connectToDaemon, reconnectInterval);
-        reconnectInterval = Math.min(reconnectInterval * 2, 30000);
+        console.log(`[${new Date().toISOString()}] Daemon WebSocket closed. Reconnecting in ${reconnect_interval_ms}ms...`, event.reason);
+        setTimeout(connectToDaemon, reconnect_interval_ms);
     };
 
     socket.onerror = (error) => {
@@ -62,10 +67,10 @@ const logEvent = (eventName, data) => {
         socket.send(JSON.stringify(eventPayload));
     } else {
         console.log(`[${timestamp}] WebSocket not open, queuing event: ${eventName}`);
-        eventQueue.push(eventPayload);
+        event_queue.push(eventPayload);
         // Limit queue size to avoid memory issues (e.g., 1000 events)
-        if (eventQueue.length > 1000) {
-            eventQueue.shift();
+        if (event_queue.length > 1000) {
+            event_queue.shift();
         }
     }
 };

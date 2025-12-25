@@ -1,5 +1,6 @@
 2025-Dec-25:
 - When the GUI is escaped, return focus to last focused application before the interruption.
+- Show all tabs and active tab in GUI.
 
 2025-Dec-22:
 - Hide the GUI until the keybind is triggered.
@@ -36,3 +37,4 @@ TODO:
 - Use C attributes to annotate sync objects.
 - Figure out how to make the websocket connection happen all the time on startup. Currently,
   the extension's service worker sometimes need to be woken up.
+- Treat tabs.onHighlight as tab activation.
