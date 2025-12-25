@@ -42,29 +42,6 @@ typedef struct PerSessionData {
   size_t len;
 } PerSessionData;
 
-typedef struct TabInfo {
-  uint64_t id;
-  char* title;
-  int active;
-  struct TabInfo* next;
-} TabInfo;
-
-typedef struct TabState {
-  int nb_tabs;
-  TabInfo* tabs;
-} TabState;
-
-typedef struct TaskInfo {
-  uint64_t task_id;
-  char* task_name;
-  struct TaskInfo* next;
-} TaskInfo;
-
-typedef struct TaskState {
-  int nb_tasks;
-  TaskInfo* tasks;
-} TaskState;
-
 void task_state_add(TaskState* ts, const char* task_name);
 void tab_state_update_active(TabState* ts, const cJSON* json_data);
 
@@ -281,7 +258,7 @@ static void* ws_thread_run(void* arg) {
   return NULL;
 }
 
-int engine_init(EngineContext** ectx) {
+int engine_init(EngineContext** ectx, EngineCreationInfo cinfo) {
   assert(ectx != NULL);
   assert(*ectx == NULL);
 
@@ -302,6 +279,7 @@ int engine_init(EngineContext** ectx) {
   ec->task_state = calloc(1, sizeof(TaskState));
   // TODO: Placeholder task, remove once task creation flow is implemented.
   task_state_add(ec->task_state, "Placeholder Task");
+  ec->init_statusline = cinfo.enable_statusbar != 0;
 
   // Setup websocket server
   vlog(LOG_LEVEL_INFO, "Setting up websocket server.\n");
@@ -316,7 +294,7 @@ int engine_init(EngineContext** ectx) {
 
   ec->serv_ctx = sc;
   memset(&info, 0, sizeof info);
-  info.port = 9001;
+  info.port = cinfo.port;
   info.protocols = protocols;
   info.gid = -1;
   info.uid = -1;
@@ -381,6 +359,7 @@ fail:
 static void sigint_handler(int sig) {
   (void)sig;
   printf("Daemon: Caught SIGINT\n");
+  // TODO: This should only be called if the statusline initialized, which depends on the engine context.
   stop_daemon_cocoa_app();
 }
 
@@ -395,7 +374,8 @@ void engine_run(EngineContext* ectx) {
   ectx->run_ctx->on_toggle = on_status_toggle;
   ectx->run_ctx->on_quit = on_status_quit;
   ectx->run_ctx->privdata = ectx;
-  run_daemon_cocoa_app(ectx->run_ctx);
+  if (ectx->init_statusline)
+    run_daemon_cocoa_app(ectx->run_ctx);
 }
 
 void engine_destroy(EngineContext* ectx) {
@@ -414,7 +394,8 @@ void engine_destroy(EngineContext* ectx) {
         pthread_join(ectx->serv_ctx->ws_thread, NULL);
       }
       lws_context_destroy(ectx->serv_ctx->lws_ctx);
-      stop_daemon_cocoa_app();
+      if (ectx->init_statusline)
+        stop_daemon_cocoa_app();
     }
     free(ectx->serv_ctx);
     ectx->serv_ctx = NULL;

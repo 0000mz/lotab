@@ -50,7 +50,11 @@ int main(int argc, const char** argv) {
   engine_set_log_level(loglevel);
 
   // Init Engine
-  engine_init(&ectx);
+  EngineCreationInfo create_info = {
+      .port = 9001,
+      .enable_statusbar = 1,
+  };
+  engine_init(&ectx, create_info);
   engine_run(ectx);
   printf("Daemon: Exiting\n");
   if (ectx != NULL) {

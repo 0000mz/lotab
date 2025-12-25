@@ -1,6 +1,6 @@
 project('tab_manager', 'c', 'cpp', 'swift', 'objc',
   version : '0.1',
-  default_options : ['warning_level=3', 'cpp_std=c++17'])
+  default_options : ['warning_level=3', 'cpp_std=c++20'])
 
 lws_dep = dependency('libwebsockets')
 cjson_dep = dependency('libcjson')
@@ -17,10 +17,7 @@ app_src = [
   'app/ContentView.swift'
 ]
 
-daemon_src = [
-  'daemon/main.c',
-  'daemon/statusbar.m'
-]
+daemon_engine_src = ['daemon/main.c']
 
 daemon_deps = [lws_dep, cjson_dep, carbon_dep, cocoa_dep, argparse_dep]
 
@@ -41,17 +38,17 @@ configure_file(output : 'config.h',
                configuration : conf_data)
 
 engine_lib = static_library('daemon_engine',
-    'daemon/engine.c',
-    dependencies : [lws_dep, cjson_dep],
+    ['daemon/engine.c', 'daemon/statusbar.m'],
+    dependencies : [lws_dep, cjson_dep, cocoa_dep, carbon_dep],
     install : false)
 
 engine_dep = declare_dependency(
   link_with : engine_lib,
   include_directories : include_directories('daemon'),
-  dependencies : [lws_dep, cjson_dep]
+  dependencies : [lws_dep, cjson_dep, cocoa_dep, carbon_dep]
 )
 
-executable('daemon', daemon_src, dependencies : [daemon_deps, engine_dep], install : true)
+executable('daemon', daemon_engine_src, dependencies : [daemon_deps, engine_dep], install : true)
 
 # --- Sanitizer Variants ---
 sanitizers = {
@@ -75,8 +72,8 @@ foreach s, suffix : sanitizers
   configure_file(output : conf_var_output,
                  configuration : conf_var_data)
 
-  executable('daemon' + suffix, daemon_src + ['daemon/engine.c'],
-             dependencies : daemon_deps,
+  executable('daemon' + suffix, daemon_engine_src,
+             dependencies : daemon_deps + [engine_dep],
              c_args : ['-DSANITIZER_CONFIG_H="' + conf_var_output + '"'],
              override_options : ['b_sanitize=' + s],
              install : true)

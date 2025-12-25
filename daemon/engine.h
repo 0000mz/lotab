@@ -1,5 +1,7 @@
 #pragma once
 
+#include <stdint.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -25,8 +27,29 @@ typedef enum { LOG_LEVEL_WARN = 0, LOG_LEVEL_ERROR = 1, LOG_LEVEL_INFO = 2, LOG_
 
 struct ServerContext;
 struct StatusBarRunContext;
-struct TabState;
-struct TaskState;
+typedef struct TabInfo {
+  uint64_t id;
+  char* title;
+  int active;
+  struct TabInfo* next;
+} TabInfo;
+
+typedef struct TabState {
+  int nb_tabs;
+  TabInfo* tabs;
+} TabState;
+
+typedef struct TaskInfo {
+  uint64_t task_id;
+  char* task_name;
+  struct TaskInfo* next;
+} TaskInfo;
+
+typedef struct TaskState {
+  int nb_tasks;
+  TaskInfo* tasks;
+} TaskState;
+
 typedef struct EngineContext {
   struct ServerContext* serv_ctx;
   struct StatusBarRunContext* run_ctx;
@@ -34,13 +57,19 @@ typedef struct EngineContext {
   struct TaskState* task_state;
   int app_pid;  // TODO: internalize this
   int destroyed;
+  int init_statusline;
 } EngineContext;
+
+typedef struct EngineCreationInfo {
+  uint32_t port;
+  int enable_statusbar;
+} EngineCreationInfo;
 
 // Initializes the daemon engine.
 // @param ectx (out) - Will be allocated if engine initialization is successful.
 //
 // @returns 1 on success and negative value on error.
-int engine_init(OUT EngineContext** ectx);
+int engine_init(OUT EngineContext** ectx, EngineCreationInfo cinfo);
 void engine_run(EngineContext* ectx);
 void engine_destroy(EngineContext* ectx);
 void engine_set_log_level(LogLevel level);
