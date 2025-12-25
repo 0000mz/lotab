@@ -4,10 +4,12 @@ struct ContentView: View {
     @ObservedObject var tabManager: TabManager
 
     var body: some View {
-        VStack {
+        VStack(spacing: 0) {
             if tabManager.tabs.isEmpty {
+                Spacer()
                 Text("No tabs found")
                     .foregroundColor(.secondary)
+                Spacer()
             } else {
                 List {
                     if let activeTab = tabManager.tabs.first(where: { $0.active }) {
@@ -29,6 +31,15 @@ struct ContentView: View {
                     }
                 }
             }
+            HStack {
+                Spacer()
+                Text("ESC to close")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .padding([.trailing], 12)
+                    .frame(height: .infinity, alignment: .center)
+            }
+            .frame(height: 20)
         }
         .scrollContentBackground(.hidden)
         .frame(width: 600, height: 500)
