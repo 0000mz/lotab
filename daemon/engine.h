@@ -26,10 +26,12 @@ typedef enum { LOG_LEVEL_WARN = 0, LOG_LEVEL_ERROR = 1, LOG_LEVEL_INFO = 2, LOG_
 struct ServerContext;
 struct StatusBarRunContext;
 struct TabState;
+struct TaskState;
 typedef struct EngineContext {
   struct ServerContext* serv_ctx;
   struct StatusBarRunContext* run_ctx;
   struct TabState* tab_state;
+  struct TaskState* task_state;
   int app_pid;  // TODO: internalize this
   int destroyed;
 } EngineContext;

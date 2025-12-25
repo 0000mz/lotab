@@ -54,6 +54,47 @@ typedef struct TabState {
   TabInfo* tabs;
 } TabState;
 
+typedef struct TaskInfo {
+  uint64_t task_id;
+  char* task_name;
+  struct TaskInfo* next;
+} TaskInfo;
+
+typedef struct TaskState {
+  int nb_tasks;
+  TaskInfo* tasks;
+} TaskState;
+
+void task_state_add(TaskState* ts, const char* task_name);
+
+static void tab_state_free(TabState* ts) {
+  if (!ts)
+    return;
+  TabInfo* current = ts->tabs;
+  while (current) {
+    TabInfo* next = current->next;
+    if (current->title)
+      free(current->title);
+    free(current);
+    current = next;
+  }
+  free(ts);
+}
+
+static void task_state_free(TaskState* ts) {
+  if (!ts)
+    return;
+  TaskInfo* current = ts->tasks;
+  while (current) {
+    TaskInfo* next = current->next;
+    if (current->task_name)
+      free(current->task_name);
+    free(current);
+    current = next;
+  }
+  free(ts);
+}
+
 static int setup_uds_client(ServerContext* sctx) {
   int retries = 5;
   int uds_fd;
@@ -256,10 +297,10 @@ int engine_init(EngineContext** ectx) {
   }
   memset(ec, 0, sizeof(EngineContext));
   ec->app_pid = -1;
-  ec->tab_state = malloc(sizeof(TabState));
-  if (ec->tab_state) {
-    memset(ec->tab_state, 0, sizeof(TabState));
-  }
+  ec->tab_state = calloc(1, sizeof(TabState));
+  ec->task_state = calloc(1, sizeof(TaskState));
+  // TODO: Placeholder task, remove once task creation flow is implemented.
+  task_state_add(ec->task_state, "Placeholder Task");
 
   // Setup websocket server
   vlog(LOG_LEVEL_INFO, "Setting up websocket server.\n");
@@ -325,7 +366,10 @@ fail:
     free(sc);
   }
   if (ec->tab_state) {
-    free(ec->tab_state);
+    tab_state_free(ec->tab_state);
+  }
+  if (ec->task_state) {
+    task_state_free(ec->task_state);
   }
   if (ec) {
     free(ec);
@@ -379,16 +423,12 @@ void engine_destroy(EngineContext* ectx) {
     ectx->run_ctx = NULL;
   }
   if (ectx->tab_state) {
-    TabInfo* current = ectx->tab_state->tabs;
-    while (current) {
-      TabInfo* next = current->next;
-      if (current->title)
-        free(current->title);
-      free(current);
-      current = next;
-    }
-    free(ectx->tab_state);
+    tab_state_free(ectx->tab_state);
     ectx->tab_state = NULL;
+  }
+  if (ectx->task_state) {
+    task_state_free(ectx->task_state);
+    ectx->task_state = NULL;
   }
   ectx->destroyed = 1;
 }
@@ -474,6 +514,16 @@ void tab_state_set_active(TabState* ts, const uint64_t id) {
       current->active = 0;
     }
     current = current->next;
+  }
+}
+
+void task_state_add(TaskState* ts, const char* task_name) {
+  TaskInfo* new_task = malloc(sizeof(TaskInfo));
+  if (new_task) {
+    new_task->task_id = ts->nb_tasks++;
+    new_task->task_name = strdup(task_name ? task_name : "Unknown Task");
+    new_task->next = ts->tasks;
+    ts->tasks = new_task;
   }
 }
 
@@ -694,7 +744,30 @@ void engine_handle_event(EngineContext* ectx, DaemonEvent event, void* data) {
       send_uds(ectx->serv_ctx->uds_fd, tab_update_msg);
       cJSON_Delete(tab_update_msg);
 
-      // 2. Send Toggle
+      // 2. Send Task Update
+      cJSON* task_update_msg = cJSON_CreateObject();
+      cJSON_AddStringToObject(task_update_msg, "event", "tasks_update");
+
+      cJSON* task_data = cJSON_CreateObject();
+      cJSON_AddItemToObject(task_update_msg, "data", task_data);
+
+      cJSON* tasks_array = cJSON_CreateArray();
+      cJSON_AddItemToObject(task_data, "tasks", tasks_array);
+
+      if (ectx->task_state) {
+        TaskInfo* current = ectx->task_state->tasks;
+        while (current) {
+          cJSON* task_obj = cJSON_CreateObject();
+          cJSON_AddNumberToObject(task_obj, "id", (double)current->task_id);
+          cJSON_AddStringToObject(task_obj, "name", current->task_name ? current->task_name : "Unknown");
+          cJSON_AddItemToArray(tasks_array, task_obj);
+          current = current->next;
+        }
+      }
+      send_uds(ectx->serv_ctx->uds_fd, task_update_msg);
+      cJSON_Delete(task_update_msg);
+
+      // 3. Send Toggle
       cJSON* toggle_msg = cJSON_CreateObject();
       cJSON_AddStringToObject(toggle_msg, "event", "ui_visibility_toggle");
       cJSON_AddStringToObject(toggle_msg, "data", "toggle");

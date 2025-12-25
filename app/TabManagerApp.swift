@@ -170,6 +170,19 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                                     print("App: JSON Decoding Error for tabs_update: \(error)")
                                 }
                             }
+                        } else if message.contains("tasks_update") {
+                            // Decode tasks
+                            if let jsonData = message.data(using: .utf8) {
+                                do {
+                                    let payload = try JSONDecoder().decode(TaskListPayload.self, from: jsonData)
+                                    print("App: Successfully decoded \(payload.data.tasks.count) tasks")
+                                    DispatchQueue.main.async {
+                                        TabManager.shared.tasks = payload.data.tasks
+                                    }
+                                } catch {
+                                    print("App: JSON Decoding Error for tasks_update: \(error)")
+                                }
+                            }
                         } else if message.contains("ui_visibility_toggle") {
                             showUI()
                         }
@@ -199,9 +212,22 @@ struct TabListPayload: Decodable {
     let data: Data
 }
 
+struct Task: Identifiable, Decodable, Hashable {
+    let id: Int
+    let name: String
+}
+
+struct TaskListPayload: Decodable {
+    struct Data: Decodable {
+        let tasks: [Task]
+    }
+    let data: Data
+}
+
 class TabManager: ObservableObject {
     static let shared = TabManager()
     @Published var tabs: [Tab] = []
+    @Published var tasks: [Task] = []
 }
 
 extension String {

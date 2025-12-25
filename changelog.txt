@@ -34,3 +34,5 @@ TODO:
 - Use nullability annotation and in/out annotation for C function parameters.
 - Find another way of writing unit tests for the daemon's engine after the refactor.
 - Use C attributes to annotate sync objects.
+- Figure out how to make the websocket connection happen all the time on startup. Currently,
+  the extension's service worker sometimes need to be woken up.
