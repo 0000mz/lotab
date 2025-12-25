@@ -558,15 +558,47 @@ void tab_event__do_nothing(TabState* ts, const cJSON* json_data) {
   vlog(LOG_LEVEL_TRACE, "tab_event -- do nothing\n");
 }
 
+void tab_event__handle_updated(TabState* ts, const cJSON* json_data) {
+  // {"event": "tabs.onUpdated", "data": {"tabId": 123, "changeInfo": {...}, "tab": {"id": 123, "title": "..."}}}
+  cJSON* data = cJSON_GetObjectItem(json_data, "data");
+  if (!data)
+    return;
+  cJSON* tab_json = cJSON_GetObjectItem(data, "tab");
+  if (!tab_json)
+    return;
+  cJSON* id_json = cJSON_GetObjectItem(tab_json, "id");
+  cJSON* title_json = cJSON_GetObjectItem(tab_json, "title");
+
+  if (!cJSON_IsNumber(id_json))
+    return;
+  uint64_t id = (uint64_t)id_json->valuedouble;
+  const char* title = "Unknown";
+  if (cJSON_IsString(title_json) && title_json->valuestring) {
+    title = title_json->valuestring;
+  }
+  if (tab_state_find_tab(ts, id)) {
+    tab_state_update_tab(ts, title, id);
+    vlog(LOG_LEVEL_INFO, "Tab Updated: %llu, Title: %s\n", id, title);
+  } else {
+    tab_state_add_tab(ts, title, id);
+    vlog(LOG_LEVEL_INFO, "Tab Updated (New): %llu, Title: %s\n", id, title);
+  }
+}
+
 struct TabEventMapEntry {
   const char* event_name;
   TabEventType type;
 };
+// clang-format off
 static const struct TabEventMapEntry TAB_EVENT_MAP[] = {
-    {"tabs.onActivated", TAB_EVENT_ACTIVATED},    {"tabs.onUpdated", TAB_EVENT_UPDATED},
-    {"tabs.onCreated", TAB_EVENT_CREATED},        {"tabs.onHighlighted", TAB_EVENT_HIGHLIGHTED},
-    {"tabs.onZoomChange", TAB_EVENT_ZOOM_CHANGE}, {"tabs.onAllTabs", TAB_EVENT_ALL_TABS},
-    {"tabs.onRemoved", TAB_EVENT_TAB_REMOVED},    {NULL, TAB_EVENT_UNKNOWN},
+    {"tabs.onActivated", TAB_EVENT_ACTIVATED},
+    {"tabs.onUpdated", TAB_EVENT_UPDATED},
+    {"tabs.onCreated", TAB_EVENT_CREATED},
+    {"tabs.onHighlighted", TAB_EVENT_HIGHLIGHTED},
+    {"tabs.onZoomChange", TAB_EVENT_ZOOM_CHANGE},
+    {"tabs.onAllTabs", TAB_EVENT_ALL_TABS},
+    {"tabs.onRemoved", TAB_EVENT_TAB_REMOVED},
+    {NULL, TAB_EVENT_UNKNOWN},
 };
 
 static struct {
@@ -577,10 +609,12 @@ static struct {
     {TAB_EVENT_TAB_REMOVED, tab_event__handle_remove_tab},
     {TAB_EVENT_ACTIVATED, tab_event__handle_activated},
     {TAB_EVENT_CREATED, tab_event__handle_created},
+    {TAB_EVENT_UPDATED, tab_event__handle_updated},
     {TAB_EVENT_HIGHLIGHTED, tab_event__do_nothing},
     {TAB_EVENT_ZOOM_CHANGE, tab_event__do_nothing},
     {TAB_EVENT_UNKNOWN, NULL},
 };
+// clang-format on
 
 // Helper to determine event type from JSON string
 static TabEventType parse_event_type(cJSON* json) {
