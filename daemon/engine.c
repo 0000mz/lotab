@@ -45,6 +45,7 @@ typedef struct PerSessionData {
 typedef struct TabInfo {
   uint64_t id;
   char* title;
+  int active;
   struct TabInfo* next;
 } TabInfo;
 
@@ -451,6 +452,18 @@ void tab_state_remove_tab(TabState* ts, const uint64_t id) {
   }
 }
 
+void tab_state_set_active(TabState* ts, const uint64_t id) {
+  TabInfo* current = ts->tabs;
+  while (current) {
+    if (current->id == id) {
+      current->active = 1;
+    } else {
+      current->active = 0;
+    }
+    current = current->next;
+  }
+}
+
 void tab_event__handle_all_tabs(TabState* ts, const cJSON* json_data) {
   cJSON* data = cJSON_GetObjectItem(json_data, "data");
   if (data && cJSON_IsArray(data)) {
@@ -502,6 +515,21 @@ void tab_event__handle_remove_tab(TabState* ts, const cJSON* json_data) {
   }
 }
 
+void tab_event__handle_activated(TabState* ts, const cJSON* json_data) {
+  // {"event": "tabs.onActivated", "data": {"tabId": 123, "windowId": 456}}
+  cJSON* data = cJSON_GetObjectItem(json_data, "data");
+  if (data) {
+    cJSON* tabIdJson = cJSON_GetObjectItem(data, "tabId");
+    if (cJSON_IsNumber(tabIdJson)) {
+      uint64_t id = (uint64_t)tabIdJson->valuedouble;
+      tab_state_set_active(ts, id);
+      vlog(LOG_LEVEL_INFO, "Tab Activated: %llu\n", id);
+    } else {
+      vlog(LOG_LEVEL_WARN, "onActivated: tabId missing or invalid\n");
+    }
+  }
+}
+
 struct TabEventMapEntry {
   const char* event_name;
   TabEventType type;
@@ -519,6 +547,7 @@ static struct {
 } TAB_EVENT_HANDLERS[] = {
     {TAB_EVENT_ALL_TABS, tab_event__handle_all_tabs},
     {TAB_EVENT_TAB_REMOVED, tab_event__handle_remove_tab},
+    {TAB_EVENT_ACTIVATED, tab_event__handle_activated},
     {TAB_EVENT_UNKNOWN, NULL},
 };
 
