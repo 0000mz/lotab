@@ -425,6 +425,7 @@ void tab_state_add_tab(TabState* ts, const char* title, const uint64_t id) {
   if (new_tab) {
     new_tab->id = id;
     new_tab->title = strdup(title);
+    new_tab->active = 0;
     new_tab->next = ts->tabs;
     ts->tabs = new_tab;
     ts->nb_tabs++;
@@ -530,6 +531,33 @@ void tab_event__handle_activated(TabState* ts, const cJSON* json_data) {
   }
 }
 
+void tab_event__handle_created(TabState* ts, const cJSON* json_data) {
+  // {"event": "tabs.onCreated", "data": {"id": 123, "title": "New Tab", ...}}
+  cJSON* data = cJSON_GetObjectItem(json_data, "data");
+  if (data) {
+    cJSON* id_json = cJSON_GetObjectItem(data, "id");
+    cJSON* title_json = cJSON_GetObjectItem(data, "title");
+
+    if (cJSON_IsNumber(id_json)) {
+      uint64_t id = (uint64_t)id_json->valuedouble;
+      const char* title = "New Tab";
+      if (cJSON_IsString(title_json) && title_json->valuestring) {
+        title = title_json->valuestring;
+      }
+      tab_state_add_tab(ts, title, id);
+      vlog(LOG_LEVEL_INFO, "Tab Created: %llu, Title: %s\n", id, title);
+    } else {
+      vlog(LOG_LEVEL_WARN, "onCreated: id missing or invalid\n");
+    }
+  }
+}
+
+void tab_event__do_nothing(TabState* ts, const cJSON* json_data) {
+  (void)ts;
+  (void)json_data;
+  vlog(LOG_LEVEL_TRACE, "tab_event -- do nothing\n");
+}
+
 struct TabEventMapEntry {
   const char* event_name;
   TabEventType type;
@@ -548,6 +576,9 @@ static struct {
     {TAB_EVENT_ALL_TABS, tab_event__handle_all_tabs},
     {TAB_EVENT_TAB_REMOVED, tab_event__handle_remove_tab},
     {TAB_EVENT_ACTIVATED, tab_event__handle_activated},
+    {TAB_EVENT_CREATED, tab_event__handle_created},
+    {TAB_EVENT_HIGHLIGHTED, tab_event__do_nothing},
+    {TAB_EVENT_ZOOM_CHANGE, tab_event__do_nothing},
     {TAB_EVENT_UNKNOWN, NULL},
 };
 
