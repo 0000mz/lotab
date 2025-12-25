@@ -57,6 +57,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 window.titlebarAppearsTransparent = true
                 window.titleVisibility = .hidden
 
+                window.isOpaque = false
+                window.backgroundColor = .clear
+
                 window.level = .floating
                 window.makeKeyAndOrderFront(nil)
             }

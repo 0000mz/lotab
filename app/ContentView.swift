@@ -16,9 +16,6 @@ struct ContentView: View {
                                 Text(activeTab.title)
                                     .lineLimit(1)
                                     .truncationMode(.tail)
-                                Spacer()
-                                Image(systemName: "checkmark.circle.fill")
-                                    .foregroundColor(.blue)
                             }
                         }
                     }
@@ -33,6 +30,27 @@ struct ContentView: View {
                 }
             }
         }
-        .frame(width: 400, height: 500)
+        .scrollContentBackground(.hidden)
+        .frame(width: 600, height: 500)
+        .background(VisualEffectView(material: .hudWindow, blendingMode: .behindWindow))
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+    }
+}
+
+struct VisualEffectView: NSViewRepresentable {
+    let material: NSVisualEffectView.Material
+    let blendingMode: NSVisualEffectView.BlendingMode
+
+    func makeNSView(context: Context) -> NSVisualEffectView {
+        let visualEffectView = NSVisualEffectView()
+        visualEffectView.material = material
+        visualEffectView.blendingMode = blendingMode
+        visualEffectView.state = .active
+        return visualEffectView
+    }
+
+    func updateNSView(_ nsView: NSVisualEffectView, context: Context) {
+        nsView.material = material
+        nsView.blendingMode = blendingMode
     }
 }
