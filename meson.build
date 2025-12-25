@@ -2,7 +2,8 @@ project('tab_manager', 'c', 'cpp', 'swift', 'objc',
   version : '0.1',
   default_options : ['warning_level=3', 'cpp_std=c++20'])
 
-lws_dep = dependency('libwebsockets')
+lws_proj = subproject('libwebsockets', default_options: ['client=true'])
+lws_dep = lws_proj.get_variable('libwebsockets_dep')
 cjson_dep = dependency('libcjson')
 carbon_dep = dependency('appleframeworks', modules : 'Carbon')
 cocoa_dep = dependency('appleframeworks', modules : 'Cocoa')
@@ -84,7 +85,7 @@ gtest_dep = dependency('gtest', main : true, required : false)
 if gtest_dep.found()
   e_test = executable('engine_test',
                       ['tests/engine_test.cpp'],
-                      dependencies : [gtest_dep, engine_dep])
+                      dependencies : [gtest_dep, engine_dep, lws_dep])
   test('engine_test', e_test)
 else
   message('gtest not found, skipping unit tests')
