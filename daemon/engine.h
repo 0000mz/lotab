@@ -25,6 +25,10 @@ typedef enum {
 
 typedef enum { LOG_LEVEL_WARN = 0, LOG_LEVEL_ERROR = 1, LOG_LEVEL_INFO = 2, LOG_LEVEL_TRACE = 3 } LogLevel;
 
+struct EngClass {
+  char* name;
+};
+
 struct ServerContext;
 struct StatusBarRunContext;
 typedef struct TabInfo {
@@ -35,6 +39,7 @@ typedef struct TabInfo {
 } TabInfo;
 
 typedef struct TabState {
+  struct EngClass* cls;
   int nb_tabs;
   TabInfo* tabs;
 } TabState;
@@ -46,11 +51,13 @@ typedef struct TaskInfo {
 } TaskInfo;
 
 typedef struct TaskState {
+  struct EngClass* cls;
   int nb_tasks;
   TaskInfo* tasks;
 } TaskState;
 
 typedef struct EngineContext {
+  struct EngClass* cls;
   struct ServerContext* serv_ctx;
   struct StatusBarRunContext* run_ctx;
   struct TabState* tab_state;
@@ -76,7 +83,7 @@ void engine_set_log_level(LogLevel level);
 void engine_handle_event(EngineContext* ectx, DaemonEvent event, void* data);
 
 // Log a message with the specified level
-void vlog(LogLevel level, const char* fmt, ...);
+void vlog(LogLevel level, void* cls, const char* fmt, ...);
 
 #ifdef __cplusplus
 }

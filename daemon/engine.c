@@ -29,6 +29,7 @@ extern char** environ;                                 // Necessary global for i
 static const char* uds_path = "/tmp/tabmanager.sock";  // TODO: Do not use globals.
 
 typedef struct ServerContext {
+  struct EngClass* cls;
   struct lws_context* lws_ctx;
   struct lws* client_wsi;
   pthread_t ws_thread;
@@ -41,6 +42,19 @@ typedef struct PerSessionData {
   char* msg;
   size_t len;
 } PerSessionData;
+
+static struct EngClass TAB_STATE_CLASS = {
+    .name = "tab",
+};
+static struct EngClass TASK_STATE_CLASS = {
+    .name = "task",
+};
+static struct EngClass ENGINE_CONTEXT_CLASS = {
+    .name = "engine",
+};
+static struct EngClass SERVER_CONTEXT_CLASS = {
+    .name = "server",
+};
 
 void task_state_add(TaskState* ts, const char* task_name);
 void tab_state_update_active(TabState* ts, const cJSON* json_data);
@@ -85,12 +99,12 @@ static int setup_uds_client(ServerContext* sctx) {
   while (retries > 0) {
     uds_fd = socket(AF_UNIX, SOCK_STREAM, 0);
     if (uds_fd < 0) {
-      vlog(LOG_LEVEL_ERROR, "Daemon: Failed to create UDS socket: %s\n", strerror(errno));
+      vlog(LOG_LEVEL_ERROR, sctx, "Failed to create UDS socket: %s\n", strerror(errno));
       return -1;  // TODO: Use some error code
     }
 
     if (connect(uds_fd, (struct sockaddr*)&addr, sizeof(addr)) == 0) {
-      vlog(LOG_LEVEL_INFO, "Daemon: Connected to App UDS at %s\n", uds_path);
+      vlog(LOG_LEVEL_INFO, sctx, "Connected to App UDS at %s\n", uds_path);
       const char* ping = "{\"event\":\"daemon_startup\",\"data\":\"ping\"}\n";
       send(uds_fd, ping, strlen(ping), 0);
       sctx->uds_fd = uds_fd;
@@ -99,11 +113,11 @@ static int setup_uds_client(ServerContext* sctx) {
 
     close(uds_fd);
     uds_fd = -1;
-    fprintf(stderr, "Daemon: UDS connect failed, retrying in 1s... (%d left)\n", retries - 1);
+    fprintf(stderr, "UDS connect failed, retrying in 1s... (%d left)\n", retries - 1);
     sleep(1);
     retries--;
   }
-  vlog(LOG_LEVEL_ERROR, "Daemon: Failed to connect to App UDS after multiple attempts\n");
+  vlog(LOG_LEVEL_ERROR, sctx, "Failed to connect to App UDS after multiple attempts\n");
   return -1;
 }
 
@@ -119,16 +133,17 @@ static void send_uds(const int uds_fd, const cJSON* json_data) {
         msg[len + 1] = '\0';
 
         if (send(uds_fd, msg, len + 1, 0) < 0) {
-          vlog(LOG_LEVEL_ERROR, "Daemon: Failed to send data to App via UDS: %s\n", strerror(errno));
+          // TODO: Pass some log context here.
+          vlog(LOG_LEVEL_ERROR, NULL, "Failed to send data to App via UDS: %s\n", strerror(errno));
         } else {
-          vlog(LOG_LEVEL_INFO, "Daemon: Sent UDS message: %s\n", json_str);
+          vlog(LOG_LEVEL_INFO, NULL, "Sent UDS message: %s\n", json_str);
         }
         free(msg);
       }
       free(json_str);
     }
   } else {
-    vlog(LOG_LEVEL_WARN, "Daemon: Warning - Cannot send UDS, not connected.\n");
+    vlog(LOG_LEVEL_WARN, NULL, "Warning - Cannot send UDS, not connected.\n");
   }
 }
 
@@ -176,7 +191,7 @@ static int callback_minimal(struct lws* wsi, enum lws_callback_reasons reason, v
         memcpy(&buf[LWS_PRE], msg, msg_len);
         lws_write(wsi, &buf[LWS_PRE], msg_len, LWS_WRITE_TEXT);
         sc->send_tab_request = 0;
-        vlog(LOG_LEVEL_INFO, "Daemon: Sent request_tab_info to extension\n");
+        vlog(LOG_LEVEL_INFO, sc, "Sent request_tab_info to extension\n");
       }
       break;
 
@@ -228,9 +243,10 @@ static void kill_process(const int pid) {
     if (kill(pid, SIGTERM) == 0) {
       int status;
       waitpid(pid, &status, 0);
-      vlog(LOG_LEVEL_INFO, "Process terminated.\n");
+      // TODO: pass some context here
+      vlog(LOG_LEVEL_INFO, NULL, "Process terminated.\n");
     } else {
-      vlog(LOG_LEVEL_ERROR, "Failed to kill child process.\n");
+      vlog(LOG_LEVEL_ERROR, NULL, "Failed to kill child process.\n");
     }
   }
 }
@@ -269,27 +285,31 @@ int engine_init(EngineContext** ectx, EngineCreationInfo cinfo) {
 
   ec = (EngineContext*)malloc(sizeof(EngineContext));
   if (!ec) {
-    vlog(LOG_LEVEL_ERROR, "Failed to allocate engine context.\n");
+    vlog(LOG_LEVEL_ERROR, NULL, "Failed to allocate engine context.\n");
     ret = NGERROR(ENOMEM);
     goto fail;
   }
   memset(ec, 0, sizeof(EngineContext));
+  ec->cls = &ENGINE_CONTEXT_CLASS;
   ec->app_pid = -1;
   ec->tab_state = calloc(1, sizeof(TabState));
+  ec->tab_state->cls = &TAB_STATE_CLASS;
   ec->task_state = calloc(1, sizeof(TaskState));
+  ec->task_state->cls = &TASK_STATE_CLASS;
   // TODO: Placeholder task, remove once task creation flow is implemented.
   task_state_add(ec->task_state, "Placeholder Task");
   ec->init_statusline = cinfo.enable_statusbar != 0;
 
   // Setup websocket server
-  vlog(LOG_LEVEL_INFO, "Setting up websocket server.\n");
+  vlog(LOG_LEVEL_INFO, ec, "Setting up websocket server.\n");
   sc = (ServerContext*)malloc(sizeof(ServerContext));
   if (!sc) {
-    vlog(LOG_LEVEL_ERROR, "Failed to allocate server context.\n");
+    vlog(LOG_LEVEL_ERROR, ec, "Failed to allocate server context.\n");
     ret = NGERROR(ENOMEM);
     goto fail;
   }
   memset(sc, 0, sizeof(ServerContext));
+  sc->cls = &SERVER_CONTEXT_CLASS;
   lws_set_log_level(LLL_USER | LLL_ERR | LLL_WARN | LLL_NOTICE, NULL);
 
   ec->serv_ctx = sc;
@@ -299,7 +319,7 @@ int engine_init(EngineContext** ectx, EngineCreationInfo cinfo) {
   info.gid = -1;
   info.uid = -1;
   info.user = ec;
-  vlog(LOG_LEVEL_INFO, "Starting Daemon WebSocket server on port %d\n", info.port);
+  vlog(LOG_LEVEL_INFO, ec, "Starting Daemon WebSocket server on port %d\n", info.port);
   sc->lws_ctx = lws_create_context(&info);
   if (!sc->lws_ctx) {
     ret = -1;  // TODO: use some defined error code.
@@ -307,29 +327,29 @@ int engine_init(EngineContext** ectx, EngineCreationInfo cinfo) {
   }
 
   if (pthread_create(&sc->ws_thread, NULL, ws_thread_run, (void*)sc) != 0) {
-    vlog(LOG_LEVEL_ERROR, "Failed to start websocket server.\n");
+    vlog(LOG_LEVEL_ERROR, ec, "Failed to start websocket server.\n");
     ret = -1;  // TODO: use some defined error code.
     goto fail;
   }
 
 // Initialize gui client and uds protocol
 #ifndef APP_PATH
-  vlog(LOG_LEVEL_ERROR, "APP_PATH is not defined. Daemon cannot continue.\n");
+  vlog(LOG_LEVEL_ERROR, ec, "APP_PATH is not defined. Daemon cannot continue.\n");
   ret = -1;  // TODO: use some defined error code.
   goto fail;
 #endif
   char* spawn_args[] = {(char*)APP_PATH, NULL};
   int spawn_status = posix_spawn(&ec->app_pid, APP_PATH, NULL, NULL, spawn_args, environ);
   if (spawn_status == 0) {
-    vlog(LOG_LEVEL_INFO, "Daemon: Successfully spawned TabManager (PID: %d)\n", ec->app_pid);
+    vlog(LOG_LEVEL_INFO, ec, "Successfully spawned TabManager (PID: %d)\n", ec->app_pid);
     sleep(1);
     setup_uds_client(sc);
   } else {
-    vlog(LOG_LEVEL_ERROR, "Daemon: Failed to spawn TabManager: %s\n", strerror(spawn_status));
+    vlog(LOG_LEVEL_ERROR, ec, "Failed to spawn TabManager: %s\n", strerror(spawn_status));
     ret = -1;
     goto fail;
   }
-  vlog(LOG_LEVEL_INFO, "Engine initialized.\n");
+  vlog(LOG_LEVEL_INFO, ec, "Engine initialized.\n");
   *ectx = ec;
   return 0;
 
@@ -365,17 +385,18 @@ static void sigint_handler(int sig) {
 
 void engine_run(EngineContext* ectx) {
   signal(SIGINT, sigint_handler);
-  printf("Daemon: Starting Cocoa Event Loop\n");
   ectx->run_ctx = malloc(sizeof(StatusBarRunContext));
   if (!ectx->run_ctx) {
-    vlog(LOG_LEVEL_ERROR, "Failed to allocate run context.\n");
+    vlog(LOG_LEVEL_ERROR, ectx, "Failed to allocate run context.\n");
     return;
   }
   ectx->run_ctx->on_toggle = on_status_toggle;
   ectx->run_ctx->on_quit = on_status_quit;
   ectx->run_ctx->privdata = ectx;
-  if (ectx->init_statusline)
+  if (ectx->init_statusline) {
+    vlog(LOG_LEVEL_INFO, ectx, "Starting cocoa event loop\n");
     run_daemon_cocoa_app(ectx->run_ctx);
+  }
 }
 
 void engine_destroy(EngineContext* ectx) {
@@ -419,7 +440,20 @@ void engine_set_log_level(LogLevel level) {
   g_log_level = level;
 }
 
-void vlog(LogLevel level, const char* fmt, ...) {
+char log_level_str(const LogLevel l) {
+  switch (l) {
+    case LOG_LEVEL_INFO:
+      return 'I';
+    case LOG_LEVEL_TRACE:
+      return 'T';
+    case LOG_LEVEL_WARN:
+      return 'W';
+    case LOG_LEVEL_ERROR:
+      return 'E';
+  }
+}
+
+void vlog(LogLevel level, void* cls, const char* fmt, ...) {
   if (level > g_log_level) {
     return;
   }
@@ -432,7 +466,10 @@ void vlog(LogLevel level, const char* fmt, ...) {
   FILE* f = stdout;
   if (level == LOG_LEVEL_ERROR)
     f = stderr;
-  fprintf(f, "%s", buf);
+
+  struct EngClass* ecls = *(struct EngClass**)cls;
+  char l_prefix = log_level_str(level);
+  fprintf(f, "%c [%s @ %p] %s", l_prefix, ecls ? ecls->name : "null", (void*)ecls, buf);
 }
 
 TabInfo* tab_state_find_tab(TabState* ts, const uint64_t id) {
@@ -501,7 +538,7 @@ void tab_event__handle_all_tabs(TabState* ts, const cJSON* json_data) {
   cJSON* data = cJSON_GetObjectItem(json_data, "data");
   if (data && cJSON_IsArray(data)) {
     int count = cJSON_GetArraySize(data);
-    vlog(LOG_LEVEL_INFO, "Received %d tabs (current state: %d)\n", count, ts->nb_tabs);
+    vlog(LOG_LEVEL_INFO, ts, "Received %d tabs (current state: %d)\n", count, ts->nb_tabs);
     int tabs_added = 0, tabs_updated = 0;
 
     for (int i = 0; i < count; i++) {
@@ -527,9 +564,10 @@ void tab_event__handle_all_tabs(TabState* ts, const cJSON* json_data) {
         ++tabs_added;
       }
     }
-    vlog(LOG_LEVEL_INFO, "Tab State Synced: %d updated, %d added. Total: %d\n", tabs_updated, tabs_added, ts->nb_tabs);
+    vlog(LOG_LEVEL_INFO, ts, "Tab State Synced: %d updated, %d added. Total: %d\n", tabs_updated, tabs_added,
+         ts->nb_tabs);
   } else {
-    vlog(LOG_LEVEL_WARN, "onAllTabs: 'data' key missing or not an array.\n");
+    vlog(LOG_LEVEL_WARN, ts, "onAllTabs: 'data' key missing or not an array.\n");
   }
   tab_state_update_active(ts, json_data);
 }
@@ -571,9 +609,9 @@ void tab_event__handle_remove_tab(TabState* ts, const cJSON* json_data) {
     if (cJSON_IsNumber(tabIdJson)) {
       uint64_t id = (uint64_t)tabIdJson->valuedouble;
       tab_state_remove_tab(ts, id);
-      vlog(LOG_LEVEL_INFO, "Tab Removed: %llu. Remaining: %d\n", id, ts->nb_tabs);
+      vlog(LOG_LEVEL_INFO, ts, "Tab Removed: %llu. Remaining: %d\n", id, ts->nb_tabs);
     } else {
-      vlog(LOG_LEVEL_WARN, "onRemoved: tabId missing or invalid\n");
+      vlog(LOG_LEVEL_WARN, ts, "onRemoved: tabId missing or invalid\n");
     }
   }
   tab_state_update_active(ts, json_data);
@@ -586,9 +624,9 @@ void tab_event__handle_activated(TabState* ts, const cJSON* json_data) {
     cJSON* tabIdJson = cJSON_GetObjectItem(data, "tabId");
     if (cJSON_IsNumber(tabIdJson)) {
       uint64_t id = (uint64_t)tabIdJson->valuedouble;
-      vlog(LOG_LEVEL_INFO, "Tab Activated: %llu\n", id);
+      vlog(LOG_LEVEL_INFO, ts, "Tab Activated: %llu\n", id);
     } else {
-      vlog(LOG_LEVEL_WARN, "onActivated: tabId missing or invalid\n");
+      vlog(LOG_LEVEL_WARN, ts, "onActivated: tabId missing or invalid\n");
     }
   }
   tab_state_update_active(ts, json_data);
@@ -608,9 +646,9 @@ void tab_event__handle_created(TabState* ts, const cJSON* json_data) {
         title = title_json->valuestring;
       }
       tab_state_add_tab(ts, title, id);
-      vlog(LOG_LEVEL_INFO, "Tab Created: %llu, Title: %s\n", id, title);
+      vlog(LOG_LEVEL_INFO, ts, "Tab Created: %llu, Title: %s\n", id, title);
     } else {
-      vlog(LOG_LEVEL_WARN, "onCreated: id missing or invalid\n");
+      vlog(LOG_LEVEL_WARN, ts, "onCreated: id missing or invalid\n");
     }
   }
   tab_state_update_active(ts, json_data);
@@ -619,7 +657,7 @@ void tab_event__handle_created(TabState* ts, const cJSON* json_data) {
 void tab_event__do_nothing(TabState* ts, const cJSON* json_data) {
   (void)ts;
   (void)json_data;
-  vlog(LOG_LEVEL_TRACE, "tab_event -- do nothing\n");
+  vlog(LOG_LEVEL_TRACE, ts, "tab_event -- do nothing\n");
 }
 
 void tab_event__handle_updated(TabState* ts, const cJSON* json_data) {
@@ -642,10 +680,10 @@ void tab_event__handle_updated(TabState* ts, const cJSON* json_data) {
   }
   if (tab_state_find_tab(ts, id)) {
     tab_state_update_tab(ts, title, id);
-    vlog(LOG_LEVEL_INFO, "Tab Updated: %llu, Title: %s\n", id, title);
+    vlog(LOG_LEVEL_INFO, ts, "Tab Updated: %llu, Title: %s\n", id, title);
   } else {
     tab_state_add_tab(ts, title, id);
-    vlog(LOG_LEVEL_INFO, "Tab Updated (New): %llu, Title: %s\n", id, title);
+    vlog(LOG_LEVEL_INFO, ts, "Tab Updated (New): %llu, Title: %s\n", id, title);
   }
   tab_state_update_active(ts, json_data);
 }
@@ -696,7 +734,7 @@ static TabEventType parse_event_type(cJSON* json) {
       }
     }
     if (!found) {
-      vlog(LOG_LEVEL_WARN, "Unknown tab event: %s\n", event->valuestring);
+      vlog(LOG_LEVEL_WARN, NULL, "Unknown tab event: %s\n", event->valuestring);
     }
   }
   return type;
@@ -712,7 +750,7 @@ void tab_event_handle(TabState* ts, TabEventType type, cJSON* json_data) {
     }
   }
   if (!event_handled) {
-    vlog(LOG_LEVEL_WARN, "Unhandled tab event type: %d\n", type);
+    vlog(LOG_LEVEL_WARN, ts, "Unhandled tab event type: %d\n", type);
   }
 }
 
@@ -721,7 +759,7 @@ void engine_handle_event(EngineContext* ectx, DaemonEvent event, void* data) {
 
   switch (event) {
     case EVENT_HOTKEY_TOGGLE: {
-      vlog(LOG_LEVEL_INFO, "Engine: Toggle Requested\n");
+      vlog(LOG_LEVEL_INFO, ectx, "Engine: Toggle Requested\n");
 
       // 1. Send Tab Update
       cJSON* tab_update_msg = cJSON_CreateObject();
@@ -780,7 +818,7 @@ void engine_handle_event(EngineContext* ectx, DaemonEvent event, void* data) {
 
     case EVENT_WS_MESSAGE_RECEIVED:
       if (data) {
-        vlog(LOG_LEVEL_TRACE, "Engine: WS Message Received: %s\n", (const char*)data);
+        vlog(LOG_LEVEL_TRACE, ectx, "Engine: WS Message Received: %s\n", (const char*)data);
         const char* json_msg = (const char*)data;
         cJSON* json = cJSON_Parse(json_msg);
         if (json) {
@@ -790,7 +828,7 @@ void engine_handle_event(EngineContext* ectx, DaemonEvent event, void* data) {
           }
           cJSON_Delete(json);
         } else {
-          vlog(LOG_LEVEL_ERROR, "Failed to parse json from websocket message.\n");
+          vlog(LOG_LEVEL_ERROR, ectx, "Failed to parse json from websocket message.\n");
         }
       }
       break;
