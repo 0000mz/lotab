@@ -93,7 +93,7 @@ struct ContentView: View {
                     .foregroundColor(.secondary)
                     .padding([.trailing], 12)
                     .frame(height: .infinity, alignment: .center)
-            }
+            }.frame(height: 30)
         }
         .scrollContentBackground(.hidden)
         .frame(width: 600, height: 500)
