@@ -133,7 +133,7 @@ static void send_uds(const int uds_fd, const cJSON* json_data) {
           // TODO: Pass some log context here.
           vlog(LOG_LEVEL_ERROR, NULL, "Failed to send data to App via UDS: %s\n", strerror(errno));
         } else {
-          vlog(LOG_LEVEL_INFO, NULL, "Sent UDS message: %s\n", json_str);
+          vlog(LOG_LEVEL_TRACE, NULL, "uds-send: %s\n", json_str);
         }
         free(msg);
       }
@@ -746,8 +746,6 @@ void engine_handle_event(EngineContext* ectx, DaemonEvent event, void* data) {
 
   switch (event) {
     case EVENT_HOTKEY_TOGGLE: {
-      vlog(LOG_LEVEL_INFO, ectx, "Engine: Toggle Requested\n");
-
       // 1. Send Tab Update
       cJSON* tab_update_msg = cJSON_CreateObject();
       cJSON_AddStringToObject(tab_update_msg, "event", "tabs_update");
@@ -805,10 +803,11 @@ void engine_handle_event(EngineContext* ectx, DaemonEvent event, void* data) {
 
     case EVENT_WS_MESSAGE_RECEIVED:
       if (data) {
-        vlog(LOG_LEVEL_TRACE, ectx, "Engine: WS Message Received: %s\n", (const char*)data);
+        vlog(LOG_LEVEL_TRACE, ectx->serv_ctx, "raw message: %s\n", (const char*)data);
         const char* json_msg = (const char*)data;
         cJSON* json = cJSON_Parse(json_msg);
         if (json) {
+          vlog(LOG_LEVEL_TRACE, ectx->serv_ctx, "json parsed message: %s\n", cJSON_Print(json));
           TabEventType type = parse_event_type(json);
           if (type != TAB_EVENT_UNKNOWN) {
             tab_event_handle(ectx->tab_state, type, json);

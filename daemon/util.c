@@ -29,7 +29,7 @@ void vlog(LogLevel level, void* cls, const char* fmt, ...) {
   if (level > g_log_level) {
     return;
   }
-  char buf[1024];
+  char buf[2048];
   va_list args;
   va_start(args, fmt);
   vsnprintf(buf, sizeof(buf), fmt, args);

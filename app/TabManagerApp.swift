@@ -67,7 +67,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func hideUI() {
-        vlog_s(.info, TabManagerApp.appClass, "Hiding UI")
+        vlog_s(.trace, TabManagerApp.appClass, "hiding ui")
         DispatchQueue.main.async {
             NSApp.hide(nil)
         }
@@ -156,7 +156,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     accumulator.removeSubrange(0..<range.upperBound)
 
                     if let message = String(data: messageData, encoding: .utf8) {
-                        vlog_s(.info, TabManagerApp.appClass, "Received UDS message: \(message)")
+                        vlog_s(.trace, TabManagerApp.appClass, "uds-read: \(message)")
                         if message.contains("tabs_update") {
                             // Decode tabs
                             if let jsonData = message.data(using: .utf8) {
