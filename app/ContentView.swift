@@ -54,6 +54,7 @@ struct ContentView: View {
                 Button("") {
                     if let selectedId = selection {
                         AppDelegate.shared?.sendUDSMessage(event: "tab_selected", data: ["tabId": selectedId])
+                        AppDelegate.shared?.hideUI()
                     }
                 }
                 .keyboardShortcut(.defaultAction)

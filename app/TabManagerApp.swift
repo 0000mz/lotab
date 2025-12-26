@@ -10,11 +10,36 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private let socketPath = "/tmp/tabmanager.sock"
 
     static var shared: AppDelegate?
+    var window: FocusableWindow!
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         AppDelegate.shared = self
         // Start as a background/accessory app
         NSApp.setActivationPolicy(.accessory)
+
+        // Create the window manually
+        let contentView = ContentView(tabManager: TabManager.shared)
+
+        // Create a borderless window with no style mask initially
+        window = FocusableWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 600, height: 500),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+
+        window.center()
+        window.contentView = NSHostingView(rootView: contentView)
+
+        // Configure Window Properties
+        window.isMovable = false
+        window.isMovableByWindowBackground = false
+        window.titlebarAppearsTransparent = true
+        window.titleVisibility = .hidden
+        window.isOpaque = false
+        window.backgroundColor = .clear
+        window.level = .floating
+        window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
 
         // Setup ESC key monitor to hide the UI
         NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
@@ -27,7 +52,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         startUDSServer()
 
-        // Explicitly hide any windows that SwiftUI might have shown during startup
+        // Explicitly hide initially
         DispatchQueue.main.async {
             self.hideUI()
         }
@@ -39,40 +64,28 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func showUI() {
         DispatchQueue.main.async {
-            NSApp.activate(ignoringOtherApps: true)
-            if let window = NSApp.windows.first {
-                // Center the window
-                if let screen = NSScreen.main {
-                    let screenRect = screen.visibleFrame
-                    let windowRect = window.frame
+            // Center the window
+            if let screen = NSScreen.main {
+                let screenRect = screen.visibleFrame
+                let windowRect = self.window.frame
 
-                    let x = screenRect.origin.x + (screenRect.width - windowRect.width) / 2
-                    let y = screenRect.origin.y + (screenRect.height - windowRect.height) / 2
+                let x = screenRect.origin.x + (screenRect.width - windowRect.width) / 2
+                let y = screenRect.origin.y + (screenRect.height - windowRect.height) / 2
 
-                    window.setFrameOrigin(NSPoint(x: x, y: y))
-                }
-
-                // Disable movement
-                window.isMovable = false
-                window.isMovableByWindowBackground = false
-
-                // Hide window controls
-                window.styleMask.remove([.titled, .closable, .miniaturizable, .resizable])
-                window.titlebarAppearsTransparent = true
-                window.titleVisibility = .hidden
-
-                window.isOpaque = false
-                window.backgroundColor = .clear
-
-                window.level = .floating
-                window.makeKeyAndOrderFront(nil)
+                self.window.setFrameOrigin(NSPoint(x: x, y: y))
             }
+
+            // Show and focus
+            self.window.makeKeyAndOrderFront(nil)
+            self.window.orderFrontRegardless()
+            NSApp.activate(ignoringOtherApps: true)
         }
     }
 
-    private func hideUI() {
+    func hideUI() {
         vlog_s(.trace, TabManagerApp.appClass, "hiding ui")
         DispatchQueue.main.async {
+            self.window.orderOut(nil)
             NSApp.hide(nil)
         }
     }
@@ -237,7 +250,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             let jsonData = try JSONSerialization.data(withJSONObject: messageParams, options: [])
             var length = UInt32(jsonData.count).littleEndian
             let lengthData = Data(bytes: &length, count: MemoryLayout<UInt32>.size)
-            
+
             let combinedData = lengthData + jsonData
 
             let result = combinedData.withUnsafeBytes { buffer -> Int in
@@ -300,6 +313,11 @@ extension String {
     }
 }
 
+class FocusableWindow: NSWindow {
+    override var canBecomeKey: Bool { return true }
+    override var canBecomeMain: Bool { return true }
+}
+
 @main
 struct TabManagerApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
@@ -321,8 +339,8 @@ struct TabManagerApp: App {
     }
 
     var body: some Scene {
-        WindowGroup {
-            ContentView(tabManager: TabManager.shared)
+        Settings {
+            EmptyView()
         }
     }
 }
