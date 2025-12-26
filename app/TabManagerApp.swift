@@ -6,9 +6,13 @@ import Foundation
 // a quark of executing the binary from the terminal.
 class AppDelegate: NSObject, NSApplicationDelegate {
     private var serverSocket: Int32 = -1
+    private var activeClientSocket: Int32 = -1
     private let socketPath = "/tmp/tabmanager.sock"
 
+    static var shared: AppDelegate?
+
     func applicationDidFinishLaunching(_ notification: Notification) {
+        AppDelegate.shared = self
         // Start as a background/accessory app
         NSApp.setActivationPolicy(.accessory)
 
@@ -127,6 +131,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
 
             if clientSocket >= 0 {
+                self.activeClientSocket = clientSocket
                 vlog_s(.info, TabManagerApp.appClass, "Accepted new UDS connection")
                 Thread.detachNewThread {
                     self.handleClient(clientSocket)
@@ -195,6 +200,39 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 vlog_s(.error, TabManagerApp.appClass, "UDS read error")
                 break
             }
+        }
+    }
+
+    func sendUDSMessage(event: String, data: Any) {
+        guard activeClientSocket >= 0 else {
+            vlog_s(.error, TabManagerApp.appClass, "Cannot send message: No active UDS connection")
+            return
+        }
+
+        let messageParams: [String: Any] = [
+            "event": event,
+            "data": data
+        ]
+
+        do {
+            let jsonData = try JSONSerialization.data(withJSONObject: messageParams, options: [])
+            var length = UInt32(jsonData.count).littleEndian
+            let lengthData = Data(bytes: &length, count: MemoryLayout<UInt32>.size)
+            
+            let combinedData = lengthData + jsonData
+
+            let result = combinedData.withUnsafeBytes { buffer -> Int in
+                guard let baseAddress = buffer.baseAddress else { return -1 }
+                return Int(write(activeClientSocket, baseAddress, buffer.count))
+            }
+
+            if result < 0 {
+                vlog_s(.error, TabManagerApp.appClass, "Failed to send UDS message: \(String(cString: strerror(errno)))")
+            } else {
+                vlog_s(.info, TabManagerApp.appClass, "uds-send: \(event) (len: \(jsonData.count))")
+            }
+        } catch {
+            vlog_s(.error, TabManagerApp.appClass, "Failed to serialize UDS message: \(error)")
         }
     }
 }

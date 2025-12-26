@@ -33,6 +33,8 @@ typedef struct ServerContext {
   int uds_fd;
   int ws_thread_exit;  // TODO: this should be protected by mutex.
   int send_tab_request;
+  pthread_t uds_read_thread;
+  int uds_read_exit;
 } ServerContext;
 
 typedef struct PerSessionData {
@@ -84,6 +86,92 @@ static void task_state_free(TaskState* ts) {
   free(ts);
 }
 
+static void handle_gui_msg(ServerContext* sc, const char* msg) {
+  cJSON* json = cJSON_Parse(msg);
+  if (!json) {
+    vlog(LOG_LEVEL_ERROR, sc, "Failed to parse GUI message: %s\n", msg);
+    return;
+  }
+
+  cJSON* event = cJSON_GetObjectItem(json, "event");
+  if (cJSON_IsString(event) && event->valuestring) {
+    if (strcmp(event->valuestring, "tab_selected") == 0) {
+      cJSON* data = cJSON_GetObjectItem(json, "data");
+      cJSON* tab_id = cJSON_GetObjectItem(data, "tabId");
+      if (cJSON_IsNumber(tab_id)) {
+        vlog(LOG_LEVEL_INFO, sc, "gui-evt: tab_selected - id=%llu]\n", (uint64_t)tab_id->valuedouble);
+      } else {
+        vlog(LOG_LEVEL_ERROR, sc, "gui-evt: No tab id found for tab_selected\n");
+      }
+    } else {
+      vlog(LOG_LEVEL_INFO, sc, "Received GUI Event: %s\n", event->valuestring);
+    }
+  }
+  cJSON_Delete(json);
+}
+
+static void* uds_read_thread_run(void* arg) {
+  ServerContext* sc = (ServerContext*)arg;
+  uint32_t msg_len = 0;
+
+// Reuse buffer for payload to avoid constant malloc for small messages
+#define MAX_UDS_MSG_SIZE 65536
+  char* buffer = malloc(MAX_UDS_MSG_SIZE);
+  if (!buffer) {
+    vlog(LOG_LEVEL_ERROR, sc, "Failed to allocate UDS buffer\n");
+    return NULL;
+  }
+
+  vlog(LOG_LEVEL_INFO, sc, "Starting UDS read loop (Framed)\n");
+
+  while (!sc->uds_read_exit) {
+    // 1. Read Length (4 bytes)
+    ssize_t n = recv(sc->uds_fd, &msg_len, sizeof(msg_len), 0);
+
+    if (n == 0) {
+      vlog(LOG_LEVEL_INFO, sc, "UDS connection closed by GUI\n");
+      break;
+    } else if (n < 0) {
+      if (errno == EAGAIN || errno == EWOULDBLOCK) {
+        usleep(100000);
+        continue;
+      }
+      vlog(LOG_LEVEL_ERROR, sc, "UDS recv header error: %s\n", strerror(errno));
+      break;
+    } else if (n != sizeof(msg_len)) {
+      vlog(LOG_LEVEL_WARN, sc, "UDS recv partial header: %zd bytes\n", n);
+      continue;
+    }
+
+    // 2. Read Payload
+    // Check max size
+    if (msg_len > MAX_UDS_MSG_SIZE - 1) {
+      vlog(LOG_LEVEL_ERROR, sc, "UDS message too large: %u\n", msg_len);
+      break;
+    }
+
+    size_t total_read = 0;
+    while (total_read < msg_len) {
+      n = recv(sc->uds_fd, buffer + total_read, msg_len - total_read, 0);
+      if (n <= 0) {
+        break;
+      }
+      total_read += n;
+    }
+
+    if (total_read == msg_len) {
+      buffer[msg_len] = '\0';
+      handle_gui_msg(sc, buffer);
+    } else {
+      vlog(LOG_LEVEL_ERROR, sc, "UDS recv payload incomplete. Expected %u, got %zu\n", msg_len, total_read);
+      break;
+    }
+  }
+
+  free(buffer);
+  return NULL;
+}
+
 static int setup_uds_client(ServerContext* sctx) {
   int retries = 5;
   int uds_fd;
@@ -105,6 +193,8 @@ static int setup_uds_client(ServerContext* sctx) {
       const char* ping = "{\"event\":\"daemon_startup\",\"data\":\"ping\"}\n";
       send(uds_fd, ping, strlen(ping), 0);
       sctx->uds_fd = uds_fd;
+      sctx->uds_read_exit = 0;
+      pthread_create(&sctx->uds_read_thread, NULL, uds_read_thread_run, sctx);
       return 0;
     }
 
@@ -440,6 +530,17 @@ void engine_destroy(EngineContext* ectx) {
       lws_context_destroy(ectx->serv_ctx->lws_ctx);
       if (ectx->init_statusline)
         stop_daemon_cocoa_app();
+    }
+    if (ectx->serv_ctx->uds_read_thread) {
+      ectx->serv_ctx->uds_read_exit = 1;
+      // pthread_cancel(ectx->serv_ctx->uds_read_thread); // Using cancel might be unsafe, better to let it exit or
+      // close sock Closing uds_fd usually unblocks recv
+      if (ectx->serv_ctx->uds_fd >= 0) {
+        shutdown(ectx->serv_ctx->uds_fd, SHUT_RDWR);
+        close(ectx->serv_ctx->uds_fd);
+        ectx->serv_ctx->uds_fd = -1;
+      }
+      pthread_join(ectx->serv_ctx->uds_read_thread, NULL);
     }
     free(ectx->serv_ctx);
     ectx->serv_ctx = NULL;

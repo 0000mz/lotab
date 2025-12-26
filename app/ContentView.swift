@@ -3,6 +3,8 @@ import SwiftUI
 struct ContentView: View {
     @ObservedObject var tabManager: TabManager
 
+    @State private var selection: Int?
+
     var body: some View {
         VStack(spacing: 0) {
             if tabManager.tabs.isEmpty {
@@ -11,7 +13,7 @@ struct ContentView: View {
                     .foregroundColor(.secondary)
                 Spacer()
             } else {
-                List {
+                List(selection: $selection) {
                     let activeTabs = tabManager.tabs.filter { $0.active }
                     if !activeTabs.isEmpty {
                         Section(header: Text("Active Tabs")) {
@@ -20,7 +22,9 @@ struct ContentView: View {
                                     Text(tab.title)
                                         .lineLimit(1)
                                         .truncationMode(.tail)
+                                    Spacer()
                                 }
+                                .tag(tab.id)
                             }
                         }
                     }
@@ -30,9 +34,30 @@ struct ContentView: View {
                             Text(tab.title)
                                 .lineLimit(1)
                                 .truncationMode(.tail)
+                                .tag(tab.id)
                         }
                     }
                 }
+                .onChange(of: tabManager.tabs) { newTabs in
+                    // Preserve selection if possible, or select first active
+                    if selection == nil || !newTabs.contains(where: { $0.id == selection }) {
+                         selection = newTabs.first(where: { $0.active })?.id ?? newTabs.first?.id
+                    }
+                }
+                .onAppear {
+                    // Initial selection
+                    if selection == nil {
+                        selection = tabManager.tabs.first(where: { $0.active })?.id ?? tabManager.tabs.first?.id
+                    }
+                }
+                // Hidden button to capture Enter key
+                Button("") {
+                    if let selectedId = selection {
+                        AppDelegate.shared?.sendUDSMessage(event: "tab_selected", data: ["tabId": selectedId])
+                    }
+                }
+                .keyboardShortcut(.defaultAction)
+                .hidden()
             }
             HStack {
                 Spacer()
