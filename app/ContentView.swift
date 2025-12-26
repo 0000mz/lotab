@@ -44,13 +44,13 @@ struct ContentView: View {
                             }
                         }
                     }
-                    .onChange(of: tabManager.tabs) { newTabs in
+                    .onChange(of: tabManager.tabs) { _, newTabs in
                         // Preserve selection if possible, or select first active
                         if tabManager.selection == nil || !newTabs.contains(where: { $0.id == tabManager.selection }) {
                              tabManager.selection = newTabs.first(where: { $0.active })?.id ?? newTabs.first?.id
                         }
                     }
-                    .onChange(of: tabManager.selection) { newSel in
+                    .onChange(of: tabManager.selection) { _, newSel in
                         if let id = newSel {
                             proxy.scrollTo(id, anchor: .center)
                         }

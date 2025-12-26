@@ -192,7 +192,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         var addr = sockaddr_un()
         addr.sun_family = sa_family_t(AF_UNIX)
         let pathLen = socketPath.withCString { Int(strlen($0)) }
-        _ = socketPath.withCString { src in
+        socketPath.withCString { src in
             withUnsafeMutablePointer(to: &addr.sun_path) { dest in
                 let destPtr = UnsafeMutableRawPointer(dest).assumingMemoryBound(to: Int8.self)
                 strncpy(destPtr, src, 104) // 104 is the max length for sun_path

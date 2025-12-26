@@ -82,6 +82,7 @@ OSStatus HotKeyHandler(EventHandlerCallRef nextHandler, EventRef theEvent, void*
 
 // Global C-function callback for HotKeys
 OSStatus HotKeyHandler(EventHandlerCallRef nextHandler, EventRef theEvent, void* userData) {
+  (void)nextHandler;
   EventHotKeyID hkID;
   GetEventParameter(theEvent, kEventParamDirectObject, typeEventHotKeyID, NULL, sizeof(hkID), NULL, &hkID);
 
