@@ -254,6 +254,15 @@ struct TabManagerApp: App {
         return ptr
     }()
 
+    init() {
+        let args = ProcessInfo.processInfo.arguments
+        if let index = args.firstIndex(of: "--log-level"), index + 1 < args.count {
+            if let level = Int(args[index + 1]) {
+                engine_set_log_level(Int32(level))
+            }
+        }
+    }
+
     var body: some Scene {
         WindowGroup {
             ContentView(tabManager: TabManager.shared)

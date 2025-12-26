@@ -359,7 +359,9 @@ int engine_init(EngineContext** ectx, EngineCreationInfo cinfo) {
   ret = -1;  // TODO: use some defined error code.
   goto fail;
 #endif
-  char* spawn_args[] = {(char*)APP_PATH, NULL};
+  char log_level_arg[16] = {0};
+  snprintf(log_level_arg, sizeof(log_level_arg), "%d", engine_get_log_level());
+  char* spawn_args[] = {(char*)APP_PATH, "--log-level", log_level_arg, NULL};
   int spawn_status = posix_spawn(&ec->app_pid, APP_PATH, NULL, NULL, spawn_args, environ);
   if (spawn_status == 0) {
     vlog(LOG_LEVEL_INFO, ec, "Successfully spawned TabManager (PID: %d)\n", ec->app_pid);

@@ -20,7 +20,8 @@ typedef enum { LOG_LEVEL_WARN = 0, LOG_LEVEL_ERROR = 1, LOG_LEVEL_INFO = 2, LOG_
 
 // Log a message with the specified level
 void vlog(LogLevel level, void* cls, const char* fmt, ...);
-void engine_set_log_level(LogLevel level);
+void engine_set_log_level(int level);
+int engine_get_log_level(void);
 
 #ifdef __cplusplus
 }

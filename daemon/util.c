@@ -70,6 +70,10 @@ void vlog_s(int level, struct EngClass* cls, const char* msg) {
   vlog((LogLevel)level, &cls, "%s\n", msg);
 }
 
-void engine_set_log_level(LogLevel level) {
-  g_log_level = level;
+void engine_set_log_level(int level) {
+  g_log_level = (LogLevel)level;
+}
+
+int engine_get_log_level(void) {
+  return (int)g_log_level;
 }
