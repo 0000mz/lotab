@@ -190,8 +190,18 @@ static int setup_uds_client(ServerContext* sctx) {
 
     if (connect(uds_fd, (struct sockaddr*)&addr, sizeof(addr)) == 0) {
       vlog(LOG_LEVEL_INFO, sctx, "Connected to App UDS at %s\n", uds_path);
-      const char* ping = "{\"event\":\"daemon_startup\",\"data\":\"ping\"}\n";
-      send(uds_fd, ping, strlen(ping), 0);
+
+      const char* ping_json = "{\"event\":\"daemon_startup\",\"data\":\"ping\"}";
+      size_t len = strlen(ping_json);
+      size_t frame_len = sizeof(uint32_t) + len;
+      char* msg = malloc(frame_len);
+      if (msg) {
+        uint32_t header = (uint32_t)len;
+        memcpy(msg, &header, sizeof(uint32_t));
+        memcpy(msg + sizeof(uint32_t), ping_json, len);
+        send(uds_fd, msg, frame_len, 0);
+        free(msg);
+      }
       sctx->uds_fd = uds_fd;
       sctx->uds_read_exit = 0;
       pthread_create(&sctx->uds_read_thread, NULL, uds_read_thread_run, sctx);
@@ -213,17 +223,19 @@ static void send_uds(const int uds_fd, const cJSON* json_data) {
     char* json_str = cJSON_PrintUnformatted(json_data);
     if (json_str) {
       size_t len = strlen(json_str);
-      char* msg = malloc(len + 2);  // +1 for \n, +1 for \0
+      // Frame: [Length: 4 bytes (LE)] [Payload]
+      size_t frame_len = sizeof(uint32_t) + len;
+      char* msg = malloc(frame_len);
       if (msg) {
-        strcpy(msg, json_str);
-        msg[len] = '\n';
-        msg[len + 1] = '\0';
+        // Assume LE host (macOS M1/Intel are LE)
+        uint32_t header = (uint32_t)len;
+        memcpy(msg, &header, sizeof(uint32_t));
+        memcpy(msg + sizeof(uint32_t), json_str, len);
 
-        if (send(uds_fd, msg, len + 1, 0) < 0) {
-          // TODO: Pass some log context here.
+        if (send(uds_fd, msg, frame_len, 0) < 0) {
           vlog(LOG_LEVEL_ERROR, NULL, "Failed to send data to App via UDS: %s\n", strerror(errno));
         } else {
-          vlog(LOG_LEVEL_TRACE, NULL, "uds-send: %s\n", json_str);
+          vlog(LOG_LEVEL_TRACE, NULL, "uds-send: %s (len: %zu)\n", json_str, len);
         }
         free(msg);
       }

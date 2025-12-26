@@ -141,64 +141,83 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func handleClient(_ clientSocket: Int32) {
-        let bufferSize = 4096
-        let buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: bufferSize)
-        var accumulator = Data()
-
         defer {
-            buffer.deallocate()
             close(clientSocket)
         }
 
         while true {
-            let bytesRead = read(clientSocket, buffer, bufferSize)
-            if bytesRead > 0 {
-                let data = Data(bytes: buffer, count: bytesRead)
-                accumulator.append(data)
+            // 1. Read Header (4 bytes)
+            var headerData = Data(count: 4)
+            let headerBytesRead = headerData.withUnsafeMutableBytes { buffer in
+                 return read(clientSocket, buffer.baseAddress, 4)
+            }
 
-                while let range = accumulator.range(of: Data([0x0A])) { // Newline \n
-                    let messageData = accumulator.subdata(in: 0..<range.lowerBound)
-                    accumulator.removeSubrange(0..<range.upperBound)
-
-                    if let message = String(data: messageData, encoding: .utf8) {
-                        vlog_s(.trace, TabManagerApp.appClass, "uds-read: \(message)")
-                        if message.contains("tabs_update") {
-                            // Decode tabs
-                            if let jsonData = message.data(using: .utf8) {
-                                do {
-                                    let payload = try JSONDecoder().decode(TabListPayload.self, from: jsonData)
-                                    vlog_s(.info, TabManagerApp.appClass, "Successfully decoded \(payload.data.tabs.count) tabs")
-                                    DispatchQueue.main.async {
-                                        TabManager.shared.tabs = payload.data.tabs
-                                    }
-                                } catch {
-                                    vlog_s(.error, TabManagerApp.appClass, "JSON Decoding Error for tabs_update: \(error)")
-                                }
-                            }
-                        } else if message.contains("tasks_update") {
-                            // Decode tasks
-                            if let jsonData = message.data(using: .utf8) {
-                                do {
-                                    let payload = try JSONDecoder().decode(TaskListPayload.self, from: jsonData)
-                                    vlog_s(.info, TabManagerApp.appClass, "Successfully decoded \(payload.data.tasks.count) tasks")
-                                    DispatchQueue.main.async {
-                                        TabManager.shared.tasks = payload.data.tasks
-                                    }
-                                } catch {
-                                    vlog_s(.error, TabManagerApp.appClass, "JSON Decoding Error for tasks_update: \(error)")
-                                }
-                            }
-                        } else if message.contains("ui_visibility_toggle") {
-                            showUI()
-                        }
-                    }
-                }
-            } else if bytesRead == 0 {
+            if headerBytesRead == 0 {
                 vlog_s(.info, TabManagerApp.appClass, "UDS connection closed by peer")
                 break
-            } else {
-                vlog_s(.error, TabManagerApp.appClass, "UDS read error")
+            } else if headerBytesRead < 0 {
+                vlog_s(.error, TabManagerApp.appClass, "UDS header read error: \(String(cString: strerror(errno)))")
                 break
+            } else if headerBytesRead < 4 {
+                 vlog_s(.error, TabManagerApp.appClass, "UDS partial header read")
+                 break
+            }
+
+            let msgLen = headerData.withUnsafeBytes { $0.load(as: UInt32.self).littleEndian }
+            
+            // 2. Read Payload
+            var payloadData = Data(count: Int(msgLen))
+            var totalRead = 0
+            var readError = false
+            
+            payloadData.withUnsafeMutableBytes { buffer in
+                while totalRead < Int(msgLen) {
+                    let n = read(clientSocket, buffer.baseAddress! + totalRead, Int(msgLen) - totalRead)
+                    if n <= 0 {
+                        readError = true
+                        break
+                    }
+                    totalRead += n
+                }
+            }
+            
+            if readError {
+                 vlog_s(.error, TabManagerApp.appClass, "UDS payload read error or closed prematurely")
+                 break
+            }
+
+            // 3. Process Message
+            if let message = String(data: payloadData, encoding: .utf8) {
+                vlog_s(.trace, TabManagerApp.appClass, "uds-read: \(message)")
+                if message.contains("tabs_update") {
+                    // Decode tabs
+                    if let jsonData = message.data(using: .utf8) {
+                        do {
+                            let payload = try JSONDecoder().decode(TabListPayload.self, from: jsonData)
+                            vlog_s(.info, TabManagerApp.appClass, "Successfully decoded \(payload.data.tabs.count) tabs")
+                            DispatchQueue.main.async {
+                                TabManager.shared.tabs = payload.data.tabs
+                            }
+                        } catch {
+                            vlog_s(.error, TabManagerApp.appClass, "JSON Decoding Error for tabs_update: \(error)")
+                        }
+                    }
+                } else if message.contains("tasks_update") {
+                    // Decode tasks
+                    if let jsonData = message.data(using: .utf8) {
+                        do {
+                            let payload = try JSONDecoder().decode(TaskListPayload.self, from: jsonData)
+                            vlog_s(.info, TabManagerApp.appClass, "Successfully decoded \(payload.data.tasks.count) tasks")
+                            DispatchQueue.main.async {
+                                TabManager.shared.tasks = payload.data.tasks
+                            }
+                        } catch {
+                            vlog_s(.error, TabManagerApp.appClass, "JSON Decoding Error for tasks_update: \(error)")
+                        }
+                    }
+                } else if message.contains("ui_visibility_toggle") {
+                    showUI()
+                }
             }
         }
     }
