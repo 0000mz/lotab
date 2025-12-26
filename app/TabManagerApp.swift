@@ -67,7 +67,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func hideUI() {
-        print("App: Hiding UI")
+        vlog_s(.info, "Hiding UI") // Commented out for debug
         DispatchQueue.main.async {
             NSApp.hide(nil)
         }
@@ -76,8 +76,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private func startUDSServer() {
         unlink(socketPath)
         serverSocket = socket(AF_UNIX, SOCK_STREAM, 0)
+        vlog_s(.info, "Attempting to connect to uds server")
         guard serverSocket >= 0 else {
-            print("App: Failed to create socket")
+            vlog_s(.error, "Failed to create socket")
             return
         }
 
@@ -100,17 +101,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         guard bindResult == 0 else {
-            print("App: Failed to bind socket. Error: \(String(cString: strerror(errno)))")
+            vlog_s(.error, "Failed to bind socket. Error: \(String(cString: strerror(errno)))");
             return
         }
 
         guard Darwin.listen(serverSocket, 5) == 0 else {
-            print("App: Failed to listen on socket")
+            vlog_s(.error, "failed to liten on socket");
             return
         }
 
-        print("App: UDS Server started at \(socketPath)")
-
+        vlog_s(.info, "UDS server started at \(socketPath)");
         Thread.detachNewThread {
             self.acceptConnections()
         }
@@ -127,7 +127,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
 
             if clientSocket >= 0 {
-                print("App: Accepted new UDS connection")
+                vlog_s(.info, "Accepted new UDS connection")
                 Thread.detachNewThread {
                     self.handleClient(clientSocket)
                 }
@@ -156,18 +156,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     accumulator.removeSubrange(0..<range.upperBound)
 
                     if let message = String(data: messageData, encoding: .utf8) {
-                        print("App: Received UDS message: \(message)")
+                        vlog_s(.info, "Received UDS message: \(message)")
                         if message.contains("tabs_update") {
                             // Decode tabs
                             if let jsonData = message.data(using: .utf8) {
                                 do {
                                     let payload = try JSONDecoder().decode(TabListPayload.self, from: jsonData)
-                                    print("App: Successfully decoded \(payload.data.tabs.count) tabs")
+                                    vlog_s(.info, "Successfully decoded \(payload.data.tabs.count) tabs")
                                     DispatchQueue.main.async {
                                         TabManager.shared.tabs = payload.data.tabs
                                     }
                                 } catch {
-                                    print("App: JSON Decoding Error for tabs_update: \(error)")
+                                    vlog_s(.error, "JSON Decoding Error for tabs_update: \(error)")
                                 }
                             }
                         } else if message.contains("tasks_update") {
@@ -175,12 +175,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                             if let jsonData = message.data(using: .utf8) {
                                 do {
                                     let payload = try JSONDecoder().decode(TaskListPayload.self, from: jsonData)
-                                    print("App: Successfully decoded \(payload.data.tasks.count) tasks")
+                                    vlog_s(.info, "Successfully decoded \(payload.data.tasks.count) tasks")
                                     DispatchQueue.main.async {
                                         TabManager.shared.tasks = payload.data.tasks
                                     }
                                 } catch {
-                                    print("App: JSON Decoding Error for tasks_update: \(error)")
+                                    vlog_s(.error, "JSON Decoding Error for tasks_update: \(error)")
                                 }
                             }
                         } else if message.contains("ui_visibility_toggle") {
@@ -189,10 +189,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     }
                 }
             } else if bytesRead == 0 {
-                print("App: UDS connection closed by peer")
+                vlog_s(.info, "UDS connection closed by peer")
                 break
             } else {
-                print("App: UDS read error")
+                vlog_s(.error, "UDS read error")
                 break
             }
         }

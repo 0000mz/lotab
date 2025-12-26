@@ -20,9 +20,6 @@
 #include "statusbar.h"
 #include "util.h"
 
-static pthread_mutex_t g_log_mu;
-static LogLevel g_log_level = LOG_LEVEL_INFO;
-
 #define NGERROR(x) (-x)
 
 extern char** environ;                                 // Necessary global for inheriting env in subprocess.

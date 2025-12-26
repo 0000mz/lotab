@@ -1,19 +1,21 @@
 #include "util.h"
 
-#include <pthread.h>
 #include <stdarg.h>
 #include <stdio.h>
-#include <sys/_types/_va_list.h>
+#include <stdlib.h>
+#include <string.h>
 
-static pthread_mutex_t g_log_mu;
+#include <sys/time.h>
+#include <time.h>
+
 static LogLevel g_log_level = LOG_LEVEL_INFO;
 
-char log_level_str(const LogLevel l) {
-  switch (l) {
+char log_level_str(LogLevel level) {
+  switch (level) {
     case LOG_LEVEL_INFO:
       return 'I';
     case LOG_LEVEL_TRACE:
-      return 'T';
+      return 'V';
     case LOG_LEVEL_WARN:
       return 'W';
     case LOG_LEVEL_ERROR:
@@ -25,7 +27,7 @@ void vlog(LogLevel level, void* cls, const char* fmt, ...) {
   if (level > g_log_level) {
     return;
   }
-  char buf[1 << 11];  // 2048
+  char buf[1024];
   va_list args;
   va_start(args, fmt);
   vsnprintf(buf, sizeof(buf), fmt, args);
@@ -56,9 +58,11 @@ void vlog(LogLevel level, void* cls, const char* fmt, ...) {
     default:
       break;
   }
-  pthread_mutex_lock(&g_log_mu);
   fprintf(f, "%s%c [%s @ %p]%s %s", color, l_prefix, ecls ? ecls->name : "null", (void*)ecls, reset, buf);
-  pthread_mutex_unlock(&g_log_mu);
+}
+
+void vlog_s(int level, const char* msg) {
+  vlog((LogLevel)level, NULL, "%s\n", msg);
 }
 
 void engine_set_log_level(LogLevel level) {

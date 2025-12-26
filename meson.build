@@ -9,6 +9,12 @@ carbon_dep = dependency('appleframeworks', modules : 'Carbon')
 cocoa_dep = dependency('appleframeworks', modules : 'Cocoa')
 argparse_dep = dependency('argparse')
 
+engine_util_lib = static_library('daemon_util', ['daemon/util.c'], install: false)
+engine_util_dep = declare_dependency(
+  link_with : engine_util_lib,
+  include_directories : include_directories('daemon'),
+)
+
 # --- GUI ---
 # Link required frameworks for a SwiftUI app
 apple_frameworks = dependency('appleframeworks', modules : ['Foundation', 'AppKit', 'SwiftUI'])
@@ -24,11 +30,14 @@ daemon_deps = [lws_dep, cjson_dep, carbon_dep, cocoa_dep, argparse_dep]
 
 info_plist_path = meson.current_source_dir() / 'app/Info.plist'
 tab_manager_linker_args = ['-Xlinker', '-sectcreate', '-Xlinker', '__TEXT', '-Xlinker', '__info_plist', '-Xlinker', info_plist_path]
+tab_manager_swift_args = ['-import-bridging-header', meson.current_source_dir() / 'app/bridge.h']
+tab_manager_deps = [apple_frameworks, engine_util_dep]
 
 app_target = executable('TabManager',
            app_src,
-           dependencies : apple_frameworks,
+           dependencies : tab_manager_deps,
            link_args : tab_manager_linker_args,
+           swift_args : tab_manager_swift_args,
            install : true)
 
 # --- Daemon ---
@@ -38,11 +47,6 @@ conf_data.set_quoted('APP_PATH', app_target.full_path())
 configure_file(output : 'config.h',
                configuration : conf_data)
 
-engine_util_lib = static_library('daemon_util', ['daemon/util.c'], install: false)
-engine_util_dep = declare_dependency(
-  link_with : engine_util_lib,
-  include_directories : include_directories('daemon'),
-)
 
 engine_lib = static_library('daemon_engine',
     ['daemon/engine.c', 'daemon/statusbar.m'],
@@ -67,7 +71,8 @@ foreach s, suffix : sanitizers
   # App Variant
   app_var = executable('TabManager' + suffix,
              app_src,
-             dependencies : apple_frameworks,
+             dependencies : tab_manager_deps,
+             swift_args : tab_manager_swift_args,
              override_options : ['b_sanitize=' + s],
              link_args : tab_manager_linker_args,
              install : true)
