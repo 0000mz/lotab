@@ -5,8 +5,10 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <pthread.h>
 #include <sys/time.h>
 #include <time.h>
+#include <unistd.h>
 
 static LogLevel g_log_level = LOG_LEVEL_INFO;
 
@@ -15,7 +17,7 @@ char log_level_str(LogLevel level) {
     case LOG_LEVEL_INFO:
       return 'I';
     case LOG_LEVEL_TRACE:
-      return 'V';
+      return 'T';
     case LOG_LEVEL_WARN:
       return 'W';
     case LOG_LEVEL_ERROR:
@@ -58,7 +60,10 @@ void vlog(LogLevel level, void* cls, const char* fmt, ...) {
     default:
       break;
   }
-  fprintf(f, "%s%c [%s @ %p]%s %s", color, l_prefix, ecls ? ecls->name : "null", (void*)ecls, reset, buf);
+  uint64_t tid;
+  pthread_threadid_np(NULL, &tid);
+  fprintf(f, "%s%c %d:%llu [%s @ %p]%s %s", color, l_prefix, getpid(), tid, ecls ? ecls->name : "null", (void*)ecls,
+          reset, buf);
 }
 
 void vlog_s(int level, struct EngClass* cls, const char* msg) {
