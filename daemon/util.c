@@ -61,8 +61,8 @@ void vlog(LogLevel level, void* cls, const char* fmt, ...) {
   fprintf(f, "%s%c [%s @ %p]%s %s", color, l_prefix, ecls ? ecls->name : "null", (void*)ecls, reset, buf);
 }
 
-void vlog_s(int level, const char* msg) {
-  vlog((LogLevel)level, NULL, "%s\n", msg);
+void vlog_s(int level, struct EngClass* cls, const char* msg) {
+  vlog((LogLevel)level, &cls, "%s\n", msg);
 }
 
 void engine_set_log_level(LogLevel level) {

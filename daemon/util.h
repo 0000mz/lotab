@@ -14,7 +14,7 @@ struct EngClass {
 #if defined(SWIFT_BRIDGE)
 #include <CoreFoundation/CoreFoundation.h>
 typedef CF_ENUM(int, NsLogLevel) { NsLogLevelWarn = 0, NsLogLevelError = 1, NsLogLevelInfo = 2, NsLogLevelTrace = 3 };
-void vlog_s(NsLogLevel level, const char* msg);
+void vlog_s(NsLogLevel level, struct EngClass* cls, const char* msg);
 #endif
 typedef enum { LOG_LEVEL_WARN = 0, LOG_LEVEL_ERROR = 1, LOG_LEVEL_INFO = 2, LOG_LEVEL_TRACE = 3 } LogLevel;
 
