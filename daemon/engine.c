@@ -21,6 +21,7 @@
 #include "config.h"
 #include "statusbar.h"
 
+static pthread_mutex_t g_log_mu;
 static LogLevel g_log_level = LOG_LEVEL_INFO;
 
 #define NGERROR(x) (-x)
@@ -467,9 +468,30 @@ void vlog(LogLevel level, void* cls, const char* fmt, ...) {
   if (level == LOG_LEVEL_ERROR)
     f = stderr;
 
-  struct EngClass* ecls = *(struct EngClass**)cls;
+  struct EngClass* ecls = cls == NULL ? NULL : *(struct EngClass**)cls;
   char l_prefix = log_level_str(level);
-  fprintf(f, "%c [%s @ %p] %s", l_prefix, ecls ? ecls->name : "null", (void*)ecls, buf);
+
+  const char* color = "";
+  const char* reset = "\033[0m";
+  switch (level) {
+    case LOG_LEVEL_WARN:
+      color = "\033[0;33m";  // Yellow
+      break;
+    case LOG_LEVEL_ERROR:
+      color = "\033[0;31m";  // Red
+      break;
+    case LOG_LEVEL_INFO:
+      color = "\033[0;36m";  // Cyan
+      break;
+    case LOG_LEVEL_TRACE:
+      color = "\033[0;35m";  // Purple
+      break;
+    default:
+      break;
+  }
+  pthread_mutex_lock(&g_log_mu);
+  fprintf(f, "%s%c [%s @ %p]%s %s", color, l_prefix, ecls ? ecls->name : "null", (void*)ecls, reset, buf);
+  pthread_mutex_unlock(&g_log_mu);
 }
 
 TabInfo* tab_state_find_tab(TabState* ts, const uint64_t id) {
