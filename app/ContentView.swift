@@ -62,15 +62,6 @@ struct ContentView: View {
                             tabManager.selection = tabManager.tabs.first(where: { $0.active })?.id ?? tabManager.tabs.first?.id
                         }
                     }
-                    // Hidden button to capture Enter key
-                    Button("") {
-                        if let selectedId = tabManager.selection {
-                            AppDelegate.shared?.sendUDSMessage(event: "tab_selected", data: ["tabId": selectedId])
-                            AppDelegate.shared?.hideUI()
-                        }
-                    }
-                    .keyboardShortcut(.defaultAction)
-                    .isHidden(true)
                 }
             }
             HStack {

@@ -71,7 +71,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             }
 
-            // DOWN: Arrow (125) or J (38)
             if event.keyCode == 125 || event.keyCode == 38 {
                 let tm = TabManager.shared
                 let tabs = tm.displayedTabs
@@ -91,6 +90,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                         tm.selection = tabs.first?.id
                         return nil
                     }
+                }
+            }
+
+            if event.keyCode == 36 { // Enter key
+                if let selectedId = TabManager.shared.selection {
+                     self.sendUDSMessage(event: "tab_selected", data: ["tabId": selectedId])
+                     self.hideUI()
+                     return nil // Swallow event
                 }
             }
             return event
