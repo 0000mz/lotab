@@ -48,23 +48,49 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 return nil // Swallow the event
             }
 
-            if event.keyCode == 126 { // Up Arrow
+            // UP: Arrow (126) or K (40)
+            if event.keyCode == 126 || event.keyCode == 40 {
                 let tm = TabManager.shared
                 let tabs = tm.displayedTabs
-                if let sel = tm.selection, let first = tabs.first, sel == first.id {
-                    // Loop to bottom
-                    tm.selection = tabs.last?.id
-                    return nil // Swallow event to prevent default bump
+                if !tabs.isEmpty {
+                    if let sel = tm.selection, let idx = tabs.firstIndex(where: { $0.id == sel }) {
+                        if idx == 0 {
+                            // Cyclic Loop
+                            tm.selection = tabs.last?.id
+                            return nil
+                        } else if event.keyCode == 40 {
+                            // Manual move for 'j'
+                            tm.selection = tabs[idx - 1].id
+                            return nil
+                        }
+                    } else {
+                        // No valid selection, select first
+                        tm.selection = tabs.first?.id
+                        return nil
+                    }
                 }
             }
 
-            if event.keyCode == 125 { // Down Arrow
+            // DOWN: Arrow (125) or J (38)
+            if event.keyCode == 125 || event.keyCode == 38 {
                 let tm = TabManager.shared
                 let tabs = tm.displayedTabs
-                if let sel = tm.selection, let last = tabs.last, sel == last.id {
-                    // Loop to top
-                    tm.selection = tabs.first?.id
-                    return nil // Swallow event
+                if !tabs.isEmpty {
+                    if let sel = tm.selection, let idx = tabs.firstIndex(where: { $0.id == sel }) {
+                        if idx == tabs.count - 1 {
+                            // Cyclic Loop
+                            tm.selection = tabs.first?.id
+                            return nil
+                        } else if event.keyCode == 38 {
+                            // Manual move for 'k'
+                            tm.selection = tabs[idx + 1].id
+                            return nil
+                        }
+                    } else {
+                        // No valid selection, select first
+                        tm.selection = tabs.first?.id
+                        return nil
+                    }
                 }
             }
             return event
