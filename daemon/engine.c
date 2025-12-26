@@ -271,6 +271,30 @@ static void* ws_thread_run(void* arg) {
   return NULL;
 }
 
+static void lws_log_emit_cb(int level, const char* line) {
+  LogLevel vlevel = LOG_LEVEL_INFO;
+  switch (level) {
+    case LLL_ERR:
+      vlevel = LOG_LEVEL_ERROR;
+      break;
+    case LLL_WARN:
+      vlevel = LOG_LEVEL_WARN;
+      break;
+    case LLL_NOTICE:
+    case LLL_INFO:
+      vlevel = LOG_LEVEL_INFO;
+      break;
+    default:
+      vlevel = LOG_LEVEL_TRACE;
+      break;
+  }
+  static struct EngClass LWS_LOG_CLASS = {
+      .name = "lws",
+  };
+  static struct EngClass* ec = &LWS_LOG_CLASS;
+  vlog(vlevel, &ec, "%s", line);
+}
+
 int engine_init(EngineContext** ectx, EngineCreationInfo cinfo) {
   assert(ectx != NULL);
   assert(*ectx == NULL);
@@ -307,7 +331,7 @@ int engine_init(EngineContext** ectx, EngineCreationInfo cinfo) {
   }
   memset(sc, 0, sizeof(ServerContext));
   sc->cls = &SERVER_CONTEXT_CLASS;
-  lws_set_log_level(LLL_USER | LLL_ERR | LLL_WARN | LLL_NOTICE, NULL);
+  lws_set_log_level(LLL_USER | LLL_ERR | LLL_WARN | LLL_NOTICE | LLL_INFO, lws_log_emit_cb);
 
   ec->serv_ctx = sc;
   memset(&info, 0, sizeof info);
