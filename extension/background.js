@@ -30,6 +30,17 @@ function connectToDaemon() {
                     }));
                     logEvent('tabs.onAllTabs', reduced_tabs);
                 });
+            } else if (message.event === 'activate_tab') {
+                const tabId = message.data.tabId;
+                if (tabId) {
+                    console.log(`Activating tab: ${tabId}`);
+                    chrome.tabs.update(tabId, { active: true });
+                    chrome.tabs.get(tabId, (tab) => {
+                        if (tab && tab.windowId) {
+                            chrome.windows.update(tab.windowId, { focused: true });
+                        }
+                    });
+                }
             }
         } catch (e) {
             console.error('Failed to parse message from daemon:', e);

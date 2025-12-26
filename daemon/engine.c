@@ -35,6 +35,9 @@ typedef struct ServerContext {
   int send_tab_request;
   pthread_t uds_read_thread;
   int uds_read_exit;
+  char* pending_ws_msg;
+  int send_pending_msg;
+  pthread_mutex_t pending_msg_mutex;
 } ServerContext;
 
 typedef struct PerSessionData {
@@ -100,6 +103,30 @@ static void handle_gui_msg(ServerContext* sc, const char* msg) {
       cJSON* tab_id = cJSON_GetObjectItem(data, "tabId");
       if (cJSON_IsNumber(tab_id)) {
         vlog(LOG_LEVEL_INFO, sc, "gui-evt: tab_selected - id=%llu]\n", (uint64_t)tab_id->valuedouble);
+
+        // Queue WS message to extension
+        if (sc->client_wsi) {
+          vlog(LOG_LEVEL_TRACE, sc, "queueing message to websocket\n");
+          cJSON* ws_payload = cJSON_CreateObject();
+          cJSON_AddStringToObject(ws_payload, "event", "activate_tab");
+          cJSON* ws_data = cJSON_CreateObject();
+          cJSON_AddNumberToObject(ws_data, "tabId", tab_id->valuedouble);
+          cJSON_AddItemToObject(ws_payload, "data", ws_data);
+
+          char* ws_str = cJSON_PrintUnformatted(ws_payload);
+
+          pthread_mutex_lock(&sc->pending_msg_mutex);
+          if (sc->pending_ws_msg) {
+            free(sc->pending_ws_msg);
+          }
+          sc->pending_ws_msg = ws_str;
+          sc->send_pending_msg = 1;
+          pthread_mutex_unlock(&sc->pending_msg_mutex);
+          cJSON_Delete(ws_payload);
+
+          // Wake up the WebSocket thread safely
+          lws_cancel_service(sc->lws_ctx);
+        }
       } else {
         vlog(LOG_LEVEL_ERROR, sc, "gui-evt: No tab id found for tab_selected\n");
       }
@@ -279,9 +306,23 @@ static int callback_minimal(struct lws* wsi, enum lws_callback_reasons reason, v
       if (pss && pss->msg) {
         pss_clear_message(pss, 1);
       }
+      if (pss && pss->msg) {
+        pss_clear_message(pss, 1);
+      }
+      break;
+
+    case LWS_CALLBACK_EVENT_WAIT_CANCELLED:
+      if (sc && sc->client_wsi) {
+        pthread_mutex_lock(&sc->pending_msg_mutex);
+        if (sc->send_pending_msg) {
+          lws_callback_on_writable(sc->client_wsi);
+        }
+        pthread_mutex_unlock(&sc->pending_msg_mutex);
+      }
       break;
 
     case LWS_CALLBACK_SERVER_WRITEABLE:
+      vlog(LOG_LEVEL_TRACE, sc, "lws-server-writeable\n");
       if (sc->send_tab_request) {
         const char* msg = "{\"event\":\"request_tab_info\"}";
         size_t msg_len = strlen(msg);
@@ -292,6 +333,23 @@ static int callback_minimal(struct lws* wsi, enum lws_callback_reasons reason, v
         sc->send_tab_request = 0;
         vlog(LOG_LEVEL_INFO, sc, "Sent request_tab_info to extension\n");
       }
+      pthread_mutex_lock(&sc->pending_msg_mutex);
+      if (sc->send_pending_msg && sc->pending_ws_msg) {
+        vlog(LOG_LEVEL_TRACE, sc, "Sending pending message to websocket.\n");
+        size_t msg_len = strlen(sc->pending_ws_msg);
+        // Allocate buffer with LWS_PRE padding
+        unsigned char* buf = malloc(LWS_PRE + msg_len + 1);
+        if (buf) {
+          memcpy(&buf[LWS_PRE], sc->pending_ws_msg, msg_len);
+          buf[LWS_PRE + msg_len] = '\0';  // Just in case
+          lws_write(wsi, &buf[LWS_PRE], msg_len, LWS_WRITE_TEXT);
+          free(buf);
+        }
+        free(sc->pending_ws_msg);
+        sc->pending_ws_msg = NULL;
+        sc->send_pending_msg = 0;
+      }
+      pthread_mutex_unlock(&sc->pending_msg_mutex);
       break;
 
     case LWS_CALLBACK_RECEIVE: {
@@ -433,6 +491,7 @@ int engine_init(EngineContext** ectx, EngineCreationInfo cinfo) {
   }
   memset(sc, 0, sizeof(ServerContext));
   sc->cls = &SERVER_CONTEXT_CLASS;
+  pthread_mutex_init(&sc->pending_msg_mutex, NULL);
   lws_set_log_level(LLL_USER | LLL_ERR | LLL_WARN | LLL_NOTICE | LLL_INFO, lws_log_emit_cb);
 
   ec->serv_ctx = sc;
@@ -554,6 +613,7 @@ void engine_destroy(EngineContext* ectx) {
       }
       pthread_join(ectx->serv_ctx->uds_read_thread, NULL);
     }
+    pthread_mutex_destroy(&ectx->serv_ctx->pending_msg_mutex);
     free(ectx->serv_ctx);
     ectx->serv_ctx = NULL;
   }
