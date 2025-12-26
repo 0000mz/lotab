@@ -7,12 +7,10 @@
 #include <pthread.h>
 #include <signal.h>
 #include <spawn.h>
-#include <stdarg.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
-#include <sys/_types/_va_list.h>
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <sys/wait.h>
@@ -20,6 +18,7 @@
 
 #include "config.h"
 #include "statusbar.h"
+#include "util.h"
 
 static pthread_mutex_t g_log_mu;
 static LogLevel g_log_level = LOG_LEVEL_INFO;
@@ -435,63 +434,6 @@ void engine_destroy(EngineContext* ectx) {
     ectx->task_state = NULL;
   }
   ectx->destroyed = 1;
-}
-
-void engine_set_log_level(LogLevel level) {
-  g_log_level = level;
-}
-
-char log_level_str(const LogLevel l) {
-  switch (l) {
-    case LOG_LEVEL_INFO:
-      return 'I';
-    case LOG_LEVEL_TRACE:
-      return 'T';
-    case LOG_LEVEL_WARN:
-      return 'W';
-    case LOG_LEVEL_ERROR:
-      return 'E';
-  }
-}
-
-void vlog(LogLevel level, void* cls, const char* fmt, ...) {
-  if (level > g_log_level) {
-    return;
-  }
-  char buf[1024];
-  va_list args;
-  va_start(args, fmt);
-  vsnprintf(buf, sizeof(buf), fmt, args);
-  va_end(args);
-
-  FILE* f = stdout;
-  if (level == LOG_LEVEL_ERROR)
-    f = stderr;
-
-  struct EngClass* ecls = cls == NULL ? NULL : *(struct EngClass**)cls;
-  char l_prefix = log_level_str(level);
-
-  const char* color = "";
-  const char* reset = "\033[0m";
-  switch (level) {
-    case LOG_LEVEL_WARN:
-      color = "\033[0;33m";  // Yellow
-      break;
-    case LOG_LEVEL_ERROR:
-      color = "\033[0;31m";  // Red
-      break;
-    case LOG_LEVEL_INFO:
-      color = "\033[0;36m";  // Cyan
-      break;
-    case LOG_LEVEL_TRACE:
-      color = "\033[0;35m";  // Purple
-      break;
-    default:
-      break;
-  }
-  pthread_mutex_lock(&g_log_mu);
-  fprintf(f, "%s%c [%s @ %p]%s %s", color, l_prefix, ecls ? ecls->name : "null", (void*)ecls, reset, buf);
-  pthread_mutex_unlock(&g_log_mu);
 }
 
 TabInfo* tab_state_find_tab(TabState* ts, const uint64_t id) {

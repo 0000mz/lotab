@@ -1,6 +1,11 @@
 #pragma once
 
+#ifndef DAEMON_ENGINE_H_
+#define DAEMON_ENGINE_H_
+
 #include <stdint.h>
+
+#include "util.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -22,12 +27,6 @@ typedef enum {
   TAB_EVENT_TAB_REMOVED,
   TAB_EVENT_UNKNOWN
 } TabEventType;
-
-typedef enum { LOG_LEVEL_WARN = 0, LOG_LEVEL_ERROR = 1, LOG_LEVEL_INFO = 2, LOG_LEVEL_TRACE = 3 } LogLevel;
-
-struct EngClass {
-  char* name;
-};
 
 struct ServerContext;
 struct StatusBarRunContext;
@@ -79,12 +78,10 @@ typedef struct EngineCreationInfo {
 int engine_init(OUT EngineContext** ectx, EngineCreationInfo cinfo);
 void engine_run(EngineContext* ectx);
 void engine_destroy(EngineContext* ectx);
-void engine_set_log_level(LogLevel level);
 void engine_handle_event(EngineContext* ectx, DaemonEvent event, void* data);
-
-// Log a message with the specified level
-void vlog(LogLevel level, void* cls, const char* fmt, ...);
 
 #ifdef __cplusplus
 }
 #endif
+
+#endif  // DAEMON_ENGINE_H_

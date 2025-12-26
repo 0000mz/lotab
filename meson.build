@@ -38,9 +38,15 @@ conf_data.set_quoted('APP_PATH', app_target.full_path())
 configure_file(output : 'config.h',
                configuration : conf_data)
 
+engine_util_lib = static_library('daemon_util', ['daemon/util.c'], install: false)
+engine_util_dep = declare_dependency(
+  link_with : engine_util_lib,
+  include_directories : include_directories('daemon'),
+)
+
 engine_lib = static_library('daemon_engine',
     ['daemon/engine.c', 'daemon/statusbar.m'],
-    dependencies : [lws_dep, cjson_dep, cocoa_dep, carbon_dep],
+    dependencies : [lws_dep, cjson_dep, cocoa_dep, carbon_dep, engine_util_dep],
     install : false)
 
 engine_dep = declare_dependency(
