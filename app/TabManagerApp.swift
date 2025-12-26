@@ -44,7 +44,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Setup Key monitors
         NSEvent.addLocalMonitorForEvents(matching: .keyDown) { (event: NSEvent) -> NSEvent? in
             let tm = TabManager.shared
-            
+
             // Toggle Filter Mode OR Handle characters
             if tm.isFiltering {
                 if event.keyCode == 53 { // ESC: Cancel filter
@@ -62,7 +62,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     }
                     return nil
                 }
-                
+
                 // Handle typing (allow navigation keys to pass through)
                 if event.keyCode != 126 && event.keyCode != 125 { // Not arrows
                     if let chars = event.characters, !chars.isEmpty, !event.modifierFlags.contains(.command) {
@@ -173,6 +173,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             self.window.orderOut(nil)
             NSApp.hide(nil)
         }
+
+        // Reset State on Open
+        TabManager.shared.isFiltering = false
+        TabManager.shared.filterText = ""
+        TabManager.shared.selection = TabManager.shared.displayedTabs.first?.id
     }
 
     private func startUDSServer() {

@@ -1,11 +1,5 @@
 import SwiftUI
 
-extension View {
-    @ViewBuilder func isHidden(_ hidden: Bool) -> some View {
-        if hidden { EmptyView() } else { self }
-    }
-}
-
 struct ContentView: View {
     @ObservedObject var tabManager: TabManager
 
