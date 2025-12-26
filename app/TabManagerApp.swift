@@ -63,12 +63,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     return nil
                 }
 
-                // Handle typing (allow navigation keys to pass through)
-                if event.keyCode != 126 && event.keyCode != 125 { // Not arrows
-                    if let chars = event.characters, !chars.isEmpty, !event.modifierFlags.contains(.command) {
-                        tm.filterText += chars
-                        return nil
-                    }
+                // Handle typing AND swallow navigation keys
+                if event.keyCode == 126 || event.keyCode == 125 {
+                    return nil // Swallow arrows to prevent list navigation
+                }
+
+                if let chars = event.characters, !chars.isEmpty, !event.modifierFlags.contains(.command) {
+                    tm.filterText += chars
+                    return nil
                 }
             } else {
                 // Normal Mode
@@ -84,43 +86,39 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
 
             // Navigation Logic
-            // UP: Arrow (126) or (K/40 if not filtering)
+            // UP: Arrow (126) or K (40)
             let isK = event.keyCode == 40
-            if event.keyCode == 126 || (isK && !tm.isFiltering) {
+            if (event.keyCode == 126 || isK) && !tm.isFiltering {
                 let tabs = tm.displayedTabs
                 if !tabs.isEmpty {
                     if let sel = tm.selection, let idx = tabs.firstIndex(where: { $0.id == sel }) {
                         if idx == 0 {
                             tm.selection = tabs.last?.id
-                            return nil
-                        } else if isK {
+                        } else {
                             tm.selection = tabs[idx - 1].id
-                            return nil
                         }
                     } else {
                         tm.selection = tabs.first?.id
-                        return nil
                     }
+                    return nil
                 }
             }
 
-            // DOWN: Arrow (125) or (J/38 if not filtering)
+            // DOWN: Arrow (125) or J (38)
             let isJ = event.keyCode == 38
-            if event.keyCode == 125 || (isJ && !tm.isFiltering) {
+            if (event.keyCode == 125 || isJ) && !tm.isFiltering {
                 let tabs = tm.displayedTabs
                 if !tabs.isEmpty {
                     if let sel = tm.selection, let idx = tabs.firstIndex(where: { $0.id == sel }) {
                         if idx == tabs.count - 1 {
                             tm.selection = tabs.first?.id
-                            return nil
-                        } else if isJ {
+                        } else {
                             tm.selection = tabs[idx + 1].id
-                            return nil
                         }
                     } else {
                         tm.selection = tabs.first?.id
-                        return nil
                     }
+                    return nil
                 }
             }
 

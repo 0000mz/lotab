@@ -41,3 +41,4 @@ TODO:
 - Treat tabs.onHighlight as tab activation.
 - When in search mode, do not make the list selectable or navigateable until the search is
   confirmed or canceled.
+- Color/label tabs that are associated with the currently focused browser window.
