@@ -1,9 +1,13 @@
 import SwiftUI
 
+extension View {
+    @ViewBuilder func isHidden(_ hidden: Bool) -> some View {
+        if hidden { EmptyView() } else { self }
+    }
+}
+
 struct ContentView: View {
     @ObservedObject var tabManager: TabManager
-
-    @State private var selection: Int?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -13,10 +17,11 @@ struct ContentView: View {
                     .foregroundColor(.secondary)
                 Spacer()
             } else {
-                List(selection: $selection) {
-                    let activeTabs = tabManager.tabs.filter { $0.active }
-                    if !activeTabs.isEmpty {
-                        Section(header: Text("Active Tabs")) {
+                ScrollViewReader { proxy in
+                    List(selection: $tabManager.selection) {
+                        let activeTabs = tabManager.tabs.filter { $0.active }
+                        if !activeTabs.isEmpty {
+                            Section(header: Text("Active Tabs")) {
                             ForEach(activeTabs) { tab in
                                 HStack {
                                     Text(tab.title)
@@ -25,40 +30,48 @@ struct ContentView: View {
                                     Spacer()
                                 }
                                 .tag(tab.id)
+                                .id(tab.id)
+                            }
+                            }
+                        }
+
+                        Section(header: Text("Other Tabs")) {
+                            ForEach(tabManager.tabs.filter { !$0.active }) { tab in
+                                Text(tab.title)
+                                    .lineLimit(1)
+                                    .truncationMode(.tail)
+                                    .tag(tab.id)
+                                    .id(tab.id)
                             }
                         }
                     }
-
-                    Section(header: Text("Other Tabs")) {
-                        ForEach(tabManager.tabs.filter { !$0.active }) { tab in
-                            Text(tab.title)
-                                .lineLimit(1)
-                                .truncationMode(.tail)
-                                .tag(tab.id)
+                    .onChange(of: tabManager.tabs) { newTabs in
+                        // Preserve selection if possible, or select first active
+                        if tabManager.selection == nil || !newTabs.contains(where: { $0.id == tabManager.selection }) {
+                             tabManager.selection = newTabs.first(where: { $0.active })?.id ?? newTabs.first?.id
                         }
                     }
-                }
-                .onChange(of: tabManager.tabs) { newTabs in
-                    // Preserve selection if possible, or select first active
-                    if selection == nil || !newTabs.contains(where: { $0.id == selection }) {
-                         selection = newTabs.first(where: { $0.active })?.id ?? newTabs.first?.id
+                    .onChange(of: tabManager.selection) { newSel in
+                        if let id = newSel {
+                            proxy.scrollTo(id, anchor: .center)
+                        }
                     }
-                }
-                .onAppear {
-                    // Initial selection
-                    if selection == nil {
-                        selection = tabManager.tabs.first(where: { $0.active })?.id ?? tabManager.tabs.first?.id
+                    .onAppear {
+                        // Initial selection
+                        if tabManager.selection == nil {
+                            tabManager.selection = tabManager.tabs.first(where: { $0.active })?.id ?? tabManager.tabs.first?.id
+                        }
                     }
-                }
-                // Hidden button to capture Enter key
-                Button("") {
-                    if let selectedId = selection {
-                        AppDelegate.shared?.sendUDSMessage(event: "tab_selected", data: ["tabId": selectedId])
-                        AppDelegate.shared?.hideUI()
+                    // Hidden button to capture Enter key
+                    Button("") {
+                        if let selectedId = tabManager.selection {
+                            AppDelegate.shared?.sendUDSMessage(event: "tab_selected", data: ["tabId": selectedId])
+                            AppDelegate.shared?.hideUI()
+                        }
                     }
+                    .keyboardShortcut(.defaultAction)
+                    .isHidden(true)
                 }
-                .keyboardShortcut(.defaultAction)
-                .hidden()
             }
             HStack {
                 Spacer()
@@ -68,7 +81,6 @@ struct ContentView: View {
                     .padding([.trailing], 12)
                     .frame(height: .infinity, alignment: .center)
             }
-            .frame(height: 20)
         }
         .scrollContentBackground(.hidden)
         .frame(width: 600, height: 500)

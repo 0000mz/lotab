@@ -41,11 +41,31 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         window.level = .floating
         window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
 
-        // Setup ESC key monitor to hide the UI
+        // Setup Key monitors
         NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
             if event.keyCode == 53 { // ESC key
                 self.hideUI()
                 return nil // Swallow the event
+            }
+
+            if event.keyCode == 126 { // Up Arrow
+                let tm = TabManager.shared
+                let tabs = tm.displayedTabs
+                if let sel = tm.selection, let first = tabs.first, sel == first.id {
+                    // Loop to bottom
+                    tm.selection = tabs.last?.id
+                    return nil // Swallow event to prevent default bump
+                }
+            }
+
+            if event.keyCode == 125 { // Down Arrow
+                let tm = TabManager.shared
+                let tabs = tm.displayedTabs
+                if let sel = tm.selection, let last = tabs.last, sel == last.id {
+                    // Loop to top
+                    tm.selection = tabs.first?.id
+                    return nil // Swallow event
+                }
             }
             return event
         }
@@ -177,12 +197,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
 
             let msgLen = headerData.withUnsafeBytes { $0.load(as: UInt32.self).littleEndian }
-            
+
             // 2. Read Payload
             var payloadData = Data(count: Int(msgLen))
             var totalRead = 0
             var readError = false
-            
+
             payloadData.withUnsafeMutableBytes { buffer in
                 while totalRead < Int(msgLen) {
                     let n = read(clientSocket, buffer.baseAddress! + totalRead, Int(msgLen) - totalRead)
@@ -193,7 +213,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     totalRead += n
                 }
             }
-            
+
             if readError {
                  vlog_s(.error, TabManagerApp.appClass, "UDS payload read error or closed prematurely")
                  break
@@ -298,6 +318,13 @@ class TabManager: ObservableObject {
     static let shared = TabManager()
     @Published var tabs: [Tab] = []
     @Published var tasks: [Task] = []
+    @Published var selection: Int?
+
+    var displayedTabs: [Tab] {
+        let active = tabs.filter { $0.active }
+        let other = tabs.filter { !$0.active }
+        return active + other
+    }
 }
 
 extension String {
