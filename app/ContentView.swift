@@ -19,29 +19,34 @@ struct ContentView: View {
             } else {
                 ScrollViewReader { proxy in
                     List(selection: $tabManager.selection) {
-                        let activeTabs = tabManager.tabs.filter { $0.active }
+                        let displayed = tabManager.displayedTabs
+                        let activeTabs = displayed.filter { $0.active }
+
                         if !activeTabs.isEmpty {
                             Section(header: Text("Active Tabs")) {
-                            ForEach(activeTabs) { tab in
-                                HStack {
-                                    Text(tab.title)
-                                        .lineLimit(1)
-                                        .truncationMode(.tail)
-                                    Spacer()
+                                ForEach(activeTabs) { tab in
+                                    HStack {
+                                        Text(tab.title)
+                                            .lineLimit(1)
+                                            .truncationMode(.tail)
+                                        Spacer()
+                                    }
+                                    .tag(tab.id)
+                                    .id(tab.id)
                                 }
-                                .tag(tab.id)
-                                .id(tab.id)
-                            }
                             }
                         }
 
-                        Section(header: Text("Other Tabs")) {
-                            ForEach(tabManager.tabs.filter { !$0.active }) { tab in
-                                Text(tab.title)
-                                    .lineLimit(1)
-                                    .truncationMode(.tail)
-                                    .tag(tab.id)
-                                    .id(tab.id)
+                        let otherTabs = displayed.filter { !$0.active }
+                        if !otherTabs.isEmpty {
+                            Section(header: Text("Other Tabs")) {
+                                ForEach(otherTabs) { tab in
+                                    Text(tab.title)
+                                        .lineLimit(1)
+                                        .truncationMode(.tail)
+                                        .tag(tab.id)
+                                        .id(tab.id)
+                                }
                             }
                         }
                     }
@@ -65,6 +70,17 @@ struct ContentView: View {
                 }
             }
             HStack {
+                if tabManager.isFiltering || !tabManager.filterText.isEmpty {
+                    Text("search: \(tabManager.filterText)")
+                        .font(.caption)
+                        .padding([.leading], 12)
+                        .foregroundColor(.secondary)
+                } else {
+                    Text("/ to search")
+                        .font(.caption)
+                        .padding([.leading], 12)
+                        .foregroundColor(.secondary)
+                }
                 Spacer()
                 Text("up/down or j/k")
                     .font(.caption)
@@ -72,13 +88,13 @@ struct ContentView: View {
                 Divider()
                     .frame(height: 12)
                     .padding(.horizontal, 4)
-                Text("ENTER to navigate")
+                Text(tabManager.isFiltering ? "ENTER to search" : "ENTER to navigate")
                     .font(.caption)
                     .foregroundColor(.secondary)
                 Divider()
                     .frame(height: 12)
                     .padding(.horizontal, 4)
-                Text("ESC to close")
+                Text(tabManager.isFiltering ? "ESC to cancel search" : "ESC to close")
                     .font(.caption)
                     .foregroundColor(.secondary)
                     .padding([.trailing], 12)

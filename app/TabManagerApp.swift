@@ -43,61 +43,93 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Setup Key monitors
         NSEvent.addLocalMonitorForEvents(matching: .keyDown) { (event: NSEvent) -> NSEvent? in
-            if event.keyCode == 53 { // ESC key
-                self.hideUI()
-                return nil // Swallow the event
+            let tm = TabManager.shared
+            
+            // Toggle Filter Mode OR Handle characters
+            if tm.isFiltering {
+                if event.keyCode == 53 { // ESC: Cancel filter
+                    tm.isFiltering = false
+                    tm.filterText = ""
+                    return nil
+                }
+                if event.keyCode == 36 { // Enter: Confirm filter
+                    tm.isFiltering = false
+                    return nil
+                }
+                if event.keyCode == 51 { // Backspace
+                    if !tm.filterText.isEmpty {
+                        tm.filterText.removeLast()
+                    }
+                    return nil
+                }
+                
+                // Handle typing (allow navigation keys to pass through)
+                if event.keyCode != 126 && event.keyCode != 125 { // Not arrows
+                    if let chars = event.characters, !chars.isEmpty, !event.modifierFlags.contains(.command) {
+                        tm.filterText += chars
+                        return nil
+                    }
+                }
+            } else {
+                // Normal Mode
+                if event.keyCode == 44 { // Slash: Start filter
+                    tm.isFiltering = true
+                    tm.filterText = ""
+                    return nil
+                }
+                if event.keyCode == 53 { // ESC: Close UI
+                    self.hideUI()
+                    return nil
+                }
             }
 
-            // UP: Arrow (126) or K (40)
-            if event.keyCode == 126 || event.keyCode == 40 {
-                let tm = TabManager.shared
+            // Navigation Logic
+            // UP: Arrow (126) or (K/40 if not filtering)
+            let isK = event.keyCode == 40
+            if event.keyCode == 126 || (isK && !tm.isFiltering) {
                 let tabs = tm.displayedTabs
                 if !tabs.isEmpty {
                     if let sel = tm.selection, let idx = tabs.firstIndex(where: { $0.id == sel }) {
                         if idx == 0 {
-                            // Cyclic Loop
                             tm.selection = tabs.last?.id
                             return nil
-                        } else if event.keyCode == 40 {
-                            // Manual move for 'j'
+                        } else if isK {
                             tm.selection = tabs[idx - 1].id
                             return nil
                         }
                     } else {
-                        // No valid selection, select first
                         tm.selection = tabs.first?.id
                         return nil
                     }
                 }
             }
 
-            if event.keyCode == 125 || event.keyCode == 38 {
-                let tm = TabManager.shared
+            // DOWN: Arrow (125) or (J/38 if not filtering)
+            let isJ = event.keyCode == 38
+            if event.keyCode == 125 || (isJ && !tm.isFiltering) {
                 let tabs = tm.displayedTabs
                 if !tabs.isEmpty {
                     if let sel = tm.selection, let idx = tabs.firstIndex(where: { $0.id == sel }) {
                         if idx == tabs.count - 1 {
-                            // Cyclic Loop
                             tm.selection = tabs.first?.id
                             return nil
-                        } else if event.keyCode == 38 {
-                            // Manual move for 'k'
+                        } else if isJ {
                             tm.selection = tabs[idx + 1].id
                             return nil
                         }
                     } else {
-                        // No valid selection, select first
                         tm.selection = tabs.first?.id
                         return nil
                     }
                 }
             }
 
-            if event.keyCode == 36 { // Enter key
+            // Confirm Selection (Entered Normal Mode)
+            if !tm.isFiltering && event.keyCode == 36 {
                 if let selectedId = TabManager.shared.selection {
                      self.sendUDSMessage(event: "tab_selected", data: ["tabId": selectedId])
                      self.hideUI()
-                     return nil // Swallow event
+                     return nil
                 }
             }
             return event
@@ -353,9 +385,13 @@ class TabManager: ObservableObject {
     @Published var tasks: [Task] = []
     @Published var selection: Int?
 
+    @Published var filterText: String = ""
+    @Published var isFiltering: Bool = false
+
     var displayedTabs: [Tab] {
-        let active = tabs.filter { $0.active }
-        let other = tabs.filter { !$0.active }
+        let filtered = filterText.isEmpty ? tabs : tabs.filter { $0.title.localizedCaseInsensitiveContains(filterText) }
+        let active = filtered.filter { $0.active }
+        let other = filtered.filter { !$0.active }
         return active + other
     }
 }

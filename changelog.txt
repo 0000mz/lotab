@@ -39,3 +39,5 @@ TODO:
 - Figure out how to make the websocket connection happen all the time on startup. Currently,
   the extension's service worker sometimes need to be woken up.
 - Treat tabs.onHighlight as tab activation.
+- When in search mode, do not make the list selectable or navigateable until the search is
+  confirmed or canceled.
