@@ -66,6 +66,18 @@ struct ContentView: View {
             }
             HStack {
                 Spacer()
+                Text("up/down or j/k")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                Divider()
+                    .frame(height: 12)
+                    .padding(.horizontal, 4)
+                Text("ENTER to navigate")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                Divider()
+                    .frame(height: 12)
+                    .padding(.horizontal, 4)
                 Text("ESC to close")
                     .font(.caption)
                     .foregroundColor(.secondary)
