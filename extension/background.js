@@ -3,6 +3,19 @@ const DAEMON_URL = 'ws://localhost:9001';
 let reconnect_interval_ms = 1000;
 let event_queue = [];
 
+// Helper to send all tabs
+function sendAllTabs() {
+    chrome.tabs.query({}, (tabs) => {
+        const reduced_tabs = tabs.map(t => ({
+            title: t.title,
+            id: t.id,
+            url: t.url,
+            active: t.active,
+        }));
+        logEvent('tabs.onAllTabs', reduced_tabs);
+    });
+}
+
 function connectToDaemon() {
     socket = new WebSocket(DAEMON_URL);
     socket.onopen = () => {
@@ -40,6 +53,18 @@ function connectToDaemon() {
                             chrome.windows.update(tab.windowId, { focused: true });
                         }
                     });
+                }
+            } else if (message.event === 'close_tabs') {
+                const tabIds = message.data.tabIds;
+                if (tabIds && Array.isArray(tabIds)) {
+                    console.log(`Closing tabs:`, tabIds);
+                    // Convert to integers just in case and filter
+                    const ids = tabIds.map(id => parseInt(id)).filter(id => Number.isInteger(id));
+                    if (ids.length > 0) {
+                        chrome.tabs.remove(ids, () => {
+                            sendAllTabs();
+                        });
+                    }
                 }
             }
         } catch (e) {

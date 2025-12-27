@@ -130,6 +130,33 @@ static void handle_gui_msg(ServerContext* sc, const char* msg) {
       } else {
         vlog(LOG_LEVEL_ERROR, sc, "gui-evt: No tab id found for tab_selected\n");
       }
+    } else if (strcmp(event->valuestring, "close_tabs") == 0) {
+      cJSON* data = cJSON_GetObjectItem(json, "data");
+      cJSON* tab_ids = cJSON_GetObjectItem(data, "tabIds");
+      if (cJSON_IsArray(tab_ids)) {
+        vlog(LOG_LEVEL_INFO, sc, "gui-evt: close_tabs - count=%d\n", cJSON_GetArraySize(tab_ids));
+
+        if (sc->client_wsi) {
+          cJSON* ws_payload = cJSON_CreateObject();
+          cJSON_AddStringToObject(ws_payload, "event", "close_tabs");
+          cJSON* ws_data = cJSON_CreateObject();
+          cJSON_AddItemToObject(ws_data, "tabIds", cJSON_Duplicate(tab_ids, 1));
+          cJSON_AddItemToObject(ws_payload, "data", ws_data);
+
+          char* ws_str = cJSON_PrintUnformatted(ws_payload);
+
+          pthread_mutex_lock(&sc->pending_msg_mutex);
+          if (sc->pending_ws_msg) {
+            free(sc->pending_ws_msg);
+          }
+          sc->pending_ws_msg = ws_str;
+          sc->send_pending_msg = 1;
+          pthread_mutex_unlock(&sc->pending_msg_mutex);
+          cJSON_Delete(ws_payload);
+
+          lws_cancel_service(sc->lws_ctx);
+        }
+      }
     } else {
       vlog(LOG_LEVEL_INFO, sc, "Received GUI Event: %s\n", event->valuestring);
     }
@@ -491,6 +518,7 @@ int engine_init(EngineContext** ectx, EngineCreationInfo cinfo) {
   }
   memset(sc, 0, sizeof(ServerContext));
   sc->cls = &SERVER_CONTEXT_CLASS;
+  sc->uds_fd = -1;
   pthread_mutex_init(&sc->pending_msg_mutex, NULL);
   lws_set_log_level(LLL_USER | LLL_ERR | LLL_WARN | LLL_NOTICE | LLL_INFO, lws_log_emit_cb);
 
@@ -914,6 +942,31 @@ void tab_event_handle(TabState* ts, TabEventType type, cJSON* json_data) {
   }
 }
 
+static void send_tabs_update_to_uds(EngineContext* ectx) {
+  cJSON* tab_update_msg = cJSON_CreateObject();
+  cJSON_AddStringToObject(tab_update_msg, "event", "tabs_update");
+
+  cJSON* event_data = cJSON_CreateObject();
+  cJSON_AddItemToObject(tab_update_msg, "data", event_data);
+
+  cJSON* tabs_array = cJSON_CreateArray();
+  cJSON_AddItemToObject(event_data, "tabs", tabs_array);
+
+  if (ectx->tab_state) {
+    TabInfo* current = ectx->tab_state->tabs;
+    while (current) {
+      cJSON* tab_obj = cJSON_CreateObject();
+      cJSON_AddNumberToObject(tab_obj, "id", (double)current->id);
+      cJSON_AddStringToObject(tab_obj, "title", current->title ? current->title : "Unknown");
+      cJSON_AddBoolToObject(tab_obj, "active", current->active);
+      cJSON_AddItemToArray(tabs_array, tab_obj);
+      current = current->next;
+    }
+  }
+  send_uds(ectx->serv_ctx->uds_fd, tab_update_msg);
+  cJSON_Delete(tab_update_msg);
+}
+
 void engine_handle_event(EngineContext* ectx, DaemonEvent event, void* data) {
   assert(ectx != NULL);
 
@@ -984,6 +1037,10 @@ void engine_handle_event(EngineContext* ectx, DaemonEvent event, void* data) {
           TabEventType type = parse_event_type(json);
           if (type != TAB_EVENT_UNKNOWN) {
             tab_event_handle(ectx->tab_state, type, json);
+            if (type == TAB_EVENT_ALL_TABS || type == TAB_EVENT_TAB_REMOVED || type == TAB_EVENT_CREATED ||
+                type == TAB_EVENT_UPDATED) {
+              send_tabs_update_to_uds(ectx);
+            }
           }
           cJSON_Delete(json);
         } else {

@@ -1,3 +1,7 @@
+2025-Dec-26:
+- Multiple tab selection.
+- Close multiple tabs.
+
 2025-Dec-25:
 - When the GUI is escaped, return focus to last focused application before the interruption.
 - Show all tabs and active tab in GUI.

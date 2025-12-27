@@ -89,6 +89,21 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     }
                     return nil
                 }
+                if event.keyCode == 7 { // x: Close Selected Tabs
+                    let idsToClose: [Int]
+                    if !tm.multiSelection.isEmpty {
+                        idsToClose = Array(tm.multiSelection)
+                    } else if let sel = tm.selection {
+                        idsToClose = [sel]
+                    } else {
+                        idsToClose = []
+                    }
+                    if !idsToClose.isEmpty {
+                        self.sendUDSMessage(event: "close_tabs", data: ["tabIds": idsToClose])
+                        tm.multiSelection = []
+                    }
+                    return nil
+                }
                 if event.keyCode == 53 { // ESC: Close UI
                     self.hideUI()
                     return nil
