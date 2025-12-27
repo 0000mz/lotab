@@ -1,6 +1,6 @@
 #include "engine.h"
 
-#include <cjson/cJSON.h>
+#include <cJSON.h>
 #include <gtest/gtest.h>
 #include <stdio.h>
 #include <atomic>

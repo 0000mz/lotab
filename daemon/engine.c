@@ -1,7 +1,7 @@
 #include "engine.h"
 
 #include <assert.h>
-#include <cjson/cJSON.h>
+#include <cJSON.h>
 #include <errno.h>
 #include <libwebsockets.h>
 #include <pthread.h>

@@ -4,7 +4,9 @@ project('tab_manager', 'c', 'cpp', 'swift', 'objc',
 
 lws_proj = subproject('libwebsockets')
 lws_dep = lws_proj.get_variable('libwebsockets_dep')
-cjson_dep = dependency('libcjson')
+cmake = import('cmake')
+cjson_proj = cmake.subproject('cjson')
+cjson_dep = cjson_proj.dependency('cjson')
 carbon_dep = dependency('appleframeworks', modules : 'Carbon')
 cocoa_dep = dependency('appleframeworks', modules : 'Cocoa')
 argparse_dep = dependency('argparse')
