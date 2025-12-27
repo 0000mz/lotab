@@ -116,7 +116,7 @@ struct ContentView: View {
         .padding(.horizontal, 8)
         .background(
             RoundedRectangle(cornerRadius: 6)
-                .fill(tabManager.labelListSelection == index ? Color.accentColor.opacity(0.15) : Color.clear)
+                .fill(tabManager.labelListSelection == index ? Color.accentColor : Color.clear)
         )
         .padding(.top, topPadding)
         .listRowSeparator(.hidden)
@@ -189,81 +189,100 @@ struct ContentView: View {
 
     private var footerView: some View {
         HStack(alignment: .top, spacing: 32) {
-            VStack(alignment: .leading, spacing: 2) {
-                if tabManager.isFiltering || !tabManager.filterText.isEmpty {
-                    Text("search: \(tabManager.filterText)")
-                        .font(.caption)
-                        .fontWeight(.medium)
-                        .foregroundColor(.primary)
-                } else {
+            if tabManager.isMarking && !tabManager.isCreatingLabel {
+                VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 4) {
-                        KeyView(text: "↓")
-                        KeyView(text: "↑")
-                        Text("or")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        KeyView(text: "j")
-                        KeyView(text: "k")
-                        Text("to navigate")
+                        KeyView(text: "return")
+                        Text("to select")
                             .font(.caption)
                             .foregroundColor(.secondary)
                     }
+                    HStack(spacing: 4) {
+                        KeyView(text: "esc")
+                        Text("to cancel")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+            } else {
+                VStack(alignment: .leading, spacing: 2) {
+                    if tabManager.isFiltering || !tabManager.filterText.isEmpty {
+                        Text("search: \(tabManager.filterText)")
+                            .font(.caption)
+                            .fontWeight(.medium)
+                            .foregroundColor(.primary)
+                    } else {
+                        HStack(spacing: 4) {
+                            KeyView(text: "↓")
+                            KeyView(text: "↑")
+                            Text("or")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            KeyView(text: "j")
+                            KeyView(text: "k")
+                            Text("to navigate")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                        if tabManager.multiSelection.isEmpty {
+                            HStack(spacing: 4) {
+                                KeyView(text: "/")
+                                Text("to search")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                    }
                     if tabManager.multiSelection.isEmpty {
                         HStack(spacing: 4) {
-                            KeyView(text: "/")
-                            Text("to search")
+                            KeyView(text: "return")
+                            Text(tabManager.isFiltering ? "to search" : "to open")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    HStack(spacing: 4) {
+                        KeyView(text: "esc")
+                        Text(tabManager.isFiltering || !tabManager.multiSelection.isEmpty ? "to cancel" : "to close")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+
+                VStack(alignment: .leading, spacing: 2) {
+                    if !tabManager.multiSelection.isEmpty {
+                        HStack(spacing: 4) {
+                            KeyView(text: "x")
+                            Text("to close")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                        HStack(spacing: 4) {
+                            KeyView(text: "shift")
+                            KeyView(text: "x")
+                            Text("to close others")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    HStack(spacing: 4) {
+                        KeyView(text: "shift")
+                        KeyView(text: "a")
+                        Text("to select all")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    if !tabManager.multiSelection.isEmpty {
+                        HStack(spacing: 4) {
+                            KeyView(text: "m")
+                            Text("to mark")
                                 .font(.caption)
                                 .foregroundColor(.secondary)
                         }
                     }
                 }
-                if tabManager.multiSelection.isEmpty {
-                    HStack(spacing: 4) {
-                        KeyView(text: "return")
-                        Text(tabManager.isFiltering ? "to search" : "to open")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                }
-                HStack(spacing: 4) {
-                    KeyView(text: "esc")
-                    Text(tabManager.isFiltering || !tabManager.multiSelection.isEmpty ? "to cancel" : "to close")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
+                .frame(alignment: .topLeading)
             }
-
-            VStack(alignment: .leading, spacing: 2) {
-                if !tabManager.multiSelection.isEmpty {
-                    HStack(spacing: 4) {
-                        KeyView(text: "x")
-                        Text("to close")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                    HStack(spacing: 4) {
-                        KeyView(text: "shift")
-                        KeyView(text: "x")
-                        Text("to close others")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                }
-                HStack(spacing: 4) {
-                    KeyView(text: "shift")
-                    KeyView(text: "a")
-                    Text("to select all")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-                HStack(spacing: 4) {
-                    KeyView(text: "m")
-                    Text("to mark")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-            }
-            .frame(alignment: .topLeading)
             Spacer()
         }
         .frame(maxWidth: .infinity, alignment: .leading)

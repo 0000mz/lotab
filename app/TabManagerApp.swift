@@ -91,7 +91,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                         return nil
                     }
                     let totalItems = 1 + tm.allLabels.count // 0=Create, 1..N=Labels
-                    
+
                     if event.keyCode == 125 || event.keyCode == 38 { // Down or 'j'
                          tm.labelListSelection = (tm.labelListSelection + 1) % totalItems
                          return nil
@@ -172,7 +172,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     }
                 }
                 if event.keyCode == 46 { // m: Mark tabs
-                    if !tm.multiSelection.isEmpty || tm.selection != nil {
+                    if !tm.multiSelection.isEmpty {
                          tm.isMarking = true
                          tm.isCreatingLabel = false
                          tm.labelListSelection = 0
@@ -313,6 +313,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         TabManager.shared.filterText = ""
         TabManager.shared.selection = TabManager.shared.displayedTabs.first?.id
         TabManager.shared.multiSelection = []
+
+        // Reset Marking State
+        TabManager.shared.isMarking = false
+        TabManager.shared.isCreatingLabel = false
+        TabManager.shared.markText = ""
     }
 
     private func startUDSServer() {

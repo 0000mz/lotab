@@ -52,3 +52,5 @@ TODO:
 - Add confirmation for serious actions such as closing multiple tabs.
 - Mark tabs with a label.
 - Marked tabs should create a tab group in the browser.
+- Mark all tabs older than N hours/days/weeks.
+- Unify accent color of GUI.
