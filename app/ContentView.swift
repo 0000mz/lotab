@@ -223,143 +223,93 @@ struct ContentView: View {
         .listRowSeparator(.hidden)
     }
 
+    private struct FooterItem: Identifiable {
+        let id = UUID()
+        let components: [FooterComponent]
+        let description: String
+    }
+
+    private enum FooterComponent: Hashable {
+        case key(String)
+        case text(String)
+    }
+
+    private var footerItems: [FooterItem] {
+        var items: [FooterItem] = []
+        
+        if tabManager.isCreatingLabel {
+            items.append(FooterItem(components: [.key("return")], description: "to create"))
+            items.append(FooterItem(components: [.key("esc")], description: "to cancel"))
+        } else if tabManager.isSelectingByLabel {
+             items.append(FooterItem(components: [.key("space")], description: "to toggle"))
+             items.append(FooterItem(components: [.key("return")], description: "to confirm"))
+             items.append(FooterItem(components: [.key("esc")], description: "to cancel"))
+        } else if tabManager.isMarking {
+             items.append(FooterItem(components: [.key("return")], description: "to select"))
+             items.append(FooterItem(components: [.key("esc")], description: "to cancel"))
+        } else {
+             if tabManager.isFiltering || !tabManager.filterText.isEmpty {
+                  items.append(FooterItem(components: [.text("search: \(tabManager.filterText)")], description: ""))
+             } else {
+                  items.append(FooterItem(components: [.key("↓"), .key("↑"), .text("or"), .key("j"), .key("k")], description: "to navigate"))
+                  if tabManager.multiSelection.isEmpty {
+                       items.append(FooterItem(components: [.key("/")], description: "to search"))
+                  }
+             }
+             
+             if tabManager.multiSelection.isEmpty {
+                 let desc = tabManager.isFiltering ? "to search" : "to open"
+                 items.append(FooterItem(components: [.key("return")], description: desc))
+             }
+             
+             let escDesc = tabManager.isFiltering || !tabManager.multiSelection.isEmpty ? "to cancel" : "to close"
+             items.append(FooterItem(components: [.key("esc")], description: escDesc))
+             
+             if !tabManager.multiSelection.isEmpty {
+                 items.append(FooterItem(components: [.key("x")], description: "to close"))
+                 items.append(FooterItem(components: [.key("shift"), .key("x")], description: "to close others"))
+             }
+             
+             items.append(FooterItem(components: [.key("shift"), .key("a")], description: "to select all"))
+             items.append(FooterItem(components: [.key("s")], description: "to select"))
+
+             if !tabManager.multiSelection.isEmpty {
+                 items.append(FooterItem(components: [.key("m")], description: "to mark"))
+             }
+        }
+        return items
+    }
+
     private var footerView: some View {
-        HStack(alignment: .top, spacing: 32) {
-            if tabManager.isCreatingLabel {
-                VStack(alignment: .leading, spacing: 2) {
-                    HStack(spacing: 4) {
-                        KeyView(text: "return")
-                        Text("to create")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                    HStack(spacing: 4) {
-                        KeyView(text: "esc")
-                        Text("to cancel")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                }
-            } else if tabManager.isSelectingByLabel {
-                 VStack(alignment: .leading, spacing: 2) {
-                     HStack(spacing: 4) {
-                         KeyView(text: "space")
-                         Text("to toggle")
-                             .font(.caption)
-                             .foregroundColor(.secondary)
-                     }
-                     HStack(spacing: 4) {
-                         KeyView(text: "return")
-                         Text("to confirm")
-                             .font(.caption)
-                             .foregroundColor(.secondary)
-                     }
-                     HStack(spacing: 4) {
-                         KeyView(text: "esc")
-                         Text("to cancel")
-                             .font(.caption)
-                             .foregroundColor(.secondary)
-                     }
-                 }
-            } else if tabManager.isMarking {
-                VStack(alignment: .leading, spacing: 2) {
-                    HStack(spacing: 4) {
-                        KeyView(text: "return")
-                        Text("to select")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                    HStack(spacing: 4) {
-                        KeyView(text: "esc")
-                        Text("to cancel")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                }
-            } else {
-                VStack(alignment: .leading, spacing: 2) {
-                    if tabManager.isFiltering || !tabManager.filterText.isEmpty {
-                        Text("search: \(tabManager.filterText)")
-                            .font(.caption)
-                            .fontWeight(.medium)
-                            .foregroundColor(.primary)
-                    } else {
-                        HStack(spacing: 4) {
-                            KeyView(text: "↓")
-                            KeyView(text: "↑")
-                            Text("or")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                            KeyView(text: "j")
-                            KeyView(text: "k")
-                            Text("to navigate")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-                        if tabManager.multiSelection.isEmpty {
+        let items = footerItems
+        let columns = 3
+        let count = items.count
+        let itemsPerColumn = count > 0 ? Int(ceil(Double(count) / Double(columns))) : 0
+
+        return HStack(alignment: .top, spacing: 32) {
+            ForEach(0..<columns, id: \.self) { col in
+                let start = col * itemsPerColumn
+                let end = min(start + itemsPerColumn, count)
+                
+                if start < end {
+                    VStack(alignment: .leading, spacing: 2) {
+                        ForEach(items[start..<end]) { item in
                             HStack(spacing: 4) {
-                                KeyView(text: "/")
-                                Text("to search")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
+                                ForEach(item.components, id: \.self) { component in
+                                    switch component {
+                                    case .key(let k): KeyView(text: k)
+                                    case .text(let t): Text(t).font(.caption).foregroundColor(item.description.isEmpty ? .primary : .secondary)
+                                    }
+                                }
+                                if !item.description.isEmpty {
+                                    Text(item.description)
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                }
                             }
                         }
                     }
-                    if tabManager.multiSelection.isEmpty {
-                        HStack(spacing: 4) {
-                            KeyView(text: "return")
-                            Text(tabManager.isFiltering ? "to search" : "to open")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-                    }
-                    HStack(spacing: 4) {
-                        KeyView(text: "esc")
-                        Text(tabManager.isFiltering || !tabManager.multiSelection.isEmpty ? "to cancel" : "to close")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
                 }
-
-                VStack(alignment: .leading, spacing: 2) {
-                    if !tabManager.multiSelection.isEmpty {
-                        HStack(spacing: 4) {
-                            KeyView(text: "x")
-                            Text("to close")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-                        HStack(spacing: 4) {
-                            KeyView(text: "shift")
-                            KeyView(text: "x")
-                            Text("to close others")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-                    }
-                    HStack(spacing: 4) {
-                        KeyView(text: "shift")
-                        KeyView(text: "a")
-                        Text("to select all")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                    HStack(spacing: 4) {
-                        KeyView(text: "s")
-                        Text("to select")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                    if !tabManager.multiSelection.isEmpty {
-                        HStack(spacing: 4) {
-                            KeyView(text: "m")
-                            Text("to mark")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-                    }
-                }
-                .frame(alignment: .topLeading)
             }
             Spacer()
         }
