@@ -5,6 +5,13 @@ struct ContentView: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            if !tabManager.multiSelection.isEmpty {
+                Text("\(tabManager.multiSelection.count) tabs selected")
+                    .font(.caption)
+                    .fontWeight(.semibold)
+                    .padding(.top, 8)
+                    .foregroundColor(.primary)
+            }
             if tabManager.tabs.isEmpty {
                 Spacer()
                 Text("No tabs found")
@@ -20,6 +27,8 @@ struct ContentView: View {
                             Section(header: Text("Active Tabs")) {
                                 ForEach(activeTabs) { tab in
                                     HStack {
+                                        Image(systemName: tabManager.multiSelection.contains(tab.id) ? "checkmark.square.fill" : "square")
+                                            .foregroundColor(tabManager.multiSelection.contains(tab.id) ? .accentColor : .secondary)
                                         Text(tab.title)
                                             .lineLimit(1)
                                             .truncationMode(.tail)
@@ -35,11 +44,16 @@ struct ContentView: View {
                         if !otherTabs.isEmpty {
                             Section(header: Text("Other Tabs")) {
                                 ForEach(otherTabs) { tab in
-                                    Text(tab.title)
-                                        .lineLimit(1)
-                                        .truncationMode(.tail)
-                                        .tag(tab.id)
-                                        .id(tab.id)
+                                    HStack {
+                                        Image(systemName: tabManager.multiSelection.contains(tab.id) ? "checkmark.square.fill" : "square")
+                                            .foregroundColor(tabManager.multiSelection.contains(tab.id) ? .accentColor : .secondary)
+                                        Text(tab.title)
+                                            .lineLimit(1)
+                                            .truncationMode(.tail)
+                                        Spacer()
+                                    }
+                                    .tag(tab.id)
+                                    .id(tab.id)
                                 }
                             }
                         }

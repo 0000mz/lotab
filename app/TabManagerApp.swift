@@ -79,6 +79,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     tm.filterText = ""
                     return nil
                 }
+                if event.keyCode == 49 { // Space: Toggle Multi-Selection
+                    if let sel = tm.selection {
+                        if tm.multiSelection.contains(sel) {
+                            tm.multiSelection.remove(sel)
+                        } else {
+                            tm.multiSelection.insert(sel)
+                        }
+                    }
+                    return nil
+                }
                 if event.keyCode == 53 { // ESC: Close UI
                     self.hideUI()
                     return nil
@@ -176,6 +186,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         TabManager.shared.isFiltering = false
         TabManager.shared.filterText = ""
         TabManager.shared.selection = TabManager.shared.displayedTabs.first?.id
+        TabManager.shared.multiSelection = []
     }
 
     private func startUDSServer() {
@@ -390,6 +401,7 @@ class TabManager: ObservableObject {
 
     @Published var filterText: String = ""
     @Published var isFiltering: Bool = false
+    @Published var multiSelection: Set<Int> = []
 
     var displayedTabs: [Tab] {
         let filtered = filterText.isEmpty ? tabs : tabs.filter { $0.title.localizedCaseInsensitiveContains(filterText) }
