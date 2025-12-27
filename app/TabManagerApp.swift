@@ -45,6 +45,88 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         NSEvent.addLocalMonitorForEvents(matching: .keyDown) { (event: NSEvent) -> NSEvent? in
             let tm = TabManager.shared
 
+            // Marking Mode
+            // Marking Mode
+            if tm.isMarking {
+                if tm.isCreatingLabel {
+                    // --- CREATION INPUT MODE ---
+                    if event.keyCode == 53 { // ESC: Cancel creation, back to list
+                        tm.isCreatingLabel = false
+                        tm.markText = ""
+                        return nil
+                    }
+                    if event.keyCode == 36 { // Enter: Create Label
+                        let label = tm.markText.trimmingCharacters(in: .whitespacesAndNewlines)
+                        if !label.isEmpty {
+                            if !tm.allLabels.contains(label) {
+                                tm.allLabels.append(label)
+                            }
+                            // Apply to selected tabs
+                            let targets = tm.multiSelection.isEmpty ? (tm.selection != nil ? [tm.selection!] : []) : Array(tm.multiSelection)
+                            for id in targets {
+                                var labels = tm.tabLabels[id] ?? []
+                                labels.insert(label)
+                                tm.tabLabels[id] = labels
+                            }
+                        }
+                        tm.isMarking = false
+                        tm.isCreatingLabel = false
+                        tm.markText = ""
+                        return nil
+                    }
+                    if event.keyCode == 51 { // Backspace
+                         if !tm.markText.isEmpty {
+                              tm.markText.removeLast()
+                         }
+                         return nil
+                    }
+                    if let chars = event.characters, !chars.isEmpty, !event.modifierFlags.contains(.command) && event.keyCode != 51 {
+                        tm.markText += chars
+                        return nil
+                    }
+                } else {
+                    // --- MENU SELECTION MODE ---
+                    if event.keyCode == 53 { // ESC: Exit Marking
+                        tm.isMarking = false
+                        return nil
+                    }
+                    let totalItems = 1 + tm.allLabels.count // 0=Create, 1..N=Labels
+                    
+                    if event.keyCode == 125 || event.keyCode == 38 { // Down or 'j'
+                         tm.labelListSelection = (tm.labelListSelection + 1) % totalItems
+                         return nil
+                    }
+                    if event.keyCode == 126 || event.keyCode == 40 { // Up or 'k'
+                         tm.labelListSelection = (tm.labelListSelection - 1 + totalItems) % totalItems
+                         return nil
+                    }
+
+                    if event.keyCode == 36 { // Enter
+                        if tm.labelListSelection == 0 {
+                            // "Create New" selected
+                            tm.isCreatingLabel = true
+                            tm.markText = ""
+                        } else {
+                            // Label selected
+                            let index = tm.labelListSelection - 1
+                            if index >= 0 && index < tm.allLabels.count {
+                                let label = tm.allLabels[index]
+                                // Apply
+                                let targets = tm.multiSelection.isEmpty ? (tm.selection != nil ? [tm.selection!] : []) : Array(tm.multiSelection)
+                                for id in targets {
+                                    var labels = tm.tabLabels[id] ?? []
+                                    labels.insert(label)
+                                    tm.tabLabels[id] = labels
+                                }
+                                tm.isMarking = false
+                            }
+                        }
+                        return nil
+                    }
+                }
+                return nil
+            }
+
             // Toggle Filter Mode OR Handle characters
             if tm.isFiltering {
                 if event.keyCode == 53 { // ESC: Cancel filter
@@ -88,6 +170,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                             tm.multiSelection.insert(sel)
                         }
                     }
+                }
+                if event.keyCode == 46 { // m: Mark tabs
+                    if !tm.multiSelection.isEmpty || tm.selection != nil {
+                         tm.isMarking = true
+                         tm.isCreatingLabel = false
+                         tm.labelListSelection = 0
+                         tm.markText = ""
+                    }
+                    return nil
                 }
                 if event.keyCode == 0 && event.modifierFlags.contains(.shift) { // A with Shift: Select All
                     tm.multiSelection = Set(tm.displayedTabs.map { $0.id })
@@ -403,7 +494,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 }
 
-struct Tab: Identifiable, Decodable, Hashable {
+struct BrowserTab: Identifiable, Decodable, Hashable {
     let id: Int
     let title: String
     let active: Bool
@@ -411,7 +502,7 @@ struct Tab: Identifiable, Decodable, Hashable {
 
 struct TabListPayload: Decodable {
     struct Data: Decodable {
-        let tabs: [Tab]
+        let tabs: [BrowserTab]
     }
     let data: Data
 }
@@ -430,15 +521,21 @@ struct TaskListPayload: Decodable {
 
 class TabManager: ObservableObject {
     static let shared = TabManager()
-    @Published var tabs: [Tab] = []
+    @Published var tabs: [BrowserTab] = []
     @Published var tasks: [Task] = []
     @Published var selection: Int?
 
     @Published var filterText: String = ""
     @Published var isFiltering: Bool = false
+    @Published var isMarking: Bool = false // Marking Mode
+    @Published var isCreatingLabel: Bool = false // Sub-mode: Creating Label Input
+    @Published var labelListSelection: Int = 0 // 0 = Create New, 1+ = Labels
+    @Published var markText: String = ""
+    @Published var tabLabels: [Int: Set<String>] = [:]
+    @Published var allLabels: [String] = ["Work", "Personal", "Read Later"]
     @Published var multiSelection: Set<Int> = []
 
-    var displayedTabs: [Tab] {
+    var displayedTabs: [BrowserTab] {
         let filtered = filterText.isEmpty ? tabs : tabs.filter { $0.title.localizedCaseInsensitiveContains(filterText) }
         let active = filtered.filter { $0.active }
         let other = filtered.filter { !$0.active }

@@ -50,3 +50,5 @@ TODO:
   confirmed or canceled.
 - Color/label tabs that are associated with the currently focused browser window.
 - Add confirmation for serious actions such as closing multiple tabs.
+- Mark tabs with a label.
+- Marked tabs should create a tab group in the browser.

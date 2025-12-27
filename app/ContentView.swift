@@ -7,7 +7,9 @@ struct ContentView: View {
         VStack(spacing: 0) {
             headerView
 
-            if tabManager.tabs.isEmpty {
+            if tabManager.isMarking {
+                labelSelectionView
+            } else if tabManager.tabs.isEmpty {
                 emptyStateView
             } else {
                 tabListView
@@ -57,12 +59,12 @@ struct ContentView: View {
                     tabRow(tab)
                 }
             }
-            .onChange(of: tabManager.tabs) { _, newTabs in
+            .onChange(of: tabManager.tabs) { newTabs in
                 if tabManager.selection == nil || !newTabs.contains(where: { $0.id == tabManager.selection }) {
                      tabManager.selection = newTabs.first(where: { $0.active })?.id ?? newTabs.first?.id
                 }
             }
-            .onChange(of: tabManager.selection) { _, newSel in
+            .onChange(of: tabManager.selection) { newSel in
                 if let id = newSel {
                     proxy.scrollTo(id, anchor: .center)
                 }
@@ -75,13 +77,107 @@ struct ContentView: View {
         }
     }
 
-    private func tabRow(_ tab: Tab) -> some View {
+    private var labelSelectionView: some View {
+        VStack(spacing: 0) {
+            if tabManager.isCreatingLabel {
+                labelCreationView
+            } else {
+                labelMenuView
+            }
+        }
+    }
+
+    private var labelMenuView: some View {
+        ScrollViewReader { proxy in
+            List {
+                // Create New Option (Index 0)
+                HStack {
+                    Image(systemName: "plus.circle")
+                        .foregroundColor(.accentColor)
+                    Text("Create New Label")
+                        .fontWeight(tabManager.labelListSelection == 0 ? .bold : .regular)
+                    Spacer()
+                    if tabManager.labelListSelection == 0 {
+                        Image(systemName: "return")
+                            .foregroundColor(.secondary)
+                    }
+                }
+                .padding(.vertical, 4)
+                .background(tabManager.labelListSelection == 0 ? Color.accentColor.opacity(0.2) : Color.clear)
+                .id(0)
+
+                if !tabManager.allLabels.isEmpty {
+                    Section(header: Text("Labels")) {
+                        ForEach(Array(tabManager.allLabels.enumerated()), id: \.offset) { index, label in
+                            let listIndex = index + 1
+                            HStack {
+                                Image(systemName: "tag")
+                                    .foregroundColor(.secondary)
+                                Text(label)
+                                    .fontWeight(tabManager.labelListSelection == listIndex ? .bold : .regular)
+                                Spacer()
+                                if tabManager.labelListSelection == listIndex {
+                                    Image(systemName: "return")
+                                        .foregroundColor(.secondary)
+                                }
+                            }
+                            .padding(.vertical, 4)
+                            .background(tabManager.labelListSelection == listIndex ? Color.accentColor.opacity(0.2) : Color.clear)
+                            .id(listIndex)
+                        }
+                    }
+                }
+            }
+            .listStyle(.plain)
+            .onChange(of: tabManager.labelListSelection) { newSel in
+                 proxy.scrollTo(newSel, anchor: .center)
+            }
+        }
+    }
+
+    private var labelCreationView: some View {
+        VStack(spacing: 20) {
+            Spacer()
+            Text("Create New Label")
+                .font(.headline)
+
+            HStack {
+                Image(systemName: "tag.fill")
+                    .font(.title2)
+                    .foregroundColor(.accentColor)
+                Text(tabManager.markText.isEmpty ? "Type label name..." : tabManager.markText)
+                    .font(.title2)
+                    .foregroundColor(tabManager.markText.isEmpty ? .secondary : .primary)
+                Spacer()
+            }
+            .padding()
+            .background(Color.black.opacity(0.2))
+            .cornerRadius(8)
+            .padding(.horizontal)
+
+            Text("Press Enter to create, Esc to cancel")
+                .font(.caption)
+                .foregroundColor(.secondary)
+            Spacer()
+        }
+    }
+
+    private func tabRow(_ tab: BrowserTab) -> some View {
         HStack {
             Image(systemName: tabManager.multiSelection.contains(tab.id) ? "checkmark.square.fill" : "square")
                 .foregroundColor(tabManager.multiSelection.contains(tab.id) ? .accentColor : .secondary)
             Text(tab.title)
                 .lineLimit(1)
                 .truncationMode(.tail)
+            ForEach(Array(tabManager.tabLabels[tab.id] ?? []).sorted(), id: \.self) { label in
+                 Text(label)
+                    .font(.system(size: 10, weight: .bold))
+                    .padding(.horizontal, 4)
+                    .padding(.vertical, 2)
+                    .background(Color.orange.opacity(0.8))
+                    .foregroundColor(.white)
+                    .cornerRadius(4)
+            }
             Spacer()
             if tab.active {
                 Text("Active")
@@ -167,6 +263,12 @@ struct ContentView: View {
                     KeyView(text: "shift")
                     KeyView(text: "a")
                     Text("to select all")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                HStack(spacing: 4) {
+                    KeyView(text: "m")
+                    Text("to mark")
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
