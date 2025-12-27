@@ -75,6 +75,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             } else {
                 // Normal Mode
                 if event.keyCode == 44 { // Slash: Start filter
+                    if !tm.multiSelection.isEmpty { return nil }
                     tm.isFiltering = true
                     tm.filterText = ""
                     return nil
@@ -107,6 +108,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 if event.keyCode == 53 { // ESC
                     if !tm.filterText.isEmpty {
                         tm.filterText = ""
+                        return nil
+                    }
+                    if !tm.multiSelection.isEmpty {
+                        tm.multiSelection = []
                         return nil
                     }
                     self.hideUI()
@@ -153,6 +158,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
             // Confirm Selection (Entered Normal Mode)
             if !tm.isFiltering && event.keyCode == 36 {
+                if !tm.multiSelection.isEmpty { return nil }
                 if let selectedId = TabManager.shared.selection {
                      self.sendUDSMessage(event: "tab_selected", data: ["tabId": selectedId])
                      self.hideUI()

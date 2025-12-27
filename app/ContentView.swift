@@ -99,29 +99,44 @@ struct ContentView: View {
     }
 
     private var footerView: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            if tabManager.isFiltering || !tabManager.filterText.isEmpty {
-                Text("search: \(tabManager.filterText)")
-                    .font(.caption)
-                    .fontWeight(.medium)
-                    .foregroundColor(.primary)
-            } else {
-                Text("Navigate: Arrows or j/k")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                Text("/ to search")
+        HStack(alignment: .top, spacing: 32) {
+            VStack(alignment: .leading, spacing: 2) {
+                if tabManager.isFiltering || !tabManager.filterText.isEmpty {
+                    Text("search: \(tabManager.filterText)")
+                        .font(.caption)
+                        .fontWeight(.medium)
+                        .foregroundColor(.primary)
+                } else {
+                    Text("Navigate: Arrows or j/k")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    if tabManager.multiSelection.isEmpty {
+                        Text("/ to search")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+                if tabManager.multiSelection.isEmpty {
+                    Text(tabManager.isFiltering ? "ENTER to search" : "ENTER to open")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                Text(tabManager.isFiltering || !tabManager.multiSelection.isEmpty ? "ESC to cancel" : "ESC to close")
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
-            Text(tabManager.isFiltering ? "ENTER to search" : "ENTER to open")
-                .font(.caption)
-                .foregroundColor(.secondary)
-            Text(tabManager.isFiltering ? "ESC to cancel" : "ESC to close")
-                .font(.caption)
-                .foregroundColor(.secondary)
+
+            if !tabManager.multiSelection.isEmpty {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("x to close")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            }
+            Spacer()
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .frame(height: 50, alignment: .top)
+        .frame(height: 70, alignment: .top)
         .padding(.vertical, 8)
         .padding(.horizontal, 16)
     }
