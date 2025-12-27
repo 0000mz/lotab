@@ -1,6 +1,7 @@
 2025-Dec-26:
 - Multiple tab selection.
 - Close multiple tabs.
+- Unify active and non-active tabs in ui list.
 
 2025-Dec-25:
 - When the GUI is escaped, return focus to last focused application before the interruption.
@@ -46,3 +47,6 @@ TODO:
 - When in search mode, do not make the list selectable or navigateable until the search is
   confirmed or canceled.
 - Color/label tabs that are associated with the currently focused browser window.
+- SHIFT+X to close all-but selected tabs.
+- Add confirmation for serious actions such as closing multiple tabs.
+- SHIFT+A to select all tabs.

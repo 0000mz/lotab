@@ -50,28 +50,11 @@ struct ContentView: View {
             List(selection: $tabManager.selection) {
                 let displayed = tabManager.displayedTabs
                 let activeTabs = displayed.filter { $0.active }
-
-                if !activeTabs.isEmpty {
-                    Section(header: Text("Active Tabs")
-                        .font(.caption)
-                        .fontWeight(.semibold)
-                        .foregroundColor(.secondary)) {
-                        ForEach(activeTabs) { tab in
-                            tabRow(tab)
-                        }
-                    }
-                }
-
                 let otherTabs = displayed.filter { !$0.active }
-                if !otherTabs.isEmpty {
-                    Section(header: Text("Other Tabs")
-                        .font(.caption)
-                        .fontWeight(.semibold)
-                        .foregroundColor(.secondary)) {
-                        ForEach(otherTabs) { tab in
-                            tabRow(tab)
-                        }
-                    }
+                let sortedTabs = activeTabs + otherTabs
+
+                ForEach(sortedTabs) { tab in
+                    tabRow(tab)
                 }
             }
             .onChange(of: tabManager.tabs) { _, newTabs in
@@ -100,6 +83,18 @@ struct ContentView: View {
                 .lineLimit(1)
                 .truncationMode(.tail)
             Spacer()
+            if tab.active {
+                Text("Active")
+                    .font(.caption2)
+                    .fontWeight(.bold)
+                    .foregroundColor(.accentColor)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 4)
+                            .stroke(Color.accentColor, lineWidth: 1)
+                    )
+            }
         }
         .tag(tab.id)
         .id(tab.id)
