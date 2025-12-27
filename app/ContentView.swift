@@ -9,6 +9,8 @@ struct ContentView: View {
 
             if tabManager.isMarking {
                 labelSelectionView
+            } else if tabManager.isSelectingByLabel {
+                labelMultiSelectionView
             } else if tabManager.tabs.isEmpty {
                 emptyStateView
             } else {
@@ -151,6 +153,41 @@ struct ContentView: View {
         }
     }
 
+    private var labelMultiSelectionView: some View {
+        ScrollViewReader { proxy in
+            List {
+                Section(header: Text("Select tabs by label(s)").font(.caption).foregroundColor(.secondary)) {
+                    ForEach(Array(tabManager.allLabels.enumerated()), id: \.offset) { index, label in
+                    HStack {
+                         Image(systemName: tabManager.labelSelectionTemp.contains(label) ? "checkmark.square.fill" : "square")
+                            .foregroundColor(tabManager.labelSelectionTemp.contains(label) ? .accentColor : .secondary)
+                        Text(label)
+                        Spacer()
+                        RoundedRectangle(cornerRadius: 2)
+                           .fill(Color.generate(from: label))
+                           .frame(width: 12, height: 12)
+                    }
+                    .padding(.vertical, 4)
+                    .padding(.horizontal, 8)
+                    .background(
+                        RoundedRectangle(cornerRadius: 6)
+                            .fill(tabManager.labelSelectionCursor == index ? Color.accentColor : Color.clear)
+                    )
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
+                    .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
+                    .id(index)
+                }
+                }
+            }
+            .listStyle(.plain)
+            .scrollContentBackground(.hidden)
+            .onChange(of: tabManager.labelSelectionCursor) { newSel in
+                 proxy.scrollTo(newSel, anchor: .center)
+            }
+        }
+    }
+
     private func tabRow(_ tab: BrowserTab) -> some View {
         HStack {
             Image(systemName: tabManager.multiSelection.contains(tab.id) ? "checkmark.square.fill" : "square")
@@ -203,6 +240,27 @@ struct ContentView: View {
                             .foregroundColor(.secondary)
                     }
                 }
+            } else if tabManager.isSelectingByLabel {
+                 VStack(alignment: .leading, spacing: 2) {
+                     HStack(spacing: 4) {
+                         KeyView(text: "space")
+                         Text("to toggle")
+                             .font(.caption)
+                             .foregroundColor(.secondary)
+                     }
+                     HStack(spacing: 4) {
+                         KeyView(text: "return")
+                         Text("to confirm")
+                             .font(.caption)
+                             .foregroundColor(.secondary)
+                     }
+                     HStack(spacing: 4) {
+                         KeyView(text: "esc")
+                         Text("to cancel")
+                             .font(.caption)
+                             .foregroundColor(.secondary)
+                     }
+                 }
             } else if tabManager.isMarking {
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 4) {
@@ -283,6 +341,12 @@ struct ContentView: View {
                         KeyView(text: "shift")
                         KeyView(text: "a")
                         Text("to select all")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    HStack(spacing: 4) {
+                        KeyView(text: "s")
+                        Text("to select")
                             .font(.caption)
                             .foregroundColor(.secondary)
                     }

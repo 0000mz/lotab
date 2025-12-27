@@ -127,6 +127,46 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 return nil
             }
 
+            // Select by Label Mode
+            if tm.isSelectingByLabel {
+                if event.keyCode == 53 { // ESC
+                    tm.isSelectingByLabel = false
+                    return nil
+                }
+                let total = tm.allLabels.count
+                if total > 0 {
+                    if event.keyCode == 125 || event.keyCode == 38 { // Down/j
+                        tm.labelSelectionCursor = (tm.labelSelectionCursor + 1) % total
+                        return nil
+                    }
+                    if event.keyCode == 126 || event.keyCode == 40 { // Up/k
+                         tm.labelSelectionCursor = (tm.labelSelectionCursor - 1 + total) % total
+                         return nil
+                    }
+                    if event.keyCode == 49 { // Space
+                         let label = tm.allLabels[tm.labelSelectionCursor]
+                         if tm.labelSelectionTemp.contains(label) {
+                             tm.labelSelectionTemp.remove(label)
+                         } else {
+                             tm.labelSelectionTemp.insert(label)
+                         }
+                         return nil
+                    }
+                    if event.keyCode == 36 { // Enter
+                        if !tm.labelSelectionTemp.isEmpty {
+                            let matching = tm.tabs.filter { tab in
+                                let labels = tm.tabLabels[tab.id] ?? []
+                                return !labels.isDisjoint(with: tm.labelSelectionTemp)
+                            }.map { $0.id }
+                             tm.multiSelection.formUnion(matching)
+                        }
+                        tm.isSelectingByLabel = false
+                        return nil
+                    }
+                }
+                return nil
+            }
+
             // Toggle Filter Mode OR Handle characters
             if tm.isFiltering {
                 if event.keyCode == 53 { // ESC: Cancel filter
@@ -182,6 +222,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 }
                 if event.keyCode == 0 && event.modifierFlags.contains(.shift) { // A with Shift: Select All
                     tm.multiSelection = Set(tm.displayedTabs.map { $0.id })
+                    return nil
+                }
+                if event.keyCode == 1 { // s: Select by Label
+                    tm.isSelectingByLabel = true
+                    tm.labelSelectionCursor = 0
+                    tm.labelSelectionTemp = []
                     return nil
                 }
                 if event.keyCode == 7 { // x: Close Selected Tabs
@@ -539,6 +585,11 @@ class TabManager: ObservableObject {
     @Published var tabLabels: [Int: Set<String>] = [:]
     @Published var allLabels: [String] = ["Work", "Personal", "Read Later"]
     @Published var multiSelection: Set<Int> = []
+
+    // Select by Label Mode
+    @Published var isSelectingByLabel: Bool = false
+    @Published var labelSelectionCursor: Int = 0
+    @Published var labelSelectionTemp: Set<String> = []
 
     var displayedTabs: [BrowserTab] {
         let filtered = filterText.isEmpty ? tabs : tabs.filter { $0.title.localizedCaseInsensitiveContains(filterText) }
