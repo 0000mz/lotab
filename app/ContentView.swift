@@ -90,49 +90,39 @@ struct ContentView: View {
     private var labelMenuView: some View {
         ScrollViewReader { proxy in
             List {
-                // Create New Option (Index 0)
-                HStack {
-                    Image(systemName: "plus.circle")
-                        .foregroundColor(.accentColor)
-                    Text("Create New Label")
-                        .fontWeight(tabManager.labelListSelection == 0 ? .bold : .regular)
-                    Spacer()
-                    if tabManager.labelListSelection == 0 {
-                        Image(systemName: "return")
-                            .foregroundColor(.secondary)
-                    }
-                }
-                .padding(.vertical, 4)
-                .background(tabManager.labelListSelection == 0 ? Color.accentColor.opacity(0.2) : Color.clear)
-                .id(0)
-
-                if !tabManager.allLabels.isEmpty {
-                    Section(header: Text("Labels")) {
-                        ForEach(Array(tabManager.allLabels.enumerated()), id: \.offset) { index, label in
-                            let listIndex = index + 1
-                            HStack {
-                                Image(systemName: "tag")
-                                    .foregroundColor(.secondary)
-                                Text(label)
-                                    .fontWeight(tabManager.labelListSelection == listIndex ? .bold : .regular)
-                                Spacer()
-                                if tabManager.labelListSelection == listIndex {
-                                    Image(systemName: "return")
-                                        .foregroundColor(.secondary)
-                                }
-                            }
-                            .padding(.vertical, 4)
-                            .background(tabManager.labelListSelection == listIndex ? Color.accentColor.opacity(0.2) : Color.clear)
-                            .id(listIndex)
-                        }
+                Section(header: Text("Select Label").font(.caption).foregroundColor(.secondary)) {
+                    // Create New Option (Index 0)
+                    labelRow(text: "Create New Label", index: 0, topPadding: 4)
+                    // Existing Labels
+                    ForEach(Array(tabManager.allLabels.enumerated()), id: \.offset) { index, label in
+                        labelRow(text: label, index: index + 1)
                     }
                 }
             }
             .listStyle(.plain)
+            .scrollContentBackground(.hidden)
             .onChange(of: tabManager.labelListSelection) { newSel in
                  proxy.scrollTo(newSel, anchor: .center)
             }
         }
+    }
+
+    private func labelRow(text: String, index: Int, topPadding: CGFloat = 0) -> some View {
+        HStack {
+            Text(text)
+            Spacer()
+        }
+        .padding(.vertical, 4)
+        .padding(.horizontal, 8)
+        .background(
+            RoundedRectangle(cornerRadius: 6)
+                .fill(tabManager.labelListSelection == index ? Color.accentColor.opacity(0.15) : Color.clear)
+        )
+        .padding(.top, topPadding)
+        .listRowSeparator(.hidden)
+        .listRowBackground(Color.clear)
+        .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
+        .id(index)
     }
 
     private var labelCreationView: some View {
