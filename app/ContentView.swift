@@ -108,31 +108,53 @@ struct ContentView: View {
                         .fontWeight(.medium)
                         .foregroundColor(.primary)
                 } else {
-                    Text("Navigate: Arrows or j/k")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+                    HStack(spacing: 4) {
+                        KeyView(text: "↓")
+                        KeyView(text: "↑")
+                        Text("or")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        KeyView(text: "j")
+                        KeyView(text: "k")
+                        Text("to navigate")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
                     if tabManager.multiSelection.isEmpty {
-                        Text("/ to search")
+                        HStack(spacing: 4) {
+                            KeyView(text: "/")
+                            Text("to search")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                }
+                if tabManager.multiSelection.isEmpty {
+                    HStack(spacing: 4) {
+                        KeyView(text: "return")
+                        Text(tabManager.isFiltering ? "to search" : "to open")
                             .font(.caption)
                             .foregroundColor(.secondary)
                     }
                 }
-                if tabManager.multiSelection.isEmpty {
-                    Text(tabManager.isFiltering ? "ENTER to search" : "ENTER to open")
+                HStack(spacing: 4) {
+                    KeyView(text: "esc")
+                    Text(tabManager.isFiltering || !tabManager.multiSelection.isEmpty ? "to cancel" : "to close")
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
-                Text(tabManager.isFiltering || !tabManager.multiSelection.isEmpty ? "ESC to cancel" : "ESC to close")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
             }
 
             if !tabManager.multiSelection.isEmpty {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("x to close")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+                    HStack(spacing: 4) {
+                        KeyView(text: "x")
+                        Text("to close")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
                 }
+                .frame(alignment: .topLeading)
             }
             Spacer()
         }
@@ -159,5 +181,21 @@ struct VisualEffectView: NSViewRepresentable {
     func updateNSView(_ nsView: NSVisualEffectView, context: Context) {
         nsView.material = material
         nsView.blendingMode = blendingMode
+    }
+}
+
+struct KeyView: View {
+    let text: String
+
+    var body: some View {
+        Text(text)
+            .font(.system(size: 10, weight: .bold))
+            .foregroundColor(.secondary)
+            .padding(.horizontal, 4)
+            .padding(.vertical, 1)
+            .overlay(
+                RoundedRectangle(cornerRadius: 3)
+                    .stroke(Color.secondary.opacity(0.5), lineWidth: 1)
+            )
     }
 }
