@@ -58,3 +58,4 @@ TODO:
 - Remove label from single/select tab & Remove label from all tabs.
 - Save labels and tab information to local appdata.
 - Debug close behavior on chrome.
+- Carve out use case of having multiple browsers connected to socket.
