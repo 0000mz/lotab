@@ -155,6 +155,13 @@ struct ContentView: View {
                             .font(.caption)
                             .foregroundColor(.secondary)
                     }
+                    HStack(spacing: 4) {
+                        KeyView(text: "shift")
+                        KeyView(text: "x")
+                        Text("to close others")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
                 }
                 .frame(alignment: .topLeading)
             }

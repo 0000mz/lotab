@@ -92,13 +92,20 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 }
                 if event.keyCode == 7 { // x: Close Selected Tabs
                     let idsToClose: [Int]
-                    if !tm.multiSelection.isEmpty {
-                        idsToClose = Array(tm.multiSelection)
-                    } else if let sel = tm.selection {
-                        idsToClose = [sel]
+                    if event.modifierFlags.contains(.shift) && !tm.multiSelection.isEmpty {
+                        // Close all but selected
+                        idsToClose = tm.tabs.filter { !tm.multiSelection.contains($0.id) }.map { $0.id }
                     } else {
-                        idsToClose = []
+                        // Normal Close
+                        if !tm.multiSelection.isEmpty {
+                            idsToClose = Array(tm.multiSelection)
+                        } else if let sel = tm.selection {
+                            idsToClose = [sel]
+                        } else {
+                            idsToClose = []
+                        }
                     }
+
                     if !idsToClose.isEmpty {
                         self.sendUDSMessage(event: "close_tabs", data: ["tabIds": idsToClose])
                         tm.multiSelection = []
