@@ -51,16 +51,19 @@ struct ContentView: View {
     }
     private var tabListView: some View {
         ScrollViewReader { proxy in
-            List(selection: $tabManager.selection) {
+            List {
                 let displayed = tabManager.displayedTabs
                 let activeTabs = displayed.filter { $0.active }
                 let otherTabs = displayed.filter { !$0.active }
                 let sortedTabs = activeTabs + otherTabs
 
-                ForEach(sortedTabs) { tab in
+                ForEach(Array(sortedTabs.enumerated()), id: \.element.id) { index, tab in
                     tabRow(tab)
+                        .padding(.top, index == 0 ? 8 : 0)
                 }
             }
+            .listStyle(.plain)
+            .scrollContentBackground(.hidden)
             .onChange(of: tabManager.tabs) { newTabs in
                 if tabManager.selection == nil || !newTabs.contains(where: { $0.id == tabManager.selection }) {
                      tabManager.selection = newTabs.first(where: { $0.active })?.id ?? newTabs.first?.id
@@ -160,8 +163,9 @@ struct ContentView: View {
                     ForEach(Array(tabManager.allLabels.enumerated()), id: \.offset) { index, label in
                     HStack {
                          Image(systemName: tabManager.labelSelectionTemp.contains(label) ? "checkmark.square.fill" : "square")
-                            .foregroundColor(tabManager.labelSelectionTemp.contains(label) ? .accentColor : .secondary)
+                            .foregroundColor(tabManager.labelSelectionCursor == index ? .white : (tabManager.labelSelectionTemp.contains(label) ? .accentColor : .secondary))
                         Text(label)
+                            .foregroundColor(tabManager.labelSelectionCursor == index ? .white : .primary)
                         Spacer()
                         RoundedRectangle(cornerRadius: 2)
                            .fill(Color.generate(from: label))
@@ -173,6 +177,7 @@ struct ContentView: View {
                         RoundedRectangle(cornerRadius: 6)
                             .fill(tabManager.labelSelectionCursor == index ? Color.accentColor : Color.clear)
                     )
+                    .padding(.top, index == 0 ? 8 : 0)
                     .listRowSeparator(.hidden)
                     .listRowBackground(Color.clear)
                     .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
@@ -189,12 +194,14 @@ struct ContentView: View {
     }
 
     private func tabRow(_ tab: BrowserTab) -> some View {
-        HStack {
+        let isSelected = tabManager.selection == tab.id
+        return HStack {
             Image(systemName: tabManager.multiSelection.contains(tab.id) ? "checkmark.square.fill" : "square")
-                .foregroundColor(tabManager.multiSelection.contains(tab.id) ? .accentColor : .secondary)
+                .foregroundColor(isSelected ? .white : (tabManager.multiSelection.contains(tab.id) ? .accentColor : .secondary))
             Text(tab.title)
                 .lineLimit(1)
                 .truncationMode(.tail)
+                .foregroundColor(isSelected ? .white : .primary)
             Spacer()
             ForEach(Array(tabManager.tabLabels[tab.id] ?? []).sorted(), id: \.self) { label in
                  Text(label)
@@ -209,18 +216,29 @@ struct ContentView: View {
                 Text("Active")
                     .font(.caption2)
                     .fontWeight(.bold)
-                    .foregroundColor(.accentColor)
+                    .foregroundColor(isSelected ? .white : .accentColor)
                     .padding(.horizontal, 6)
                     .padding(.vertical, 2)
                     .overlay(
                         RoundedRectangle(cornerRadius: 4)
-                            .stroke(Color.accentColor, lineWidth: 1)
+                            .stroke(isSelected ? Color.white : Color.accentColor, lineWidth: 1)
                     )
             }
         }
-        .tag(tab.id)
-        .id(tab.id)
+        .padding(.vertical, 4)
+        .padding(.horizontal, 8)
+        .background(
+            RoundedRectangle(cornerRadius: 6)
+                .fill(isSelected ? Color.accentColor : Color.clear)
+        )
+        .contentShape(Rectangle())
+        .onTapGesture {
+            tabManager.selection = tab.id
+        }
         .listRowSeparator(.hidden)
+        .listRowBackground(Color.clear)
+        .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
+        .id(tab.id)
     }
 
     private struct FooterItem: Identifiable {
