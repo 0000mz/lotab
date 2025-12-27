@@ -2,9 +2,11 @@ project('tab_manager', 'c', 'cpp', 'swift', 'objc',
   version : '0.1',
   default_options : ['warning_level=3', 'cpp_std=c++20'])
 
-lws_proj = subproject('libwebsockets')
-lws_dep = lws_proj.get_variable('libwebsockets_dep')
 cmake = import('cmake')
+lws_opts = cmake.subproject_options()
+lws_opts.add_cmake_defines({'LWS_WITH_SHARED': 'OFF'})
+lws_proj = cmake.subproject('libwebsockets', options: lws_opts)
+lws_dep = lws_proj.dependency('websockets')
 cjson_proj = cmake.subproject('cjson')
 cjson_dep = cjson_proj.dependency('cjson')
 carbon_dep = dependency('appleframeworks', modules : 'Carbon')
