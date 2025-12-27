@@ -111,6 +111,11 @@ struct ContentView: View {
         HStack {
             Text(text)
             Spacer()
+            if index != 0 {
+                RoundedRectangle(cornerRadius: 2)
+                   .fill(Color.generate(from: text))
+                   .frame(width: 12, height: 12)
+            }
         }
         .padding(.vertical, 4)
         .padding(.horizontal, 8)
@@ -153,16 +158,16 @@ struct ContentView: View {
             Text(tab.title)
                 .lineLimit(1)
                 .truncationMode(.tail)
+            Spacer()
             ForEach(Array(tabManager.tabLabels[tab.id] ?? []).sorted(), id: \.self) { label in
                  Text(label)
                     .font(.system(size: 10, weight: .bold))
                     .padding(.horizontal, 4)
                     .padding(.vertical, 2)
-                    .background(Color.orange.opacity(0.8))
+                    .background(Color.generate(from: label).opacity(0.8))
                     .foregroundColor(.white)
                     .cornerRadius(4)
             }
-            Spacer()
             if tab.active {
                 Text("Active")
                     .font(.caption2)
@@ -333,5 +338,23 @@ struct KeyView: View {
                 RoundedRectangle(cornerRadius: 3)
                     .stroke(Color.secondary.opacity(0.5), lineWidth: 1)
             )
+    }
+}
+
+extension Color {
+    static func generate(from string: String) -> Color {
+        var h: Int = 0
+        for char in string.utf8 {
+             h = (Int(char) + ((h << 5) - h))
+        }
+
+        // Simple seeded random to get nice colors
+        // Or manipulate hash to get HSB
+        // This simple bit-shift might produce dark colors.
+        // Let's try to ensure they are bright enough for dark mode or readable.
+        // Actually, simple hash is requested. "unique color associated".
+
+        let hue = Double(abs(h) % 360) / 360.0
+        return Color(hue: hue, saturation: 0.7, brightness: 0.9)
     }
 }
