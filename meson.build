@@ -2,7 +2,7 @@ project('tab_manager', 'c', 'cpp', 'swift', 'objc',
   version : '0.1',
   default_options : ['warning_level=3', 'cpp_std=c++20'])
 
-lws_proj = subproject('libwebsockets', default_options: ['client=true'])
+lws_proj = subproject('libwebsockets')
 lws_dep = lws_proj.get_variable('libwebsockets_dep')
 cjson_dep = dependency('libcjson')
 carbon_dep = dependency('appleframeworks', modules : 'Carbon')
