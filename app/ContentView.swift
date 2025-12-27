@@ -35,6 +35,7 @@ struct ContentView: View {
         }
         .frame(height: 30)
         .padding(.horizontal, 16)
+        .background(Color.black.opacity(0.3))
     }
     private var emptyStateView: some View {
         VStack {
@@ -139,6 +140,7 @@ struct ContentView: View {
         .frame(height: 70, alignment: .top)
         .padding(.vertical, 8)
         .padding(.horizontal, 16)
+        .background(Color.black.opacity(0.3))
     }
 }
 
