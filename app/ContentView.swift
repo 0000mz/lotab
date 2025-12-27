@@ -5,13 +5,18 @@ struct ContentView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            if !tabManager.multiSelection.isEmpty {
-                Text("\(tabManager.multiSelection.count) tabs selected")
+            HStack {
+                Text("lotab")
+                    .font(.headline)
+                    .fontWeight(.bold)
+                Spacer()
+                Text("\(tabManager.multiSelection.count) selected")
                     .font(.caption)
-                    .fontWeight(.semibold)
-                    .padding(.top, 8)
-                    .foregroundColor(.primary)
+                    .foregroundColor(.secondary)
+                    .opacity(tabManager.multiSelection.isEmpty ? 0 : 1)
             }
+            .frame(height: 30)
+            .padding(.horizontal, 16)
             if tabManager.tabs.isEmpty {
                 Spacer()
                 Text("No tabs found")
