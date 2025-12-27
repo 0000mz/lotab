@@ -52,7 +52,10 @@ struct ContentView: View {
                 let activeTabs = displayed.filter { $0.active }
 
                 if !activeTabs.isEmpty {
-                    Section(header: Text("Active Tabs")) {
+                    Section(header: Text("Active Tabs")
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.secondary)) {
                         ForEach(activeTabs) { tab in
                             tabRow(tab)
                         }
@@ -61,7 +64,10 @@ struct ContentView: View {
 
                 let otherTabs = displayed.filter { !$0.active }
                 if !otherTabs.isEmpty {
-                    Section(header: Text("Other Tabs")) {
+                    Section(header: Text("Other Tabs")
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.secondary)) {
                         ForEach(otherTabs) { tab in
                             tabRow(tab)
                         }
@@ -97,6 +103,7 @@ struct ContentView: View {
         }
         .tag(tab.id)
         .id(tab.id)
+        .listRowSeparator(.hidden)
     }
 
     private var footerView: some View {
