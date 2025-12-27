@@ -33,7 +33,7 @@ struct ContentView: View {
             Text("\(tabManager.multiSelection.count) selected")
                 .font(.caption)
                 .foregroundColor(.secondary)
-                .opacity(tabManager.multiSelection.isEmpty ? 0 : 1)
+                .opacity((tabManager.multiSelection.isEmpty || tabManager.isMarking) ? 0 : 1)
         }
         .frame(height: 30)
         .padding(.horizontal, 16)
@@ -132,10 +132,7 @@ struct ContentView: View {
                 .font(.headline)
 
             HStack {
-                Image(systemName: "tag.fill")
-                    .font(.title2)
-                    .foregroundColor(.accentColor)
-                Text(tabManager.markText.isEmpty ? "Type label name..." : tabManager.markText)
+                Text(tabManager.markText.isEmpty ? "Label name..." : tabManager.markText)
                     .font(.title2)
                     .foregroundColor(tabManager.markText.isEmpty ? .secondary : .primary)
                 Spacer()
@@ -145,9 +142,6 @@ struct ContentView: View {
             .cornerRadius(8)
             .padding(.horizontal)
 
-            Text("Press Enter to create, Esc to cancel")
-                .font(.caption)
-                .foregroundColor(.secondary)
             Spacer()
         }
     }
@@ -189,7 +183,22 @@ struct ContentView: View {
 
     private var footerView: some View {
         HStack(alignment: .top, spacing: 32) {
-            if tabManager.isMarking && !tabManager.isCreatingLabel {
+            if tabManager.isCreatingLabel {
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 4) {
+                        KeyView(text: "return")
+                        Text("to create")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    HStack(spacing: 4) {
+                        KeyView(text: "esc")
+                        Text("to cancel")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+            } else if tabManager.isMarking {
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 4) {
                         KeyView(text: "return")
