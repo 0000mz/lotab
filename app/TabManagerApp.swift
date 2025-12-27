@@ -104,7 +104,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     }
                     return nil
                 }
-                if event.keyCode == 53 { // ESC: Close UI
+                if event.keyCode == 53 { // ESC
+                    if !tm.filterText.isEmpty {
+                        tm.filterText = ""
+                        return nil
+                    }
                     self.hideUI()
                     return nil
                 }
