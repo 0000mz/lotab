@@ -147,8 +147,8 @@ struct ContentView: View {
                 }
             }
 
-            if !tabManager.multiSelection.isEmpty {
-                VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 2) {
+                if !tabManager.multiSelection.isEmpty {
                     HStack(spacing: 4) {
                         KeyView(text: "x")
                         Text("to close")
@@ -163,8 +163,15 @@ struct ContentView: View {
                             .foregroundColor(.secondary)
                     }
                 }
-                .frame(alignment: .topLeading)
+                HStack(spacing: 4) {
+                    KeyView(text: "shift")
+                    KeyView(text: "a")
+                    Text("to select all")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
             }
+            .frame(alignment: .topLeading)
             Spacer()
         }
         .frame(maxWidth: .infinity, alignment: .leading)

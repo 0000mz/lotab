@@ -88,6 +88,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                             tm.multiSelection.insert(sel)
                         }
                     }
+                }
+                if event.keyCode == 0 && event.modifierFlags.contains(.shift) { // A with Shift: Select All
+                    tm.multiSelection = Set(tm.displayedTabs.map { $0.id })
                     return nil
                 }
                 if event.keyCode == 7 { // x: Close Selected Tabs
