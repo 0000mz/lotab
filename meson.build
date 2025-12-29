@@ -2,7 +2,7 @@ project('lotab', 'c', 'cpp', 'swift', 'objc',
   version : '0.1',
   default_options : ['warning_level=3', 'cpp_std=c++20'])
 
-lws_proj = subproject('libwebsockets')
+lws_proj = subproject('libwebsockets', default_options: ['default_library=static'])
 lws_dep = lws_proj.get_variable('libwebsockets_dep')
 cjson_proj = subproject('cjson')
 cjson_dep = cjson_proj.get_variable('libcjson_dep')
@@ -60,7 +60,10 @@ engine_dep = declare_dependency(
   dependencies : [lws_dep, cjson_dep, cocoa_dep, carbon_dep]
 )
 
-executable('daemon', daemon_engine_src, dependencies : [daemon_deps, engine_dep], install : true)
+executable('daemon', daemon_engine_src,
+           dependencies : [daemon_deps, engine_dep],
+           install : true,
+           install_rpath : get_option('prefix') / get_option('libdir'))
 
 # --- Sanitizer Variants ---
 sanitizers = {
@@ -122,6 +125,7 @@ endif
 pl_conf = configuration_data()
 pl_conf.set('BINDIR', get_option('prefix') / get_option('bindir'))
 pl_conf.set('APP_NAME', 'Lotab')
+pl_conf.set('LOG_HOME', '__LOTAB_USER_HOME__')
 
 configure_file(
   input : 'data/com.mob.lotab.plist.in',

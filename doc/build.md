@@ -66,11 +66,59 @@ You can install the application and configure it as a macOS system service ("Lau
 # Copy the installed plist to your LaunchAgents directory
 cp /usr/local/share/lotab/com.mob.lotab.plist ~/Library/LaunchAgents/
 
-# Load the service
-launchctl load ~/Library/LaunchAgents/com.mob.lotab.plist
+# Load the service (using modern launchctl syntax)
+# "gui/$(id -u)" targets your current user session
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.mob.lotab.plist
 ```
 
 **Note**: If you used a custom prefix (e.g. `meson setup build --prefix /opt/local`), the plist will be in `<prefix>/share/lotab/`.
+
+### Managing the Service
+A helper script `scripts/launchctl.sh` is provided to simplify managing the LaunchAgent.
+
+#### Load/Update Service
+This copies the plist to `~/Library/LaunchAgents`, unloads any existing instance, and bootstraps the new one.
+```bash
+# If installed to default /usr/local
+./scripts/launchctl.sh
+
+# If installed to custom prefix
+PREFIX=/opt/lotab_install ./scripts/launchctl.sh
+```
+
+#### Unload Service
+Removes the service and deletes the plist from `~/Library/LaunchAgents`.
+```bash
+./scripts/launchctl.sh unload
+```
+
+### Troubleshooting `launchctl` Errors
+If you start seeing `Bootstrap failed: 5: Input/output error`, it is usually due to incorrect file permissions on the plist file.
+
+1.  **Check Ownership**: The plist in `~/Library/LaunchAgents/` MUST be owned by you, not `root`.
+    ```bash
+    ls -l ~/Library/LaunchAgents/com.mob.lotab.plist
+    ```
+2.  **Fix Permissions**:
+    ```bash
+    sudo chown $(id -un) ~/Library/LaunchAgents/com.mob.lotab.plist
+    ```
+3.  **Reset Service**:
+    ```bash
+    # Try to bootout first (ignore error if not found)
+    launchctl bootout gui/$(id -u)/com.mob.lotab 2>/dev/null
+    # Bootstrap again
+    launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.mob.lotab.plist
+    ```
+4. **Check Status**: ` launchctl list | grep "com.mob.lotab"`
+5. **See launchd logs associated with the application**: `log show --predicate 'sender == "launchd"' --last 3m | grep "com.mob.lotab"`
+
+---
+## Logs
+
+When running as a system service, logs are stored in:
+- **stdout**: `~/Library/Logs/lotab/stdout.log`
+- **stderr**: `~/Library/Logs/lotab/stderr.log`
 
 ---
 

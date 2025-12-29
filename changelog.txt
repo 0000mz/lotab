@@ -59,3 +59,5 @@ TODO:
 - Save labels and tab information to local appdata.
 - Debug close behavior on chrome.
 - Carve out use case of having multiple browsers connected to socket.
+- Load existing tab groups into application.
+- Change daemon name to lotab_daemon.
