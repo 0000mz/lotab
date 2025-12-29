@@ -1,17 +1,17 @@
 import SwiftUI
 
 struct ContentView: View {
-    @ObservedObject var tabManager: TabManager
+    @ObservedObject var lotab: Lotab
 
     var body: some View {
         VStack(spacing: 0) {
             headerView
 
-            if tabManager.isMarking {
+            if lotab.isMarking {
                 labelSelectionView
-            } else if tabManager.isSelectingByLabel {
+            } else if lotab.isSelectingByLabel {
                 labelMultiSelectionView
-            } else if tabManager.tabs.isEmpty {
+            } else if lotab.tabs.isEmpty {
                 emptyStateView
             } else {
                 tabListView
@@ -28,14 +28,14 @@ struct ContentView: View {
     // MARK: - Subviews
     private var headerView: some View {
         HStack {
-            Text("lotab")
+            Text("Lotab")
                 .font(.headline)
                 .fontWeight(.bold)
             Spacer()
-            Text("\(tabManager.multiSelection.count) selected")
+            Text("\(lotab.multiSelection.count) selected")
                 .font(.caption)
                 .foregroundColor(.secondary)
-                .opacity((tabManager.multiSelection.isEmpty || tabManager.isMarking) ? 0 : 1)
+                .opacity((lotab.multiSelection.isEmpty || lotab.isMarking) ? 0 : 1)
         }
         .frame(height: 30)
         .padding(.horizontal, 16)
@@ -52,7 +52,7 @@ struct ContentView: View {
     private var tabListView: some View {
         ScrollViewReader { proxy in
             List {
-                let displayed = tabManager.displayedTabs
+                let displayed = lotab.displayedTabs
                 let activeTabs = displayed.filter { $0.active }
                 let otherTabs = displayed.filter { !$0.active }
                 let sortedTabs = activeTabs + otherTabs
@@ -64,19 +64,19 @@ struct ContentView: View {
             }
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
-            .onChange(of: tabManager.tabs) { newTabs in
-                if tabManager.selection == nil || !newTabs.contains(where: { $0.id == tabManager.selection }) {
-                     tabManager.selection = newTabs.first(where: { $0.active })?.id ?? newTabs.first?.id
+            .onChange(of: lotab.tabs) { newTabs in
+                if lotab.selection == nil || !newTabs.contains(where: { $0.id == lotab.selection }) {
+                     lotab.selection = newTabs.first(where: { $0.active })?.id ?? newTabs.first?.id
                 }
             }
-            .onChange(of: tabManager.selection) { newSel in
+            .onChange(of: lotab.selection) { newSel in
                 if let id = newSel {
                     proxy.scrollTo(id, anchor: .center)
                 }
             }
             .onAppear {
-                if tabManager.selection == nil {
-                    tabManager.selection = tabManager.tabs.first(where: { $0.active })?.id ?? tabManager.tabs.first?.id
+                if lotab.selection == nil {
+                    lotab.selection = lotab.tabs.first(where: { $0.active })?.id ?? lotab.tabs.first?.id
                 }
             }
         }
@@ -84,7 +84,7 @@ struct ContentView: View {
 
     private var labelSelectionView: some View {
         VStack(spacing: 0) {
-            if tabManager.isCreatingLabel {
+            if lotab.isCreatingLabel {
                 labelCreationView
             } else {
                 labelMenuView
@@ -99,14 +99,14 @@ struct ContentView: View {
                     // Create New Option (Index 0)
                     labelRow(text: "Create New Label", index: 0, topPadding: 4)
                     // Existing Labels
-                    ForEach(Array(tabManager.allLabels.enumerated()), id: \.offset) { index, label in
+                    ForEach(Array(lotab.allLabels.enumerated()), id: \.offset) { index, label in
                         labelRow(text: label, index: index + 1)
                     }
                 }
             }
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
-            .onChange(of: tabManager.labelListSelection) { newSel in
+            .onChange(of: lotab.labelListSelection) { newSel in
                  proxy.scrollTo(newSel, anchor: .center)
             }
         }
@@ -126,7 +126,7 @@ struct ContentView: View {
         .padding(.horizontal, 8)
         .background(
             RoundedRectangle(cornerRadius: 6)
-                .fill(tabManager.labelListSelection == index ? Color.accentColor : Color.clear)
+                .fill(lotab.labelListSelection == index ? Color.accentColor : Color.clear)
         )
         .padding(.top, topPadding)
         .listRowSeparator(.hidden)
@@ -142,9 +142,9 @@ struct ContentView: View {
                 .font(.headline)
 
             HStack {
-                Text(tabManager.markText.isEmpty ? "Label name..." : tabManager.markText)
+                Text(lotab.markText.isEmpty ? "Label name..." : lotab.markText)
                     .font(.title2)
-                    .foregroundColor(tabManager.markText.isEmpty ? .secondary : .primary)
+                    .foregroundColor(lotab.markText.isEmpty ? .secondary : .primary)
                 Spacer()
             }
             .padding()
@@ -160,12 +160,12 @@ struct ContentView: View {
         ScrollViewReader { proxy in
             List {
                 Section(header: Text("Select tabs by label(s)").font(.caption).foregroundColor(.secondary)) {
-                    ForEach(Array(tabManager.allLabels.enumerated()), id: \.offset) { index, label in
+                    ForEach(Array(lotab.allLabels.enumerated()), id: \.offset) { index, label in
                     HStack {
-                         Image(systemName: tabManager.labelSelectionTemp.contains(label) ? "checkmark.square.fill" : "square")
-                            .foregroundColor(tabManager.labelSelectionCursor == index ? .white : (tabManager.labelSelectionTemp.contains(label) ? .accentColor : .secondary))
+                         Image(systemName: lotab.labelSelectionTemp.contains(label) ? "checkmark.square.fill" : "square")
+                            .foregroundColor(lotab.labelSelectionCursor == index ? .white : (lotab.labelSelectionTemp.contains(label) ? .accentColor : .secondary))
                         Text(label)
-                            .foregroundColor(tabManager.labelSelectionCursor == index ? .white : .primary)
+                            .foregroundColor(lotab.labelSelectionCursor == index ? .white : .primary)
                         Spacer()
                         RoundedRectangle(cornerRadius: 2)
                            .fill(Color.generate(from: label))
@@ -175,7 +175,7 @@ struct ContentView: View {
                     .padding(.horizontal, 8)
                     .background(
                         RoundedRectangle(cornerRadius: 6)
-                            .fill(tabManager.labelSelectionCursor == index ? Color.accentColor : Color.clear)
+                            .fill(lotab.labelSelectionCursor == index ? Color.accentColor : Color.clear)
                     )
                     .padding(.top, index == 0 ? 8 : 0)
                     .listRowSeparator(.hidden)
@@ -187,23 +187,23 @@ struct ContentView: View {
             }
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
-            .onChange(of: tabManager.labelSelectionCursor) { newSel in
+            .onChange(of: lotab.labelSelectionCursor) { newSel in
                  proxy.scrollTo(newSel, anchor: .center)
             }
         }
     }
 
     private func tabRow(_ tab: BrowserTab) -> some View {
-        let isSelected = tabManager.selection == tab.id
+        let isSelected = lotab.selection == tab.id
         return HStack {
-            Image(systemName: tabManager.multiSelection.contains(tab.id) ? "checkmark.square.fill" : "square")
-                .foregroundColor(isSelected ? .white : (tabManager.multiSelection.contains(tab.id) ? .accentColor : .secondary))
+            Image(systemName: lotab.multiSelection.contains(tab.id) ? "checkmark.square.fill" : "square")
+                .foregroundColor(isSelected ? .white : (lotab.multiSelection.contains(tab.id) ? .accentColor : .secondary))
             Text(tab.title)
                 .lineLimit(1)
                 .truncationMode(.tail)
                 .foregroundColor(isSelected ? .white : .primary)
             Spacer()
-            ForEach(Array(tabManager.tabLabels[tab.id] ?? []).sorted(), id: \.self) { label in
+            ForEach(Array(lotab.tabLabels[tab.id] ?? []).sorted(), id: \.self) { label in
                  Text(label)
                     .font(.system(size: 10, weight: .bold))
                     .padding(.horizontal, 4)
@@ -233,7 +233,7 @@ struct ContentView: View {
         )
         .contentShape(Rectangle())
         .onTapGesture {
-            tabManager.selection = tab.id
+            lotab.selection = tab.id
         }
         .listRowSeparator(.hidden)
         .listRowBackground(Color.clear)
@@ -255,35 +255,35 @@ struct ContentView: View {
     private var footerItems: [FooterItem] {
         var items: [FooterItem] = []
         
-        if tabManager.isCreatingLabel {
+        if lotab.isCreatingLabel {
             items.append(FooterItem(components: [.key("return")], description: "to create"))
             items.append(FooterItem(components: [.key("esc")], description: "to cancel"))
-        } else if tabManager.isSelectingByLabel {
+        } else if lotab.isSelectingByLabel {
              items.append(FooterItem(components: [.key("space")], description: "to toggle"))
              items.append(FooterItem(components: [.key("return")], description: "to confirm"))
              items.append(FooterItem(components: [.key("esc")], description: "to cancel"))
-        } else if tabManager.isMarking {
+        } else if lotab.isMarking {
              items.append(FooterItem(components: [.key("return")], description: "to select"))
              items.append(FooterItem(components: [.key("esc")], description: "to cancel"))
         } else {
-             if tabManager.isFiltering || !tabManager.filterText.isEmpty {
-                  items.append(FooterItem(components: [.text("search: \(tabManager.filterText)")], description: ""))
+             if lotab.isFiltering || !lotab.filterText.isEmpty {
+                  items.append(FooterItem(components: [.text("search: \(lotab.filterText)")], description: ""))
              } else {
                   items.append(FooterItem(components: [.key("↓"), .key("↑"), .text("or"), .key("j"), .key("k")], description: "to navigate"))
-                  if tabManager.multiSelection.isEmpty {
+                  if lotab.multiSelection.isEmpty {
                        items.append(FooterItem(components: [.key("/")], description: "to search"))
                   }
              }
              
-             if tabManager.multiSelection.isEmpty {
-                 let desc = tabManager.isFiltering ? "to search" : "to open"
+             if lotab.multiSelection.isEmpty {
+                 let desc = lotab.isFiltering ? "to search" : "to open"
                  items.append(FooterItem(components: [.key("return")], description: desc))
              }
              
-             let escDesc = tabManager.isFiltering || !tabManager.multiSelection.isEmpty ? "to cancel" : "to close"
+             let escDesc = lotab.isFiltering || !lotab.multiSelection.isEmpty ? "to cancel" : "to close"
              items.append(FooterItem(components: [.key("esc")], description: escDesc))
              
-             if !tabManager.multiSelection.isEmpty {
+             if !lotab.multiSelection.isEmpty {
                  items.append(FooterItem(components: [.key("x")], description: "to close"))
                  items.append(FooterItem(components: [.key("shift"), .key("x")], description: "to close others"))
              }
@@ -291,7 +291,7 @@ struct ContentView: View {
              items.append(FooterItem(components: [.key("shift"), .key("a")], description: "to select all"))
              items.append(FooterItem(components: [.key("s")], description: "to select"))
 
-             if !tabManager.multiSelection.isEmpty {
+             if !lotab.multiSelection.isEmpty {
                  items.append(FooterItem(components: [.key("m")], description: "to mark"))
              }
         }

@@ -23,7 +23,7 @@
 #define NGERROR(x) (-x)
 
 extern char** environ;                                 // Necessary global for inheriting env in subprocess.
-static const char* uds_path = "/tmp/tabmanager.sock";  // TODO: Do not use globals.
+static const char* uds_path = "/tmp/lotab.sock";  // TODO: Do not use globals.
 
 typedef struct ServerContext {
   struct EngClass* cls;
@@ -553,11 +553,11 @@ int engine_init(EngineContext** ectx, EngineCreationInfo cinfo) {
   char* spawn_args[] = {(char*)APP_PATH, "--log-level", log_level_arg, NULL};
   int spawn_status = posix_spawn(&ec->app_pid, APP_PATH, NULL, NULL, spawn_args, environ);
   if (spawn_status == 0) {
-    vlog(LOG_LEVEL_INFO, ec, "Successfully spawned TabManager (PID: %d)\n", ec->app_pid);
+    vlog(LOG_LEVEL_INFO, ec, "Successfully spawned Lotab (PID: %d)\n", ec->app_pid);
     sleep(1);
     setup_uds_client(sc);
   } else {
-    vlog(LOG_LEVEL_ERROR, ec, "Failed to spawn TabManager: %s\n", strerror(spawn_status));
+    vlog(LOG_LEVEL_ERROR, ec, "Failed to spawn Lotab: %s\n", strerror(spawn_status));
     ret = -1;
     goto fail;
   }

@@ -12,7 +12,7 @@ import sys
 import psutil
 
 DAEMON_BIN = sys.argv[1] if len(sys.argv) > 1 else "./build/daemon"
-APP_NAME = "TabManager"
+APP_NAME = "Lotab"
 
 def get_pids_by_name(name):
     pids = []

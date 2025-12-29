@@ -1,4 +1,4 @@
-project('tab_manager', 'c', 'cpp', 'swift', 'objc',
+project('lotab', 'c', 'cpp', 'swift', 'objc',
   version : '0.1',
   default_options : ['warning_level=3', 'cpp_std=c++20'])
 
@@ -22,7 +22,7 @@ engine_util_dep = declare_dependency(
 apple_frameworks = dependency('appleframeworks', modules : ['Foundation', 'AppKit', 'SwiftUI'])
 
 app_src = [
-  'app/TabManagerApp.swift',
+  'app/LotabApp.swift',
   'app/ContentView.swift'
 ]
 
@@ -31,19 +31,19 @@ daemon_engine_src = ['daemon/main.c']
 daemon_deps = [lws_dep, cjson_dep, carbon_dep, cocoa_dep, argparse_dep]
 
 info_plist_path = meson.current_source_dir() / 'app/Info.plist'
-tab_manager_linker_args = ['-Xlinker', '-sectcreate', '-Xlinker', '__TEXT', '-Xlinker', '__info_plist', '-Xlinker', info_plist_path]
-tab_manager_swift_args = ['-import-bridging-header', meson.current_source_dir() / 'app/bridge.h']
-tab_manager_deps = [apple_frameworks, engine_util_dep]
+lotab_linker_args = ['-Xlinker', '-sectcreate', '-Xlinker', '__TEXT', '-Xlinker', '__info_plist', '-Xlinker', info_plist_path]
+lotab_swift_args = ['-import-bridging-header', meson.current_source_dir() / 'app/bridge.h']
+lotab_deps = [apple_frameworks, engine_util_dep]
 
-app_target = executable('TabManager',
+app_target = executable('Lotab',
            app_src,
-           dependencies : tab_manager_deps,
-           link_args : tab_manager_linker_args,
-           swift_args : tab_manager_swift_args,
+           dependencies : lotab_deps,
+           link_args : lotab_linker_args,
+           swift_args : lotab_swift_args,
            install : true)
 
 # --- Daemon ---
-# Pass the absolute path of the built TabManager binary to the daemon at build time via config.h
+# Pass the absolute path of the built Lotab binary to the daemon at build time via config.h
 conf_data = configuration_data()
 conf_data.set_quoted('APP_PATH', app_target.full_path())
 configure_file(output : 'config.h',
@@ -71,12 +71,12 @@ sanitizers = {
 
 foreach s, suffix : sanitizers
   # App Variant
-  app_var = executable('TabManager' + suffix,
+  app_var = executable('Lotab' + suffix,
              app_src,
-             dependencies : tab_manager_deps,
-             swift_args : tab_manager_swift_args,
+             dependencies : lotab_deps,
+             swift_args : lotab_swift_args,
              override_options : ['b_sanitize=' + s],
-             link_args : tab_manager_linker_args,
+             link_args : lotab_linker_args,
              install : true)
 
   # Daemon Variant

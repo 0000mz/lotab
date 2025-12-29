@@ -3,9 +3,9 @@
 <plist version="1.0">
 <dict>
     <key>CFBundleIdentifier</key>
-    <string>com.mob.TabManager</string>
+    <string>com.mob.Lotab</string>
     <key>CFBundleName</key>
-    <string>TabManager</string>
+    <string>Lotab</string>
     <key>LSUIElement</key>
     <true/>
 </dict>

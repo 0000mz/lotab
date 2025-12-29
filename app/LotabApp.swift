@@ -7,7 +7,7 @@ import Foundation
 class AppDelegate: NSObject, NSApplicationDelegate {
     private var serverSocket: Int32 = -1
     private var activeClientSocket: Int32 = -1
-    private let socketPath = "/tmp/tabmanager.sock"
+    private let socketPath = "/tmp/lotab.sock"
 
     static var shared: AppDelegate?
     var window: FocusableWindow!
@@ -18,7 +18,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.setActivationPolicy(.accessory)
 
         // Create the window manually
-        let contentView = ContentView(tabManager: TabManager.shared)
+        let contentView = ContentView(lotab: Lotab.shared)
 
         // Create a borderless window with no style mask initially
         window = FocusableWindow(
@@ -43,7 +43,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Setup Key monitors
         NSEvent.addLocalMonitorForEvents(matching: .keyDown) { (event: NSEvent) -> NSEvent? in
-            let tm = TabManager.shared
+            let tm = Lotab.shared
 
             // Marking Mode
             // Marking Mode
@@ -306,7 +306,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             // Confirm Selection (Entered Normal Mode)
             if !tm.isFiltering && event.keyCode == 36 {
                 if !tm.multiSelection.isEmpty { return nil }
-                if let selectedId = TabManager.shared.selection {
+                if let selectedId = Lotab.shared.selection {
                      self.sendUDSMessage(event: "tab_selected", data: ["tabId": selectedId])
                      self.hideUI()
                      return nil
@@ -348,30 +348,30 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func hideUI() {
-        vlog_s(.trace, TabManagerApp.appClass, "hiding ui")
+        vlog_s(.trace, LotabApp.appClass, "hiding ui")
         DispatchQueue.main.async {
             self.window.orderOut(nil)
             NSApp.hide(nil)
         }
 
         // Reset State on Open
-        TabManager.shared.isFiltering = false
-        TabManager.shared.filterText = ""
-        TabManager.shared.selection = TabManager.shared.displayedTabs.first?.id
-        TabManager.shared.multiSelection = []
+        Lotab.shared.isFiltering = false
+        Lotab.shared.filterText = ""
+        Lotab.shared.selection = Lotab.shared.displayedTabs.first?.id
+        Lotab.shared.multiSelection = []
 
         // Reset Marking State
-        TabManager.shared.isMarking = false
-        TabManager.shared.isCreatingLabel = false
-        TabManager.shared.markText = ""
+        Lotab.shared.isMarking = false
+        Lotab.shared.isCreatingLabel = false
+        Lotab.shared.markText = ""
     }
 
     private func startUDSServer() {
         unlink(socketPath)
         serverSocket = socket(AF_UNIX, SOCK_STREAM, 0)
-        vlog_s(.info, TabManagerApp.appClass, "Attempting to connect to UDS server")
+        vlog_s(.info, LotabApp.appClass, "Attempting to connect to UDS server")
         guard serverSocket >= 0 else {
-            vlog_s(.error, TabManagerApp.appClass, "Failed to create socket")
+            vlog_s(.error, LotabApp.appClass, "Failed to create socket")
             return
         }
 
@@ -394,16 +394,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         guard bindResult == 0 else {
-            vlog_s(.error, TabManagerApp.appClass, "Failed to bind socket. Error: \(String(cString: strerror(errno)))");
+            vlog_s(.error, LotabApp.appClass, "Failed to bind socket. Error: \(String(cString: strerror(errno)))");
             return
         }
 
         guard Darwin.listen(serverSocket, 5) == 0 else {
-            vlog_s(.error, TabManagerApp.appClass, "Failed to listen on socket");
+            vlog_s(.error, LotabApp.appClass, "Failed to listen on socket");
             return
         }
 
-        vlog_s(.info, TabManagerApp.appClass, "UDS server started at \(socketPath)");
+        vlog_s(.info, LotabApp.appClass, "UDS server started at \(socketPath)");
         Thread.detachNewThread {
             self.acceptConnections()
         }
@@ -421,7 +421,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
             if clientSocket >= 0 {
                 self.activeClientSocket = clientSocket
-                vlog_s(.info, TabManagerApp.appClass, "Accepted new UDS connection")
+                vlog_s(.info, LotabApp.appClass, "Accepted new UDS connection")
                 Thread.detachNewThread {
                     self.handleClient(clientSocket)
                 }
@@ -442,13 +442,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
 
             if headerBytesRead == 0 {
-                vlog_s(.info, TabManagerApp.appClass, "UDS connection closed by peer")
+                vlog_s(.info, LotabApp.appClass, "UDS connection closed by peer")
                 break
             } else if headerBytesRead < 0 {
-                vlog_s(.error, TabManagerApp.appClass, "UDS header read error: \(String(cString: strerror(errno)))")
+                vlog_s(.error, LotabApp.appClass, "UDS header read error: \(String(cString: strerror(errno)))")
                 break
             } else if headerBytesRead < 4 {
-                 vlog_s(.error, TabManagerApp.appClass, "UDS partial header read")
+                 vlog_s(.error, LotabApp.appClass, "UDS partial header read")
                  break
             }
 
@@ -471,24 +471,24 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
 
             if readError {
-                 vlog_s(.error, TabManagerApp.appClass, "UDS payload read error or closed prematurely")
+                 vlog_s(.error, LotabApp.appClass, "UDS payload read error or closed prematurely")
                  break
             }
 
             // 3. Process Message
             if let message = String(data: payloadData, encoding: .utf8) {
-                vlog_s(.trace, TabManagerApp.appClass, "uds-read: \(message)")
+                vlog_s(.trace, LotabApp.appClass, "uds-read: \(message)")
                 if message.contains("tabs_update") {
                     // Decode tabs
                     if let jsonData = message.data(using: .utf8) {
                         do {
                             let payload = try JSONDecoder().decode(TabListPayload.self, from: jsonData)
-                            vlog_s(.info, TabManagerApp.appClass, "Successfully decoded \(payload.data.tabs.count) tabs")
+                            vlog_s(.info, LotabApp.appClass, "Successfully decoded \(payload.data.tabs.count) tabs")
                             DispatchQueue.main.async {
-                                TabManager.shared.tabs = payload.data.tabs
+                                Lotab.shared.tabs = payload.data.tabs
                             }
                         } catch {
-                            vlog_s(.error, TabManagerApp.appClass, "JSON Decoding Error for tabs_update: \(error)")
+                            vlog_s(.error, LotabApp.appClass, "JSON Decoding Error for tabs_update: \(error)")
                         }
                     }
                 } else if message.contains("tasks_update") {
@@ -496,12 +496,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     if let jsonData = message.data(using: .utf8) {
                         do {
                             let payload = try JSONDecoder().decode(TaskListPayload.self, from: jsonData)
-                            vlog_s(.info, TabManagerApp.appClass, "Successfully decoded \(payload.data.tasks.count) tasks")
+                            vlog_s(.info, LotabApp.appClass, "Successfully decoded \(payload.data.tasks.count) tasks")
                             DispatchQueue.main.async {
-                                TabManager.shared.tasks = payload.data.tasks
+                                Lotab.shared.tasks = payload.data.tasks
                             }
                         } catch {
-                            vlog_s(.error, TabManagerApp.appClass, "JSON Decoding Error for tasks_update: \(error)")
+                            vlog_s(.error, LotabApp.appClass, "JSON Decoding Error for tasks_update: \(error)")
                         }
                     }
                 } else if message.contains("ui_visibility_toggle") {
@@ -513,7 +513,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     func sendUDSMessage(event: String, data: Any) {
         guard activeClientSocket >= 0 else {
-            vlog_s(.error, TabManagerApp.appClass, "Cannot send message: No active UDS connection")
+            vlog_s(.error, LotabApp.appClass, "Cannot send message: No active UDS connection")
             return
         }
 
@@ -535,12 +535,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
 
             if result < 0 {
-                vlog_s(.error, TabManagerApp.appClass, "Failed to send UDS message: \(String(cString: strerror(errno)))")
+                vlog_s(.error, LotabApp.appClass, "Failed to send UDS message: \(String(cString: strerror(errno)))")
             } else {
-                vlog_s(.info, TabManagerApp.appClass, "uds-send: \(event) (len: \(jsonData.count))")
+                vlog_s(.info, LotabApp.appClass, "uds-send: \(event) (len: \(jsonData.count))")
             }
         } catch {
-            vlog_s(.error, TabManagerApp.appClass, "Failed to serialize UDS message: \(error)")
+            vlog_s(.error, LotabApp.appClass, "Failed to serialize UDS message: \(error)")
         }
     }
 }
@@ -570,8 +570,8 @@ struct TaskListPayload: Decodable {
     let data: Data
 }
 
-class TabManager: ObservableObject {
-    static let shared = TabManager()
+class Lotab: ObservableObject {
+    static let shared = Lotab()
     @Published var tabs: [BrowserTab] = []
     @Published var tasks: [Task] = []
     @Published var selection: Int?
@@ -618,7 +618,7 @@ class FocusableWindow: NSWindow {
 }
 
 @main
-struct TabManagerApp: App {
+struct LotabApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     // Create a persistent EngClass for the App context
     static let appClass: UnsafeMutablePointer<EngClass> = {
