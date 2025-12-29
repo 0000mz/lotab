@@ -45,6 +45,9 @@ For convenience, a `build.sh` script is provided to automate the setup and compi
 
 # Build release and install
 ./build.sh install
+
+# Install with custom prefix
+PREFIX=/tmp/lotab_build ./build.sh install
 ```
 The script automatically initializes the `build` directory if it doesn't exist and runs the compilation for all targets.
 
