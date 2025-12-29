@@ -4,9 +4,8 @@ project('lotab', 'c', 'cpp', 'swift', 'objc',
 
 lws_proj = subproject('libwebsockets')
 lws_dep = lws_proj.get_variable('libwebsockets_dep')
-cmake = import('cmake')
-cjson_proj = cmake.subproject('cjson')
-cjson_dep = cjson_proj.dependency('cjson')
+cjson_proj = subproject('cjson')
+cjson_dep = cjson_proj.get_variable('libcjson_dep')
 carbon_dep = dependency('appleframeworks', modules : 'Carbon')
 cocoa_dep = dependency('appleframeworks', modules : 'Cocoa')
 argparse_dep = dependency('argparse')
