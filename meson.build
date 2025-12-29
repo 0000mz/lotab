@@ -122,6 +122,17 @@ else
   message('uv not found, skipping python UI tests')
 endif
 
+npm_prog = find_program('npm', required : false)
+if npm_prog.found()
+  node_prog = find_program('node', required : false)
+  if node_prog.found()
+      test('extension_test', node_prog,
+           args : [meson.current_source_dir() / 'tests/extension/integration_test.js'],
+           workdir : meson.current_source_dir() / 'tests/extension',
+           timeout : 30)
+  endif
+endif
+
 # --- Install Scripts / Data ---
 # Configure com.mob.lotab.plist
 # We need to install the daemon and the app to know where they end up.
