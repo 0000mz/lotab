@@ -69,6 +69,8 @@ sanitizers = {
   'thread' : '_tsan'
 }
 
+install_sanitizers = get_option('buildtype') != 'release'
+
 foreach s, suffix : sanitizers
   # App Variant
   app_var = executable('Lotab' + suffix,
@@ -77,7 +79,7 @@ foreach s, suffix : sanitizers
              swift_args : lotab_swift_args,
              override_options : ['b_sanitize=' + s],
              link_args : lotab_linker_args,
-             install : true)
+             install : install_sanitizers)
 
   # Daemon Variant
   conf_var_data = configuration_data()
@@ -90,7 +92,7 @@ foreach s, suffix : sanitizers
              dependencies : daemon_deps + [engine_dep],
              c_args : ['-DSANITIZER_CONFIG_H="' + conf_var_output + '"'],
              override_options : ['b_sanitize=' + s],
-             install : true)
+             install : install_sanitizers)
 endforeach
 
 # --- Unit Tests ---
