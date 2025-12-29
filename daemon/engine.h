@@ -69,6 +69,7 @@ typedef struct EngineContext {
 typedef struct EngineCreationInfo {
   uint32_t port;
   int enable_statusbar;
+  const char* app_path;
 } EngineCreationInfo;
 
 // Initializes the daemon engine.

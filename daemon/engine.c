@@ -22,7 +22,7 @@
 
 #define NGERROR(x) (-x)
 
-extern char** environ;                                 // Necessary global for inheriting env in subprocess.
+extern char** environ;                            // Necessary global for inheriting env in subprocess.
 static const char* uds_path = "/tmp/lotab.sock";  // TODO: Do not use globals.
 
 typedef struct ServerContext {
@@ -548,10 +548,12 @@ int engine_init(EngineContext** ectx, EngineCreationInfo cinfo) {
   ret = -1;  // TODO: use some defined error code.
   goto fail;
 #endif
+  const char* target_app_path = (cinfo.app_path && strlen(cinfo.app_path) > 0) ? cinfo.app_path : APP_PATH;
+
   char log_level_arg[16] = {0};
   snprintf(log_level_arg, sizeof(log_level_arg), "%d", engine_get_log_level());
-  char* spawn_args[] = {(char*)APP_PATH, "--log-level", log_level_arg, NULL};
-  int spawn_status = posix_spawn(&ec->app_pid, APP_PATH, NULL, NULL, spawn_args, environ);
+  char* spawn_args[] = {(char*)target_app_path, "--log-level", log_level_arg, NULL};
+  int spawn_status = posix_spawn(&ec->app_pid, target_app_path, NULL, NULL, spawn_args, environ);
   if (spawn_status == 0) {
     vlog(LOG_LEVEL_INFO, ec, "Successfully spawned Lotab (PID: %d)\n", ec->app_pid);
     sleep(1);

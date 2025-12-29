@@ -113,3 +113,19 @@ if uv_prog.found()
 else
   message('uv not found, skipping python UI tests')
 endif
+
+# --- Install Scripts / Data ---
+# Configure com.mob.lotab.plist
+# We need to install the daemon and the app to know where they end up.
+# Configured plist will go to prefix/share/lotab/
+pl_conf = configuration_data()
+pl_conf.set('BINDIR', get_option('prefix') / get_option('bindir'))
+pl_conf.set('APP_NAME', 'Lotab')
+
+configure_file(
+  input : 'data/com.mob.lotab.plist.in',
+  output : 'com.mob.lotab.plist',
+  configuration : pl_conf,
+  install : true,
+  install_dir : get_option('datadir') / 'lotab'
+)

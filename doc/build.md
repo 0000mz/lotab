@@ -1,4 +1,4 @@
-# Tab Manager Build Documentation
+# Lotab Build Documentation
 
 This project is a multi-component system designed to manage browser tabs via a macOS native application and a background daemon.
 
@@ -14,12 +14,12 @@ This project is a multi-component system designed to manage browser tabs via a m
 - **Technology**: C11, `libwebsockets`, `Carbon.framework`, Unix Domain Sockets.
 - **Communication**:
     - WebSocket Server (port 9001).
-    - UDS Client (`/tmp/tabmanager.sock`).
+    - UDS Client (`/tmp/lotab.sock`).
 
 ### 3. SwiftUI App (`app/`)
 - **Role**: The graphical user interface for interacting with tab data.
 - **Technology**: Swift, SwiftUI.
-- **Communication**: UDS Server (`/tmp/tabmanager.sock`).
+- **Communication**: UDS Server (`/tmp/lotab.sock`).
 
 ---
 
@@ -28,8 +28,8 @@ This project is a multi-component system designed to manage browser tabs via a m
 The project uses a unified **Meson** build system to compile both the C daemon and the Swift application.
 
 ### Prerequisites
-- [Meson](https://mesonbuild.com/) 1.0 or later.
-- [Ninja](https://ninja-build.org/) build tool.
+- [Meson](https://mesonbuild.com/) v1.10.0 or later.
+- [Ninja](https://ninja-build.org/) build tool (>=v1.13.2).
 - [libwebsockets](https://libwebsockets.org/) (will be handled via Meson subproject if not found).
 - macOS with Xcode Command Line Tools installed.
 
@@ -45,32 +45,50 @@ For convenience, a `build.sh` script is provided to automate the setup and compi
 ```
 The script automatically initializes the `build` directory if it doesn't exist and runs the compilation for all targets.
 
+---
+
+## Installation and Service Setup
+
+You can install the application and configure it as a macOS system service ("LaunchAgent"). This ensures the daemon runs automatically in the background.
+
+```bash
+# 1. Build and Install (installs to /usr/local/ by default)
+./build.sh
+meson install -C build
+
+# 2. Enable the Service
+# Copy the installed plist to your LaunchAgents directory
+cp /usr/local/share/lotab/com.mob.lotab.plist ~/Library/LaunchAgents/
+
+# Load the service
+launchctl load ~/Library/LaunchAgents/com.mob.lotab.plist
+```
+
+**Note**: If you used a custom prefix (e.g. `meson setup build --prefix /opt/local`), the plist will be in `<prefix>/share/lotab/`.
+
+---
+
+## Development & Debugging
+
+### Running Locally (Without Install)
+The daemon automagically finds the built `Lotab` app when running from the build directory.
+
+```bash
+./build/daemon
+```
+
+You can also explicitly point the daemon to a specific app binary:
+```bash
+./build/daemon --app-path ./build/Lotab
+```
+
 ### Debugging with Sanitizers
 The build system provides specialized variants for memory and thread safety analysis:
 
 - **AddressSanitizer (ASan)**: Detects memory corruption/leaks.
-  - Binaries: `build/daemon_asan`, `build/TabManager_asan`
+  - Binaries: `build/daemon_asan`, `build/Lotab_asan`
 - **ThreadSanitizer (TSan)**: Detects data races.
-  - Binaries: `build/daemon_tsan`, `build/TabManager_tsan`
-
----
-
-## Running the Application
-
-The daemon is designed to be the primary entry point. It automatically verifies its configuration and spawns the corresponding GUI application.
-
-```bash
-# Start the standard system
-./build/daemon
-
-# Start with AddressSanitizer
-./build/daemon_asan
-
-# Start with ThreadSanitizer
-./build/daemon_tsan
-```
-
-The Chrome extension must be loaded manually into Chrome via "Load unpacked" from the `extension/` directory.
+  - Binaries: `build/daemon_tsan`, `build/Lotab_tsan`
 
 ---
 
