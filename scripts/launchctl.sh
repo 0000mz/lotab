@@ -7,7 +7,7 @@ set -e
 
 # Default prefix if not set
 PREFIX="${PREFIX:-/usr/local}"
-SERVICE_NAME="com.mob.lotab"
+SERVICE_NAME="${LOTAB_SERVICE_NAME:-com.mob.lotab}"
 PLIST_NAME="${SERVICE_NAME}.plist"
 USER_ID=$(id -u)
 SERVICE_TARGET="gui/${USER_ID}"

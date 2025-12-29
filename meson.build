@@ -109,11 +109,15 @@ else
 endif
 
 # --- Tests ---
-uv_prog = find_program('uv', required : false)
+uv_prog = find_program('uv', required : true)
 if uv_prog.found()
   test('ui_test_quit', uv_prog,
        args : ['run', meson.current_source_dir() / 'tests/ui_test_quit.py', meson.current_build_dir() / 'daemon'],
        is_parallel : false)
+  test('install_test', uv_prog,
+       args : ['run', meson.current_source_dir() / 'tests/install_test.py'],
+       is_parallel : false,
+       timeout : 120)
 else
   message('uv not found, skipping python UI tests')
 endif
