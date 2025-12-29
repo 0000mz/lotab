@@ -42,6 +42,9 @@ For convenience, a `build.sh` script is provided to automate the setup and compi
 
 # Release build
 ./build.sh release
+
+# Build release and install
+./build.sh install
 ```
 The script automatically initializes the `build` directory if it doesn't exist and runs the compilation for all targets.
 
@@ -53,8 +56,8 @@ You can install the application and configure it as a macOS system service ("Lau
 
 ```bash
 # 1. Build and Install (installs to /usr/local/ by default)
-./build.sh
-meson install -C build
+./build.sh install
+```
 
 # 2. Enable the Service
 # Copy the installed plist to your LaunchAgents directory
