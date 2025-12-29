@@ -1,3 +1,6 @@
+2025-Dec-28:
+- Start implementation of release build+install process.
+
 2025-Dec-26:
 - Multiple tab selection.
 - Close multiple tabs.

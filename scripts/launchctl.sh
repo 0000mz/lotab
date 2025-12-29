@@ -50,8 +50,7 @@ function load() {
     mkdir -p "$LAUNCH_AGENTS_DIR"
     mkdir -p "$HOME/Library/Logs/lotab"
 
-    # Copy and replace home placeholder
-    sed "s|__LOTAB_USER_HOME__|$HOME|g" "$SOURCE_PLIST" > "$DEST_PLIST"
+    cp "$SOURCE_PLIST" "$DEST_PLIST"
 
     log "Bootstrapping service into $SERVICE_TARGET..."
     launchctl bootstrap "$SERVICE_TARGET" "$DEST_PLIST"

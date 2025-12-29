@@ -125,7 +125,10 @@ endif
 pl_conf = configuration_data()
 pl_conf.set('BINDIR', get_option('prefix') / get_option('bindir'))
 pl_conf.set('APP_NAME', 'Lotab')
-pl_conf.set('LOG_HOME', '__LOTAB_USER_HOME__')
+
+# Capture the user's home directory at configuration time
+user_home = run_command('sh', '-c', 'echo $HOME', check: true).stdout().strip()
+pl_conf.set('LOG_HOME', user_home)
 
 configure_file(
   input : 'data/com.mob.lotab.plist.in',
