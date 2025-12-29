@@ -128,21 +128,21 @@ When running as a system service, logs are stored in:
 The daemon automagically finds the built `Lotab` app when running from the build directory.
 
 ```bash
-./build/daemon
+./build/lotab_daemon
 ```
 
 You can also explicitly point the daemon to a specific app binary:
 ```bash
-./build/daemon --app-path ./build/Lotab
+./build/lotab_daemon --app-path ./build/Lotab
 ```
 
 ### Debugging with Sanitizers
 The build system provides specialized variants for memory and thread safety analysis:
 
 - **AddressSanitizer (ASan)**: Detects memory corruption/leaks.
-  - Binaries: `build/daemon_asan`, `build/Lotab_asan`
+  - Binaries: `build/lotab_daemon_asan`, `build/Lotab_asan`
 - **ThreadSanitizer (TSan)**: Detects data races.
-  - Binaries: `build/daemon_tsan`, `build/Lotab_tsan`
+  - Binaries: `build/lotab_daemon_tsan`, `build/Lotab_tsan`
 
 ---
 
@@ -176,5 +176,5 @@ The suite includes interaction tests (`tests/ui_test_quit.py`) that verify the d
 You can also run the test script manually using `uv`. You must provide the path to the daemon executable:
 
 ```bash
-uv run tests/ui_test_quit.py ./build/daemon
+uv run tests/ui_test_quit.py ./build/lotab_daemon
 ```

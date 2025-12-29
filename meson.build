@@ -60,7 +60,7 @@ engine_dep = declare_dependency(
   dependencies : [lws_dep, cjson_dep, cocoa_dep, carbon_dep]
 )
 
-executable('daemon', daemon_engine_src,
+executable('lotab_daemon', daemon_engine_src,
            dependencies : [daemon_deps, engine_dep],
            install : true,
            install_rpath : get_option('prefix') / get_option('libdir'))
@@ -90,7 +90,7 @@ foreach s, suffix : sanitizers
   configure_file(output : conf_var_output,
                  configuration : conf_var_data)
 
-  executable('daemon' + suffix, daemon_engine_src,
+  executable('lotab_daemon' + suffix, daemon_engine_src,
              dependencies : daemon_deps + [engine_dep],
              c_args : ['-DSANITIZER_CONFIG_H="' + conf_var_output + '"'],
              override_options : ['b_sanitize=' + s],
@@ -112,7 +112,7 @@ endif
 uv_prog = find_program('uv', required : true)
 if uv_prog.found()
   test('ui_test_quit', uv_prog,
-       args : ['run', meson.current_source_dir() / 'tests/ui_test_quit.py', meson.current_build_dir() / 'daemon'],
+       args : ['run', meson.current_source_dir() / 'tests/ui_test_quit.py', meson.current_build_dir() / 'lotab_daemon'],
        is_parallel : false)
   test('install_test', uv_prog,
        args : ['run', meson.current_source_dir() / 'tests/install_test.py'],

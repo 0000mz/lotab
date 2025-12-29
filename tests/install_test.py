@@ -43,7 +43,7 @@ def main():
         run_command(["./build.sh", "install"], env=env)
 
         # Verify files were installed to tmp
-        if not (Path(temp_prefix) / "bin/daemon").exists():
+        if not (Path(temp_prefix) / "bin/lotab_daemon").exists():
             print("FAILURE: daemon binary not found in install prefix")
             sys.exit(1)
             
