@@ -22,8 +22,7 @@
 
 #define NGERROR(x) (-x)
 
-extern char** environ;                            // Necessary global for inheriting env in subprocess.
-static const char* uds_path = "/tmp/lotab.sock";  // TODO: Do not use globals.
+extern char** environ;  // Necessary global for inheriting env in subprocess.
 
 typedef struct ServerContext {
   struct EngClass* cls;
@@ -38,6 +37,7 @@ typedef struct ServerContext {
   char* pending_ws_msg;
   int send_pending_msg;
   pthread_mutex_t pending_msg_mutex;
+  char* uds_path;
 } ServerContext;
 
 typedef struct PerSessionData {
@@ -233,7 +233,7 @@ static int setup_uds_client(ServerContext* sctx) {
   struct sockaddr_un addr;
   memset(&addr, 0, sizeof(addr));
   addr.sun_family = AF_UNIX;
-  strncpy(addr.sun_path, uds_path, sizeof(addr.sun_path) - 1);
+  strncpy(addr.sun_path, sctx->uds_path, sizeof(addr.sun_path) - 1);
 
   while (retries > 0) {
     uds_fd = socket(AF_UNIX, SOCK_STREAM, 0);
@@ -243,7 +243,7 @@ static int setup_uds_client(ServerContext* sctx) {
     }
 
     if (connect(uds_fd, (struct sockaddr*)&addr, sizeof(addr)) == 0) {
-      vlog(LOG_LEVEL_INFO, sctx, "Connected to App UDS at %s\n", uds_path);
+      vlog(LOG_LEVEL_INFO, sctx, "Connected to App UDS at %s\n", sctx->uds_path);
 
       const char* ping_json = "{\"event\":\"daemon_startup\",\"data\":\"ping\"}";
       size_t len = strlen(ping_json);
@@ -522,6 +522,12 @@ int engine_init(EngineContext** ectx, EngineCreationInfo cinfo) {
   pthread_mutex_init(&sc->pending_msg_mutex, NULL);
   lws_set_log_level(LLL_USER | LLL_ERR | LLL_WARN | LLL_NOTICE | LLL_INFO, lws_log_emit_cb);
 
+  if (cinfo.uds_path && strlen(cinfo.uds_path) > 0) {
+    sc->uds_path = strdup(cinfo.uds_path);
+  } else {
+    sc->uds_path = strdup("/tmp/lotab.sock");
+  }
+
   ec->serv_ctx = sc;
   memset(&info, 0, sizeof info);
   info.port = cinfo.port;
@@ -634,15 +640,16 @@ void engine_destroy(EngineContext* ectx) {
     }
     if (ectx->serv_ctx->uds_read_thread) {
       ectx->serv_ctx->uds_read_exit = 1;
-      // pthread_cancel(ectx->serv_ctx->uds_read_thread); // Using cancel might be unsafe, better to let it exit or
-      // close sock Closing uds_fd usually unblocks recv
       if (ectx->serv_ctx->uds_fd >= 0) {
         shutdown(ectx->serv_ctx->uds_fd, SHUT_RDWR);
         close(ectx->serv_ctx->uds_fd);
         ectx->serv_ctx->uds_fd = -1;
-        unlink(uds_path);
+        unlink(ectx->serv_ctx->uds_path);
       }
       pthread_join(ectx->serv_ctx->uds_read_thread, NULL);
+    }
+    if (ectx->serv_ctx->uds_path) {
+      free(ectx->serv_ctx->uds_path);
     }
     pthread_mutex_destroy(&ectx->serv_ctx->pending_msg_mutex);
     free(ectx->serv_ctx);
