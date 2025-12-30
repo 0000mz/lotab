@@ -290,15 +290,13 @@ TEST_F(EngineTest, EngineInit) {
   printf("[test] Received request_tab_info request\n");
 
   // Simulate extension response
-  const char* mock_response =
-      "{"
-      "  \"event\": \"tabs.onAllTabs\","
-      "  \"data\": ["
-      "    { \"id\": 101, \"title\": \"Mock Tab 1\", \"url\": \"http://example.com\" },"
-      "    { \"id\": 102, \"title\": \"Mock Tab 2\", \"url\": \"http://google.com\" }"
-      "  ],"
-      "  \"activeTabIds\": [101]"
-      "}";
+  const char* mock_response = R"pb({
+                                     "event": "tabs.onAllTabs",
+                                     "data":
+                                     [ { "id": 101, "title": "Mock Tab 1", "url": "http://example.com" }
+                                       , { "id": 102, "title": "Mock Tab 2", "url": "http://google.com" }],
+                                     "activeTabIds": [ 101 ]
+                                   })pb";
   client.Send(mock_response);
   printf("[test] Sent mock response\n");
   sleep(1);
@@ -321,15 +319,13 @@ TEST_F(EngineTest, TabRemoved) {
   ASSERT_TRUE(client.WaitForEvent("request_tab_info", 2000));
 
   // 1. Send Initial State
-  const char* init_response =
-      "{"
-      "  \"event\": \"tabs.onAllTabs\","
-      "  \"data\": ["
-      "    { \"id\": 201, \"title\": \"Tab To Remove\", \"url\": \"http://example.com/1\" },"
-      "    { \"id\": 202, \"title\": \"Tab To Keep\", \"url\": \"http://example.com/2\" }"
-      "  ],"
-      "  \"activeTabIds\": [201]"
-      "}";
+  const char* init_response = R"pb({
+                                     "event": "tabs.onAllTabs",
+                                     "data":
+                                     [ { "id": 201, "title": "Tab To Remove", "url": "http://example.com/1" }
+                                       , { "id": 202, "title": "Tab To Keep", "url": "http://example.com/2" }],
+                                     "activeTabIds": [ 201 ]
+                                   })pb";
   client.Send(init_response);
   sleep(1);
 
@@ -337,14 +333,13 @@ TEST_F(EngineTest, TabRemoved) {
   EXPECT_EQ(ectx->tab_state->nb_tabs, 2);
 
   // 2. Send Removal Event
-  const char* remove_event =
-      "{"
-      "  \"event\": \"tabs.onRemoved\","
-      "  \"data\": {"
-      "    \"tabId\": 201,"
-      "    \"removeInfo\": { \"windowId\": 1, \"isWindowClosing\": false }"
-      "  }"
-      "}";
+  const char* remove_event = R"pb({
+                                    "event": "tabs.onRemoved",
+                                    "data": {
+                                      "tabId": 201,
+                                      "removeInfo": { "windowId": 1, "isWindowClosing": false }
+                                    }
+                                  })pb";
   client.Send(remove_event);
   sleep(1);
 
@@ -365,15 +360,10 @@ TEST_F(EngineTest, TabCreated) {
 
   // Send Created Event
   const char* create_event =
-      "{"
-      "  \"event\": \"tabs.onCreated\","
-      "  \"data\": {"
-      "    \"id\": 301,"
-      "    \"title\": \"New Created Tab\","
-      "    \"url\": \"http://example.com/new\","
-      "    \"active\": true"
-      "  }"
-      "}";
+      R"pb({
+             "event": "tabs.onCreated",
+             "data": { "id": 301, "title": "New Created Tab", "url": "http://example.com/new", "active": true }
+           })pb";
   client.Send(create_event);
   sleep(1);
 
@@ -394,14 +384,12 @@ TEST_F(EngineTest, TabUpdated) {
   ASSERT_TRUE(client.WaitForEvent("request_tab_info", 2000));
 
   // 1. Send Initial State
-  const char* init_response =
-      "{"
-      "  \"event\": \"tabs.onAllTabs\","
-      "  \"data\": ["
-      "    { \"id\": 401, \"title\": \"Old Title\", \"url\": \"http://example.com\" }"
-      "  ],"
-      "  \"activeTabIds\": [401]"
-      "}";
+  const char* init_response = R"pb({
+                                     "event": "tabs.onAllTabs",
+                                     "data":
+                                     [ { "id": 401, "title": "Old Title", "url": "http://example.com" }],
+                                     "activeTabIds": [ 401 ]
+                                   })pb";
   client.Send(init_response);
   sleep(1);
 
@@ -412,19 +400,14 @@ TEST_F(EngineTest, TabUpdated) {
 
   // 2. Send Update Event
   const char* update_event =
-      "{"
-      "  \"event\": \"tabs.onUpdated\","
-      "  \"data\": {"
-      "    \"tabId\": 401,"
-      "    \"changeInfo\": { \"title\": \"New Title\" },"
-      "    \"tab\": {"
-      "      \"id\": 401,"
-      "      \"title\": \"New Title\","
-      "      \"url\": \"http://example.com\","
-      "      \"active\": true"
-      "    }"
-      "  }"
-      "}";
+      R"pb({
+             "event": "tabs.onUpdated",
+             "data": {
+               "tabId": 401,
+               "changeInfo": { "title": "New Title" },
+               "tab": { "id": 401, "title": "New Title", "url": "http://example.com", "active": true }
+             }
+           })pb";
   client.Send(update_event);
   sleep(1);
 
