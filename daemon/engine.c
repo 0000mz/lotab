@@ -168,8 +168,8 @@ static void* uds_read_thread_run(void* arg) {
   ServerContext* sc = (ServerContext*)arg;
   uint32_t msg_len = 0;
 
-// Reuse buffer for payload to avoid constant malloc for small messages
-#define MAX_UDS_MSG_SIZE 65536
+  // Reuse buffer for payload to avoid constant malloc for small messages
+  #define MAX_UDS_MSG_SIZE 65536
   char* buffer = malloc(MAX_UDS_MSG_SIZE);
   if (!buffer) {
     vlog(LOG_LEVEL_ERROR, sc, "Failed to allocate UDS buffer\n");
@@ -220,6 +220,12 @@ static void* uds_read_thread_run(void* arg) {
       vlog(LOG_LEVEL_ERROR, sc, "UDS recv payload incomplete. Expected %u, got %zu\n", msg_len, total_read);
       break;
     }
+  }
+
+  if (sc->uds_fd >= 0) {
+    close(sc->uds_fd);
+    sc->uds_fd = -1;
+    vlog(LOG_LEVEL_INFO, sc, "UDS socket closed\n");
   }
 
   free(buffer);

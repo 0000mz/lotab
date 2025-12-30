@@ -1,5 +1,6 @@
 2025-Dec-28:
 - Start implementation of release build+install process.
+- Change daemon name to lotab_daemon.
 
 2025-Dec-26:
 - Multiple tab selection.
@@ -63,4 +64,3 @@ TODO:
 - Debug close behavior on chrome.
 - Carve out use case of having multiple browsers connected to socket.
 - Load existing tab groups into application.
-- Change daemon name to lotab_daemon.
