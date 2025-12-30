@@ -312,6 +312,128 @@ TEST_F(EngineTest, EngineInit) {
   EXPECT_EQ(active_tab->id, 101ul);
 }
 
+TEST_F(EngineTest, TabRemoved) {
+  ASSERT_TRUE(ectx != nullptr);
+
+  TestWebSocketClient client;
+  client.Connect(GetPort());
+  ASSERT_TRUE(client.IsConnected());
+  ASSERT_TRUE(client.WaitForEvent("request_tab_info", 2000));
+
+  // 1. Send Initial State
+  const char* init_response =
+      "{"
+      "  \"event\": \"tabs.onAllTabs\","
+      "  \"data\": ["
+      "    { \"id\": 201, \"title\": \"Tab To Remove\", \"url\": \"http://example.com/1\" },"
+      "    { \"id\": 202, \"title\": \"Tab To Keep\", \"url\": \"http://example.com/2\" }"
+      "  ],"
+      "  \"activeTabIds\": [201]"
+      "}";
+  client.Send(init_response);
+  sleep(1);
+
+  ASSERT_NE(ectx->tab_state, nullptr);
+  EXPECT_EQ(ectx->tab_state->nb_tabs, 2);
+
+  // 2. Send Removal Event
+  const char* remove_event =
+      "{"
+      "  \"event\": \"tabs.onRemoved\","
+      "  \"data\": {"
+      "    \"tabId\": 201,"
+      "    \"removeInfo\": { \"windowId\": 1, \"isWindowClosing\": false }"
+      "  }"
+      "}";
+  client.Send(remove_event);
+  sleep(1);
+
+  // 3. Verify Removal
+  EXPECT_EQ(ectx->tab_state->nb_tabs, 1);
+  TabInfo* current = ectx->tab_state->tabs;
+  ASSERT_NE(current, nullptr);
+  EXPECT_EQ(current->id, 202ul);
+}
+
+TEST_F(EngineTest, TabCreated) {
+  ASSERT_TRUE(ectx != nullptr);
+
+  TestWebSocketClient client;
+  client.Connect(GetPort());
+  ASSERT_TRUE(client.IsConnected());
+  ASSERT_TRUE(client.WaitForEvent("request_tab_info", 2000));
+
+  // Send Created Event
+  const char* create_event =
+      "{"
+      "  \"event\": \"tabs.onCreated\","
+      "  \"data\": {"
+      "    \"id\": 301,"
+      "    \"title\": \"New Created Tab\","
+      "    \"url\": \"http://example.com/new\","
+      "    \"active\": true"
+      "  }"
+      "}";
+  client.Send(create_event);
+  sleep(1);
+
+  ASSERT_NE(ectx->tab_state, nullptr);
+  EXPECT_EQ(ectx->tab_state->nb_tabs, 1);
+  TabInfo* tab = ectx->tab_state->tabs;
+  ASSERT_NE(tab, nullptr);
+  EXPECT_EQ(tab->id, 301ul);
+  EXPECT_STREQ(tab->title, "New Created Tab");
+}
+
+TEST_F(EngineTest, TabUpdated) {
+  ASSERT_TRUE(ectx != nullptr);
+
+  TestWebSocketClient client;
+  client.Connect(GetPort());
+  ASSERT_TRUE(client.IsConnected());
+  ASSERT_TRUE(client.WaitForEvent("request_tab_info", 2000));
+
+  // 1. Send Initial State
+  const char* init_response =
+      "{"
+      "  \"event\": \"tabs.onAllTabs\","
+      "  \"data\": ["
+      "    { \"id\": 401, \"title\": \"Old Title\", \"url\": \"http://example.com\" }"
+      "  ],"
+      "  \"activeTabIds\": [401]"
+      "}";
+  client.Send(init_response);
+  sleep(1);
+
+  ASSERT_NE(ectx->tab_state, nullptr);
+  EXPECT_EQ(ectx->tab_state->nb_tabs, 1);
+  TabInfo* tab = ectx->tab_state->tabs;
+  EXPECT_STREQ(tab->title, "Old Title");
+
+  // 2. Send Update Event
+  const char* update_event =
+      "{"
+      "  \"event\": \"tabs.onUpdated\","
+      "  \"data\": {"
+      "    \"tabId\": 401,"
+      "    \"changeInfo\": { \"title\": \"New Title\" },"
+      "    \"tab\": {"
+      "      \"id\": 401,"
+      "      \"title\": \"New Title\","
+      "      \"url\": \"http://example.com\","
+      "      \"active\": true"
+      "    }"
+      "  }"
+      "}";
+  client.Send(update_event);
+  sleep(1);
+
+  // 3. Verify Update
+  EXPECT_EQ(ectx->tab_state->nb_tabs, 1);
+  tab = ectx->tab_state->tabs;
+  EXPECT_STREQ(tab->title, "New Title");
+}
+
 int main(int argc, char** argv) {
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();
