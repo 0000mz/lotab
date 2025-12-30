@@ -25,10 +25,10 @@ class TestWebSocketClient {
   }
 
   void Connect(const uint32_t port) {
-    if (running)
+    if (running_)
       return;
-    this->port = port;
-    running = true;
+    this->port_ = port;
+    running_ = true;
 
     struct lws_context_creation_info info;
     memset(&info, 0, sizeof info);
@@ -43,13 +43,13 @@ class TestWebSocketClient {
         LWS_PROTOCOL_LIST_TERM};
     info.protocols = protocols;
 
-    context = lws_create_context(&info);
-    if (!context)
+    context_ = lws_create_context(&info);
+    if (!context_)
       return;
 
     struct lws_client_connect_info i;
     memset(&i, 0, sizeof i);
-    i.context = context;
+    i.context = context_;
     i.address = "localhost";
     i.port = port;
     i.path = "/";
@@ -59,37 +59,37 @@ class TestWebSocketClient {
     i.userdata = this;
 
     ASSERT_NE(lws_client_connect_via_info(&i), nullptr) << "Error connecting to server.";
-    service_thread = std::thread(&TestWebSocketClient::ServiceLoop, this);
+    service_thread_ = std::thread(&TestWebSocketClient::ServiceLoop, this);
 
     // Wait for connection AND writeable
     int retries = 50;
-    while (retries-- > 0 && (!connected || !writeable)) {
+    while (retries-- > 0 && (!connected_ || !writeable_)) {
       std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
   }
 
   void Disconnect() {
-    if (!running)
+    if (!running_)
       return;
-    running = false;
-    if (service_thread.joinable()) {
-      service_thread.join();
+    running_ = false;
+    if (service_thread_.joinable()) {
+      service_thread_.join();
     }
-    connected = false;
+    connected_ = false;
   }
 
   void Send(const std::string& msg) {
-    send_mutex.lock();
-    send_queue.push(msg);
-    send_mutex.unlock();
-    if (wsi)
-      lws_callback_on_writable(wsi);
+    send_mutex_.lock();
+    send_queue_.push(msg);
+    send_mutex_.unlock();
+    if (wsi_)
+      lws_callback_on_writable(wsi_);
   }
 
   std::vector<std::string> GetReceivedMessages() {
-    std::lock_guard<std::mutex> lock(recv_mutex);
-    std::vector<std::string> msgs = received_msgs;
-    received_msgs.clear();
+    std::lock_guard<std::mutex> lock(recv_mutex_);
+    std::vector<std::string> msgs = received_msgs_;
+    received_msgs_.clear();
     return msgs;
   }
 
@@ -97,8 +97,8 @@ class TestWebSocketClient {
     int waited = 0;
     while (waited < timeout_ms) {
       {
-        std::lock_guard<std::mutex> lock(recv_mutex);
-        for (auto it = received_msgs.begin(); it != received_msgs.end();) {
+        std::lock_guard<std::mutex> lock(recv_mutex_);
+        for (auto it = received_msgs_.begin(); it != received_msgs_.end();) {
           bool match = false;
           cJSON* json = cJSON_Parse(it->c_str());
           if (json) {
@@ -110,7 +110,7 @@ class TestWebSocketClient {
           }
 
           if (match) {
-            received_msgs.erase(it);
+            received_msgs_.erase(it);
             return true;
           } else {
             ++it;
@@ -124,23 +124,23 @@ class TestWebSocketClient {
   }
 
   bool IsConnected() const {
-    return connected;
+    return connected_;
   }
 
  private:
-  struct lws_context* context = nullptr;
-  struct lws* wsi = nullptr;
-  std::thread service_thread;
-  std::atomic<bool> running{false};
-  std::atomic<bool> connected{false};
-  std::atomic<bool> writeable{false};
-  uint32_t port = 0;
+  struct lws_context* context_ = nullptr;
+  struct lws* wsi_ = nullptr;
+  std::thread service_thread_;
+  std::atomic<bool> running_{false};
+  std::atomic<bool> connected_{false};
+  std::atomic<bool> writeable_{false};
+  uint32_t port_ = 0;
 
-  std::vector<std::string> received_msgs;
-  std::mutex recv_mutex;
+  std::vector<std::string> received_msgs_;
+  std::mutex recv_mutex_;
 
-  std::queue<std::string> send_queue;
-  std::mutex send_mutex;
+  std::queue<std::string> send_queue_;
+  std::mutex send_mutex_;
 
   static int Callback(struct lws* wsi, enum lws_callback_reasons reason, void* user, void* in, size_t len) {
     TestWebSocketClient* client = (TestWebSocketClient*)user;
@@ -154,25 +154,25 @@ class TestWebSocketClient {
     switch (reason) {
       case LWS_CALLBACK_CLIENT_ESTABLISHED:
         if (client) {
-          client->connected = true;
-          client->wsi = wsi;
+          client->connected_ = true;
+          client->wsi_ = wsi;
           lws_callback_on_writable(wsi);
         }
         break;
 
       case LWS_CALLBACK_CLIENT_RECEIVE:
         if (client && in && len > 0) {
-          std::lock_guard<std::mutex> lock(client->recv_mutex);
-          client->received_msgs.emplace_back(std::string((char*)in, len));
+          std::lock_guard<std::mutex> lock(client->recv_mutex_);
+          client->received_msgs_.emplace_back(std::string((char*)in, len));
         }
         break;
 
       case LWS_CALLBACK_CLIENT_WRITEABLE: {
         if (client) {
-          client->writeable = true;
-          std::lock_guard<std::mutex> lock(client->send_mutex);
-          if (!client->send_queue.empty()) {
-            std::string msg = client->send_queue.front();
+          client->writeable_ = true;
+          std::lock_guard<std::mutex> lock(client->send_mutex_);
+          if (!client->send_queue_.empty()) {
+            std::string msg = client->send_queue_.front();
             size_t len = msg.length();
             std::vector<unsigned char> buf(LWS_PRE + len + 1);
             memcpy(&buf[LWS_PRE], msg.c_str(), len);
@@ -180,7 +180,7 @@ class TestWebSocketClient {
             printf("[test] sending message to server: %s\n", buf.data());
             int n = lws_write(wsi, &buf[LWS_PRE], len, LWS_WRITE_TEXT);
             printf("TestClient: lws_write returned %d (expected %zu)\n", n, len);
-            client->send_queue.pop();
+            client->send_queue_.pop();
           }
           lws_callback_on_writable(wsi);
         }
@@ -190,8 +190,8 @@ class TestWebSocketClient {
       case LWS_CALLBACK_CLIENT_CLOSED:
       case LWS_CALLBACK_CLIENT_CONNECTION_ERROR:
         if (client) {
-          client->connected = false;
-          client->wsi = nullptr;
+          client->connected_ = false;
+          client->wsi_ = nullptr;
         }
         break;
 
@@ -202,60 +202,60 @@ class TestWebSocketClient {
   }
 
   void ServiceLoop() {
-    while (running) {
-      lws_service(context, 50);
+    while (running_) {
+      lws_service(context_, 50);
     }
 
-    lws_context_destroy(context);
-    context = nullptr;
-    wsi = nullptr;
+    lws_context_destroy(context_);
+    context_ = nullptr;
+    wsi_ = nullptr;
   }
 };
 
 class EngineTest : public ::testing::Test {
  protected:
-  EngineContext* ectx = nullptr;
-  std::thread engine_thread;
-  uint32_t port;
+  EngineContext* ectx_ = nullptr;
+  std::thread engine_thread_;
+  uint32_t port_;
 
-  static std::mutex port_mtx;
-  static int next_port;
+  static std::mutex port_mtx_;
+  static int next_port_;
 
   static uint32_t NextPort() {
-    port_mtx.lock();
-    int p = next_port++;
-    port_mtx.unlock();
+    port_mtx_.lock();
+    int p = next_port_++;
+    port_mtx_.unlock();
     return p;
   }
 
   uint32_t GetPort() {
-    return port;
+    return port_;
   }
 
   void SetUp() override {
     engine_set_log_level(LOG_LEVEL_TRACE);
 
-    port = NextPort();
+    port_ = NextPort();
     EngineCreationInfo create_info = {
-        .port = port,
+        .port = port_,
         .enable_statusbar = 0,
     };
-    int ret = engine_init(&ectx, create_info);
+    int ret = engine_init(&ectx_, create_info);
     ASSERT_EQ(ret, 0);
-    ASSERT_NE(ectx, nullptr);
-    engine_thread = std::thread(engine_run, ectx);
+    ASSERT_NE(ectx_, nullptr);
+    engine_thread_ = std::thread(engine_run, ectx_);
     sleep(2);
   }
 
   void TearDown() override {
     printf("EngineTest::TearDown\n");
-    if (ectx) {
+    if (ectx_) {
       printf("engine::destroy\n");
-      engine_destroy(ectx);
-      ectx = nullptr;
+      engine_destroy(ectx_);
+      ectx_ = nullptr;
     }
-    if (engine_thread.joinable()) {
-      engine_thread.join();
+    if (engine_thread_.joinable()) {
+      engine_thread_.join();
     }
   }
 
@@ -276,11 +276,11 @@ class EngineTest : public ::testing::Test {
   }
 };
 
-int EngineTest::next_port = 9002;
-std::mutex EngineTest::port_mtx;
+int EngineTest::next_port_ = 9002;
+std::mutex EngineTest::port_mtx_;
 
 TEST_F(EngineTest, EngineInit) {
-  ASSERT_TRUE(ectx != nullptr);
+  ASSERT_TRUE(ectx_ != nullptr);
 
   TestWebSocketClient client;
   client.Connect(GetPort());
@@ -301,17 +301,17 @@ TEST_F(EngineTest, EngineInit) {
   printf("[test] Sent mock response\n");
   sleep(1);
 
-  ASSERT_NE(ectx->tab_state, nullptr);
-  EXPECT_EQ(ectx->tab_state->nb_tabs, 2);
+  ASSERT_NE(ectx_->tab_state, nullptr);
+  EXPECT_EQ(ectx_->tab_state->nb_tabs, 2);
 
   TabInfo* active_tab = nullptr;
-  FindActiveTab(ectx, &active_tab);
+  FindActiveTab(ectx_, &active_tab);
   ASSERT_NE(active_tab, nullptr);
   EXPECT_EQ(active_tab->id, 101ul);
 }
 
 TEST_F(EngineTest, TabRemoved) {
-  ASSERT_TRUE(ectx != nullptr);
+  ASSERT_TRUE(ectx_ != nullptr);
 
   TestWebSocketClient client;
   client.Connect(GetPort());
@@ -329,8 +329,8 @@ TEST_F(EngineTest, TabRemoved) {
   client.Send(init_response);
   sleep(1);
 
-  ASSERT_NE(ectx->tab_state, nullptr);
-  EXPECT_EQ(ectx->tab_state->nb_tabs, 2);
+  ASSERT_NE(ectx_->tab_state, nullptr);
+  EXPECT_EQ(ectx_->tab_state->nb_tabs, 2);
 
   // 2. Send Removal Event
   const char* remove_event = R"pb({
@@ -344,14 +344,14 @@ TEST_F(EngineTest, TabRemoved) {
   sleep(1);
 
   // 3. Verify Removal
-  EXPECT_EQ(ectx->tab_state->nb_tabs, 1);
-  TabInfo* current = ectx->tab_state->tabs;
+  EXPECT_EQ(ectx_->tab_state->nb_tabs, 1);
+  TabInfo* current = ectx_->tab_state->tabs;
   ASSERT_NE(current, nullptr);
   EXPECT_EQ(current->id, 202ul);
 }
 
 TEST_F(EngineTest, TabCreated) {
-  ASSERT_TRUE(ectx != nullptr);
+  ASSERT_TRUE(ectx_ != nullptr);
 
   TestWebSocketClient client;
   client.Connect(GetPort());
@@ -367,16 +367,16 @@ TEST_F(EngineTest, TabCreated) {
   client.Send(create_event);
   sleep(1);
 
-  ASSERT_NE(ectx->tab_state, nullptr);
-  EXPECT_EQ(ectx->tab_state->nb_tabs, 1);
-  TabInfo* tab = ectx->tab_state->tabs;
+  ASSERT_NE(ectx_->tab_state, nullptr);
+  EXPECT_EQ(ectx_->tab_state->nb_tabs, 1);
+  TabInfo* tab = ectx_->tab_state->tabs;
   ASSERT_NE(tab, nullptr);
   EXPECT_EQ(tab->id, 301ul);
   EXPECT_STREQ(tab->title, "New Created Tab");
 }
 
 TEST_F(EngineTest, TabUpdated) {
-  ASSERT_TRUE(ectx != nullptr);
+  ASSERT_TRUE(ectx_ != nullptr);
 
   TestWebSocketClient client;
   client.Connect(GetPort());
@@ -393,9 +393,9 @@ TEST_F(EngineTest, TabUpdated) {
   client.Send(init_response);
   sleep(1);
 
-  ASSERT_NE(ectx->tab_state, nullptr);
-  EXPECT_EQ(ectx->tab_state->nb_tabs, 1);
-  TabInfo* tab = ectx->tab_state->tabs;
+  ASSERT_NE(ectx_->tab_state, nullptr);
+  EXPECT_EQ(ectx_->tab_state->nb_tabs, 1);
+  TabInfo* tab = ectx_->tab_state->tabs;
   EXPECT_STREQ(tab->title, "Old Title");
 
   // 2. Send Update Event
@@ -412,8 +412,8 @@ TEST_F(EngineTest, TabUpdated) {
   sleep(1);
 
   // 3. Verify Update
-  EXPECT_EQ(ectx->tab_state->nb_tabs, 1);
-  tab = ectx->tab_state->tabs;
+  EXPECT_EQ(ectx_->tab_state->nb_tabs, 1);
+  tab = ectx_->tab_state->tabs;
   EXPECT_STREQ(tab->title, "New Title");
 }
 
