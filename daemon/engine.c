@@ -222,12 +222,6 @@ static void* uds_read_thread_run(void* arg) {
     }
   }
 
-  if (sc->uds_fd >= 0) {
-    close(sc->uds_fd);
-    sc->uds_fd = -1;
-    vlog(LOG_LEVEL_INFO, sc, "UDS socket closed\n");
-  }
-
   free(buffer);
   return NULL;
 }
@@ -646,6 +640,7 @@ void engine_destroy(EngineContext* ectx) {
         shutdown(ectx->serv_ctx->uds_fd, SHUT_RDWR);
         close(ectx->serv_ctx->uds_fd);
         ectx->serv_ctx->uds_fd = -1;
+        unlink(uds_path);
       }
       pthread_join(ectx->serv_ctx->uds_read_thread, NULL);
     }
