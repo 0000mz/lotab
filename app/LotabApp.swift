@@ -1,5 +1,5 @@
-import SwiftUI
 import Foundation
+import SwiftUI
 
 // NOTE: For ensuring that the application has focus on open.
 // Might not be necessary -- seems the issues I am facing might just be
@@ -50,19 +50,22 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             if tm.isMarking {
                 if tm.isCreatingLabel {
                     // --- CREATION INPUT MODE ---
-                    if event.keyCode == 53 { // ESC: Cancel creation, back to list
+                    if event.keyCode == 53 {  // ESC: Cancel creation, back to list
                         tm.isCreatingLabel = false
                         tm.markText = ""
                         return nil
                     }
-                    if event.keyCode == 36 { // Enter: Create Label
+                    if event.keyCode == 36 {  // Enter: Create Label
                         let label = tm.markText.trimmingCharacters(in: .whitespacesAndNewlines)
                         if !label.isEmpty {
                             if !tm.allLabels.contains(label) {
                                 tm.allLabels.append(label)
                             }
                             // Apply to selected tabs
-                            let targets = tm.multiSelection.isEmpty ? (tm.selection != nil ? [tm.selection!] : []) : Array(tm.multiSelection)
+                            let targets =
+                                tm.multiSelection.isEmpty
+                                ? (tm.selection != nil ? [tm.selection!] : [])
+                                : Array(tm.multiSelection)
                             for id in targets {
                                 var labels = tm.tabLabels[id] ?? []
                                 labels.insert(label)
@@ -74,34 +77,37 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                         tm.markText = ""
                         return nil
                     }
-                    if event.keyCode == 51 { // Backspace
-                         if !tm.markText.isEmpty {
-                              tm.markText.removeLast()
-                         }
-                         return nil
+                    if event.keyCode == 51 {  // Backspace
+                        if !tm.markText.isEmpty {
+                            tm.markText.removeLast()
+                        }
+                        return nil
                     }
-                    if let chars = event.characters, !chars.isEmpty, !event.modifierFlags.contains(.command) && event.keyCode != 51 {
+                    if let chars = event.characters, !chars.isEmpty,
+                        !event.modifierFlags.contains(.command) && event.keyCode != 51
+                    {
                         tm.markText += chars
                         return nil
                     }
                 } else {
                     // --- MENU SELECTION MODE ---
-                    if event.keyCode == 53 { // ESC: Exit Marking
+                    if event.keyCode == 53 {  // ESC: Exit Marking
                         tm.isMarking = false
                         return nil
                     }
-                    let totalItems = 1 + tm.allLabels.count // 0=Create, 1..N=Labels
+                    let totalItems = 1 + tm.allLabels.count  // 0=Create, 1..N=Labels
 
-                    if event.keyCode == 125 || event.keyCode == 38 { // Down or 'j'
-                         tm.labelListSelection = (tm.labelListSelection + 1) % totalItems
-                         return nil
+                    if event.keyCode == 125 || event.keyCode == 38 {  // Down or 'j'
+                        tm.labelListSelection = (tm.labelListSelection + 1) % totalItems
+                        return nil
                     }
-                    if event.keyCode == 126 || event.keyCode == 40 { // Up or 'k'
-                         tm.labelListSelection = (tm.labelListSelection - 1 + totalItems) % totalItems
-                         return nil
+                    if event.keyCode == 126 || event.keyCode == 40 {  // Up or 'k'
+                        tm.labelListSelection =
+                            (tm.labelListSelection - 1 + totalItems) % totalItems
+                        return nil
                     }
 
-                    if event.keyCode == 36 { // Enter
+                    if event.keyCode == 36 {  // Enter
                         if tm.labelListSelection == 0 {
                             // "Create New" selected
                             tm.isCreatingLabel = true
@@ -112,7 +118,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                             if index >= 0 && index < tm.allLabels.count {
                                 let label = tm.allLabels[index]
                                 // Apply
-                                let targets = tm.multiSelection.isEmpty ? (tm.selection != nil ? [tm.selection!] : []) : Array(tm.multiSelection)
+                                let targets =
+                                    tm.multiSelection.isEmpty
+                                    ? (tm.selection != nil ? [tm.selection!] : [])
+                                    : Array(tm.multiSelection)
                                 for id in targets {
                                     var labels = tm.tabLabels[id] ?? []
                                     labels.insert(label)
@@ -129,36 +138,36 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
             // Select by Label Mode
             if tm.isSelectingByLabel {
-                if event.keyCode == 53 { // ESC
+                if event.keyCode == 53 {  // ESC
                     tm.isSelectingByLabel = false
                     return nil
                 }
                 let total = tm.allLabels.count
                 if total > 0 {
-                    if event.keyCode == 125 || event.keyCode == 38 { // Down/j
+                    if event.keyCode == 125 || event.keyCode == 38 {  // Down/j
                         tm.labelSelectionCursor = (tm.labelSelectionCursor + 1) % total
                         return nil
                     }
-                    if event.keyCode == 126 || event.keyCode == 40 { // Up/k
-                         tm.labelSelectionCursor = (tm.labelSelectionCursor - 1 + total) % total
-                         return nil
+                    if event.keyCode == 126 || event.keyCode == 40 {  // Up/k
+                        tm.labelSelectionCursor = (tm.labelSelectionCursor - 1 + total) % total
+                        return nil
                     }
-                    if event.keyCode == 49 { // Space
-                         let label = tm.allLabels[tm.labelSelectionCursor]
-                         if tm.labelSelectionTemp.contains(label) {
-                             tm.labelSelectionTemp.remove(label)
-                         } else {
-                             tm.labelSelectionTemp.insert(label)
-                         }
-                         return nil
+                    if event.keyCode == 49 {  // Space
+                        let label = tm.allLabels[tm.labelSelectionCursor]
+                        if tm.labelSelectionTemp.contains(label) {
+                            tm.labelSelectionTemp.remove(label)
+                        } else {
+                            tm.labelSelectionTemp.insert(label)
+                        }
+                        return nil
                     }
-                    if event.keyCode == 36 { // Enter
+                    if event.keyCode == 36 {  // Enter
                         if !tm.labelSelectionTemp.isEmpty {
                             let matching = tm.tabs.filter { tab in
                                 let labels = tm.tabLabels[tab.id] ?? []
                                 return !labels.isDisjoint(with: tm.labelSelectionTemp)
                             }.map { $0.id }
-                             tm.multiSelection.formUnion(matching)
+                            tm.multiSelection.formUnion(matching)
                         }
                         tm.isSelectingByLabel = false
                         return nil
@@ -169,16 +178,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
             // Toggle Filter Mode OR Handle characters
             if tm.isFiltering {
-                if event.keyCode == 53 { // ESC: Cancel filter
+                if event.keyCode == 53 {  // ESC: Cancel filter
                     tm.isFiltering = false
                     tm.filterText = ""
                     return nil
                 }
-                if event.keyCode == 36 { // Enter: Confirm filter
+                if event.keyCode == 36 {  // Enter: Confirm filter
                     tm.isFiltering = false
                     return nil
                 }
-                if event.keyCode == 51 { // Backspace
+                if event.keyCode == 51 {  // Backspace
                     if !tm.filterText.isEmpty {
                         tm.filterText.removeLast()
                     }
@@ -187,22 +196,24 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
                 // Handle typing AND swallow navigation keys
                 if event.keyCode == 126 || event.keyCode == 125 {
-                    return nil // Swallow arrows to prevent list navigation
+                    return nil  // Swallow arrows to prevent list navigation
                 }
 
-                if let chars = event.characters, !chars.isEmpty, !event.modifierFlags.contains(.command) {
+                if let chars = event.characters, !chars.isEmpty,
+                    !event.modifierFlags.contains(.command)
+                {
                     tm.filterText += chars
                     return nil
                 }
             } else {
                 // Normal Mode
-                if event.keyCode == 44 { // Slash: Start filter
+                if event.keyCode == 44 {  // Slash: Start filter
                     if !tm.multiSelection.isEmpty { return nil }
                     tm.isFiltering = true
                     tm.filterText = ""
                     return nil
                 }
-                if event.keyCode == 49 { // Space: Toggle Multi-Selection
+                if event.keyCode == 49 {  // Space: Toggle Multi-Selection
                     if let sel = tm.selection {
                         if tm.multiSelection.contains(sel) {
                             tm.multiSelection.remove(sel)
@@ -211,30 +222,32 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                         }
                     }
                 }
-                if event.keyCode == 46 { // m: Mark tabs
+                if event.keyCode == 46 {  // m: Mark tabs
                     if !tm.multiSelection.isEmpty {
-                         tm.isMarking = true
-                         tm.isCreatingLabel = false
-                         tm.labelListSelection = 0
-                         tm.markText = ""
+                        tm.isMarking = true
+                        tm.isCreatingLabel = false
+                        tm.labelListSelection = 0
+                        tm.markText = ""
                     }
                     return nil
                 }
-                if event.keyCode == 0 && event.modifierFlags.contains(.shift) { // A with Shift: Select All
+                if event.keyCode == 0 && event.modifierFlags.contains(.shift) {  // A with Shift: Select All
                     tm.multiSelection = Set(tm.displayedTabs.map { $0.id })
                     return nil
                 }
-                if event.keyCode == 1 { // s: Select by Label
+                if event.keyCode == 1 {  // s: Select by Label
                     tm.isSelectingByLabel = true
                     tm.labelSelectionCursor = 0
                     tm.labelSelectionTemp = []
                     return nil
                 }
-                if event.keyCode == 7 { // x: Close Selected Tabs
+                if event.keyCode == 7 {  // x: Close Selected Tabs
                     let idsToClose: [Int]
                     if event.modifierFlags.contains(.shift) && !tm.multiSelection.isEmpty {
                         // Close all but selected
-                        idsToClose = tm.tabs.filter { !tm.multiSelection.contains($0.id) }.map { $0.id }
+                        idsToClose = tm.tabs.filter { !tm.multiSelection.contains($0.id) }.map {
+                            $0.id
+                        }
                     } else {
                         // Normal Close
                         if !tm.multiSelection.isEmpty {
@@ -252,7 +265,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     }
                     return nil
                 }
-                if event.keyCode == 53 { // ESC
+                if event.keyCode == 53 {  // ESC
                     if !tm.filterText.isEmpty {
                         tm.filterText = ""
                         return nil
@@ -307,9 +320,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             if !tm.isFiltering && event.keyCode == 36 {
                 if !tm.multiSelection.isEmpty { return nil }
                 if let selectedId = Lotab.shared.selection {
-                     self.sendUDSMessage(event: "tab_selected", data: ["tabId": selectedId])
-                     self.hideUI()
-                     return nil
+                    self.sendUDSMessage(event: "tab_selected", data: ["tabId": selectedId])
+                    self.hideUI()
+                    return nil
                 }
             }
             return event
@@ -381,10 +394,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         socketPath.withCString { src in
             withUnsafeMutablePointer(to: &addr.sun_path) { dest in
                 let destPtr = UnsafeMutableRawPointer(dest).assumingMemoryBound(to: Int8.self)
-                strncpy(destPtr, src, 104) // 104 is the max length for sun_path
+                strncpy(destPtr, src, 104)  // 104 is the max length for sun_path
             }
         }
-        addr.sun_len = UInt8(MemoryLayout<sa_family_t>.size + MemoryLayout<UInt8>.size + pathLen + 1)
+        addr.sun_len = UInt8(
+            MemoryLayout<sa_family_t>.size + MemoryLayout<UInt8>.size + pathLen + 1)
 
         let addrLen = socklen_t(addr.sun_len)
         let bindResult = withUnsafePointer(to: &addr) {
@@ -394,16 +408,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         guard bindResult == 0 else {
-            vlog_s(.error, LotabApp.appClass, "Failed to bind socket. Error: \(String(cString: strerror(errno)))");
+            vlog_s(
+                .error, LotabApp.appClass,
+                "Failed to bind socket. Error: \(String(cString: strerror(errno)))")
             return
         }
 
         guard Darwin.listen(serverSocket, 5) == 0 else {
-            vlog_s(.error, LotabApp.appClass, "Failed to listen on socket");
+            vlog_s(.error, LotabApp.appClass, "Failed to listen on socket")
             return
         }
 
-        vlog_s(.info, LotabApp.appClass, "UDS server started at \(socketPath)");
+        vlog_s(.info, LotabApp.appClass, "UDS server started at \(socketPath)")
         Thread.detachNewThread {
             self.acceptConnections()
         }
@@ -438,18 +454,20 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             // 1. Read Header (4 bytes)
             var headerData = Data(count: 4)
             let headerBytesRead = headerData.withUnsafeMutableBytes { buffer in
-                 return read(clientSocket, buffer.baseAddress, 4)
+                return read(clientSocket, buffer.baseAddress, 4)
             }
 
             if headerBytesRead == 0 {
                 vlog_s(.info, LotabApp.appClass, "UDS connection closed by peer")
                 break
             } else if headerBytesRead < 0 {
-                vlog_s(.error, LotabApp.appClass, "UDS header read error: \(String(cString: strerror(errno)))")
+                vlog_s(
+                    .error, LotabApp.appClass,
+                    "UDS header read error: \(String(cString: strerror(errno)))")
                 break
             } else if headerBytesRead < 4 {
-                 vlog_s(.error, LotabApp.appClass, "UDS partial header read")
-                 break
+                vlog_s(.error, LotabApp.appClass, "UDS partial header read")
+                break
             }
 
             let msgLen = headerData.withUnsafeBytes { $0.load(as: UInt32.self).littleEndian }
@@ -461,7 +479,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
             payloadData.withUnsafeMutableBytes { buffer in
                 while totalRead < Int(msgLen) {
-                    let n = read(clientSocket, buffer.baseAddress! + totalRead, Int(msgLen) - totalRead)
+                    let n = read(
+                        clientSocket, buffer.baseAddress! + totalRead, Int(msgLen) - totalRead)
                     if n <= 0 {
                         readError = true
                         break
@@ -471,8 +490,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
 
             if readError {
-                 vlog_s(.error, LotabApp.appClass, "UDS payload read error or closed prematurely")
-                 break
+                vlog_s(.error, LotabApp.appClass, "UDS payload read error or closed prematurely")
+                break
             }
 
             // 3. Process Message
@@ -482,26 +501,36 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     // Decode tabs
                     if let jsonData = message.data(using: .utf8) {
                         do {
-                            let payload = try JSONDecoder().decode(TabListPayload.self, from: jsonData)
-                            vlog_s(.info, LotabApp.appClass, "Successfully decoded \(payload.data.tabs.count) tabs")
+                            let payload = try JSONDecoder().decode(
+                                TabListPayload.self, from: jsonData)
+                            vlog_s(
+                                .info, LotabApp.appClass,
+                                "Successfully decoded \(payload.data.tabs.count) tabs")
                             DispatchQueue.main.async {
                                 Lotab.shared.tabs = payload.data.tabs
                             }
                         } catch {
-                            vlog_s(.error, LotabApp.appClass, "JSON Decoding Error for tabs_update: \(error)")
+                            vlog_s(
+                                .error, LotabApp.appClass,
+                                "JSON Decoding Error for tabs_update: \(error)")
                         }
                     }
                 } else if message.contains("tasks_update") {
                     // Decode tasks
                     if let jsonData = message.data(using: .utf8) {
                         do {
-                            let payload = try JSONDecoder().decode(TaskListPayload.self, from: jsonData)
-                            vlog_s(.info, LotabApp.appClass, "Successfully decoded \(payload.data.tasks.count) tasks")
+                            let payload = try JSONDecoder().decode(
+                                TaskListPayload.self, from: jsonData)
+                            vlog_s(
+                                .info, LotabApp.appClass,
+                                "Successfully decoded \(payload.data.tasks.count) tasks")
                             DispatchQueue.main.async {
                                 Lotab.shared.tasks = payload.data.tasks
                             }
                         } catch {
-                            vlog_s(.error, LotabApp.appClass, "JSON Decoding Error for tasks_update: \(error)")
+                            vlog_s(
+                                .error, LotabApp.appClass,
+                                "JSON Decoding Error for tasks_update: \(error)")
                         }
                     }
                 } else if message.contains("ui_visibility_toggle") {
@@ -519,7 +548,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         let messageParams: [String: Any] = [
             "event": event,
-            "data": data
+            "data": data,
         ]
 
         do {
@@ -535,7 +564,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
 
             if result < 0 {
-                vlog_s(.error, LotabApp.appClass, "Failed to send UDS message: \(String(cString: strerror(errno)))")
+                vlog_s(
+                    .error, LotabApp.appClass,
+                    "Failed to send UDS message: \(String(cString: strerror(errno)))")
             } else {
                 vlog_s(.info, LotabApp.appClass, "uds-send: \(event) (len: \(jsonData.count))")
             }
@@ -578,9 +609,9 @@ class Lotab: ObservableObject {
 
     @Published var filterText: String = ""
     @Published var isFiltering: Bool = false
-    @Published var isMarking: Bool = false // Marking Mode
-    @Published var isCreatingLabel: Bool = false // Sub-mode: Creating Label Input
-    @Published var labelListSelection: Int = 0 // 0 = Create New, 1+ = Labels
+    @Published var isMarking: Bool = false  // Marking Mode
+    @Published var isCreatingLabel: Bool = false  // Sub-mode: Creating Label Input
+    @Published var labelListSelection: Int = 0  // 0 = Create New, 1+ = Labels
     @Published var markText: String = ""
     @Published var tabLabels: [Int: Set<String>] = [:]
     @Published var allLabels: [String] = ["Work", "Personal", "Read Later"]
@@ -592,7 +623,9 @@ class Lotab: ObservableObject {
     @Published var labelSelectionTemp: Set<String> = []
 
     var displayedTabs: [BrowserTab] {
-        let filtered = filterText.isEmpty ? tabs : tabs.filter { $0.title.localizedCaseInsensitiveContains(filterText) }
+        let filtered =
+            filterText.isEmpty
+            ? tabs : tabs.filter { $0.title.localizedCaseInsensitiveContains(filterText) }
         let active = filtered.filter { $0.active }
         let other = filtered.filter { !$0.active }
         return active + other

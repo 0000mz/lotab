@@ -1,0 +1,10 @@
+--indent 4
+--allman false
+--header strip
+--trimwhitespace always
+--semicolons inline
+--linebreaks lf
+--commas always
+--ranges spacing
+--trimwhitespace always
+--exclude **/subprojects/**,**/build/**

@@ -65,8 +65,9 @@ struct ContentView: View {
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
             .onChange(of: lotab.tabs) { newTabs in
-                if lotab.selection == nil || !newTabs.contains(where: { $0.id == lotab.selection }) {
-                     lotab.selection = newTabs.first(where: { $0.active })?.id ?? newTabs.first?.id
+                if lotab.selection == nil || !newTabs.contains(where: { $0.id == lotab.selection })
+                {
+                    lotab.selection = newTabs.first(where: { $0.active })?.id ?? newTabs.first?.id
                 }
             }
             .onChange(of: lotab.selection) { newSel in
@@ -76,7 +77,8 @@ struct ContentView: View {
             }
             .onAppear {
                 if lotab.selection == nil {
-                    lotab.selection = lotab.tabs.first(where: { $0.active })?.id ?? lotab.tabs.first?.id
+                    lotab.selection =
+                        lotab.tabs.first(where: { $0.active })?.id ?? lotab.tabs.first?.id
                 }
             }
         }
@@ -107,7 +109,7 @@ struct ContentView: View {
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
             .onChange(of: lotab.labelListSelection) { newSel in
-                 proxy.scrollTo(newSel, anchor: .center)
+                proxy.scrollTo(newSel, anchor: .center)
             }
         }
     }
@@ -118,8 +120,8 @@ struct ContentView: View {
             Spacer()
             if index != 0 {
                 RoundedRectangle(cornerRadius: 2)
-                   .fill(Color.generate(from: text))
-                   .frame(width: 12, height: 12)
+                    .fill(Color.generate(from: text))
+                    .frame(width: 12, height: 12)
             }
         }
         .padding(.vertical, 4)
@@ -159,36 +161,49 @@ struct ContentView: View {
     private var labelMultiSelectionView: some View {
         ScrollViewReader { proxy in
             List {
-                Section(header: Text("Select tabs by label(s)").font(.caption).foregroundColor(.secondary)) {
+                Section(
+                    header: Text("Select tabs by label(s)").font(.caption).foregroundColor(
+                        .secondary)
+                ) {
                     ForEach(Array(lotab.allLabels.enumerated()), id: \.offset) { index, label in
-                    HStack {
-                         Image(systemName: lotab.labelSelectionTemp.contains(label) ? "checkmark.square.fill" : "square")
-                            .foregroundColor(lotab.labelSelectionCursor == index ? .white : (lotab.labelSelectionTemp.contains(label) ? .accentColor : .secondary))
-                        Text(label)
-                            .foregroundColor(lotab.labelSelectionCursor == index ? .white : .primary)
-                        Spacer()
-                        RoundedRectangle(cornerRadius: 2)
-                           .fill(Color.generate(from: label))
-                           .frame(width: 12, height: 12)
+                        HStack {
+                            Image(
+                                systemName: lotab.labelSelectionTemp.contains(label)
+                                    ? "checkmark.square.fill" : "square"
+                            )
+                            .foregroundColor(
+                                lotab.labelSelectionCursor == index
+                                    ? .white
+                                    : (lotab.labelSelectionTemp.contains(label)
+                                        ? .accentColor : .secondary))
+                            Text(label)
+                                .foregroundColor(
+                                    lotab.labelSelectionCursor == index ? .white : .primary)
+                            Spacer()
+                            RoundedRectangle(cornerRadius: 2)
+                                .fill(Color.generate(from: label))
+                                .frame(width: 12, height: 12)
+                        }
+                        .padding(.vertical, 4)
+                        .padding(.horizontal, 8)
+                        .background(
+                            RoundedRectangle(cornerRadius: 6)
+                                .fill(
+                                    lotab.labelSelectionCursor == index
+                                        ? Color.accentColor : Color.clear)
+                        )
+                        .padding(.top, index == 0 ? 8 : 0)
+                        .listRowSeparator(.hidden)
+                        .listRowBackground(Color.clear)
+                        .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
+                        .id(index)
                     }
-                    .padding(.vertical, 4)
-                    .padding(.horizontal, 8)
-                    .background(
-                        RoundedRectangle(cornerRadius: 6)
-                            .fill(lotab.labelSelectionCursor == index ? Color.accentColor : Color.clear)
-                    )
-                    .padding(.top, index == 0 ? 8 : 0)
-                    .listRowSeparator(.hidden)
-                    .listRowBackground(Color.clear)
-                    .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
-                    .id(index)
-                }
                 }
             }
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
             .onChange(of: lotab.labelSelectionCursor) { newSel in
-                 proxy.scrollTo(newSel, anchor: .center)
+                proxy.scrollTo(newSel, anchor: .center)
             }
         }
     }
@@ -196,15 +211,20 @@ struct ContentView: View {
     private func tabRow(_ tab: BrowserTab) -> some View {
         let isSelected = lotab.selection == tab.id
         return HStack {
-            Image(systemName: lotab.multiSelection.contains(tab.id) ? "checkmark.square.fill" : "square")
-                .foregroundColor(isSelected ? .white : (lotab.multiSelection.contains(tab.id) ? .accentColor : .secondary))
+            Image(
+                systemName: lotab.multiSelection.contains(tab.id)
+                    ? "checkmark.square.fill" : "square"
+            )
+            .foregroundColor(
+                isSelected
+                    ? .white : (lotab.multiSelection.contains(tab.id) ? .accentColor : .secondary))
             Text(tab.title)
                 .lineLimit(1)
                 .truncationMode(.tail)
                 .foregroundColor(isSelected ? .white : .primary)
             Spacer()
             ForEach(Array(lotab.tabLabels[tab.id] ?? []).sorted(), id: \.self) { label in
-                 Text(label)
+                Text(label)
                     .font(.system(size: 10, weight: .bold))
                     .padding(.horizontal, 4)
                     .padding(.vertical, 2)
@@ -254,46 +274,54 @@ struct ContentView: View {
 
     private var footerItems: [FooterItem] {
         var items: [FooterItem] = []
-        
+
         if lotab.isCreatingLabel {
             items.append(FooterItem(components: [.key("return")], description: "to create"))
             items.append(FooterItem(components: [.key("esc")], description: "to cancel"))
         } else if lotab.isSelectingByLabel {
-             items.append(FooterItem(components: [.key("space")], description: "to toggle"))
-             items.append(FooterItem(components: [.key("return")], description: "to confirm"))
-             items.append(FooterItem(components: [.key("esc")], description: "to cancel"))
+            items.append(FooterItem(components: [.key("space")], description: "to toggle"))
+            items.append(FooterItem(components: [.key("return")], description: "to confirm"))
+            items.append(FooterItem(components: [.key("esc")], description: "to cancel"))
         } else if lotab.isMarking {
-             items.append(FooterItem(components: [.key("return")], description: "to select"))
-             items.append(FooterItem(components: [.key("esc")], description: "to cancel"))
+            items.append(FooterItem(components: [.key("return")], description: "to select"))
+            items.append(FooterItem(components: [.key("esc")], description: "to cancel"))
         } else {
-             if lotab.isFiltering || !lotab.filterText.isEmpty {
-                  items.append(FooterItem(components: [.text("search: \(lotab.filterText)")], description: ""))
-             } else {
-                  items.append(FooterItem(components: [.key("↓"), .key("↑"), .text("or"), .key("j"), .key("k")], description: "to navigate"))
-                  if lotab.multiSelection.isEmpty {
-                       items.append(FooterItem(components: [.key("/")], description: "to search"))
-                  }
-             }
-             
-             if lotab.multiSelection.isEmpty {
-                 let desc = lotab.isFiltering ? "to search" : "to open"
-                 items.append(FooterItem(components: [.key("return")], description: desc))
-             }
-             
-             let escDesc = lotab.isFiltering || !lotab.multiSelection.isEmpty ? "to cancel" : "to close"
-             items.append(FooterItem(components: [.key("esc")], description: escDesc))
-             
-             if !lotab.multiSelection.isEmpty {
-                 items.append(FooterItem(components: [.key("x")], description: "to close"))
-                 items.append(FooterItem(components: [.key("shift"), .key("x")], description: "to close others"))
-             }
-             
-             items.append(FooterItem(components: [.key("shift"), .key("a")], description: "to select all"))
-             items.append(FooterItem(components: [.key("s")], description: "to select"))
+            if lotab.isFiltering || !lotab.filterText.isEmpty {
+                items.append(
+                    FooterItem(components: [.text("search: \(lotab.filterText)")], description: ""))
+            } else {
+                items.append(
+                    FooterItem(
+                        components: [.key("↓"), .key("↑"), .text("or"), .key("j"), .key("k")],
+                        description: "to navigate"))
+                if lotab.multiSelection.isEmpty {
+                    items.append(FooterItem(components: [.key("/")], description: "to search"))
+                }
+            }
 
-             if !lotab.multiSelection.isEmpty {
-                 items.append(FooterItem(components: [.key("m")], description: "to mark"))
-             }
+            if lotab.multiSelection.isEmpty {
+                let desc = lotab.isFiltering ? "to search" : "to open"
+                items.append(FooterItem(components: [.key("return")], description: desc))
+            }
+
+            let escDesc =
+                lotab.isFiltering || !lotab.multiSelection.isEmpty ? "to cancel" : "to close"
+            items.append(FooterItem(components: [.key("esc")], description: escDesc))
+
+            if !lotab.multiSelection.isEmpty {
+                items.append(FooterItem(components: [.key("x")], description: "to close"))
+                items.append(
+                    FooterItem(
+                        components: [.key("shift"), .key("x")], description: "to close others"))
+            }
+
+            items.append(
+                FooterItem(components: [.key("shift"), .key("a")], description: "to select all"))
+            items.append(FooterItem(components: [.key("s")], description: "to select"))
+
+            if !lotab.multiSelection.isEmpty {
+                items.append(FooterItem(components: [.key("m")], description: "to mark"))
+            }
         }
         return items
     }
@@ -308,7 +336,7 @@ struct ContentView: View {
             ForEach(0..<columns, id: \.self) { col in
                 let start = col * itemsPerColumn
                 let end = min(start + itemsPerColumn, count)
-                
+
                 if start < end {
                     VStack(alignment: .leading, spacing: 2) {
                         ForEach(items[start..<end]) { item in
@@ -316,7 +344,9 @@ struct ContentView: View {
                                 ForEach(item.components, id: \.self) { component in
                                     switch component {
                                     case .key(let k): KeyView(text: k)
-                                    case .text(let t): Text(t).font(.caption).foregroundColor(item.description.isEmpty ? .primary : .secondary)
+                                    case .text(let t):
+                                        Text(t).font(.caption).foregroundColor(
+                                            item.description.isEmpty ? .primary : .secondary)
                                     }
                                 }
                                 if !item.description.isEmpty {
@@ -377,7 +407,7 @@ extension Color {
     static func generate(from string: String) -> Color {
         var h: Int = 0
         for char in string.utf8 {
-             h = (Int(char) + ((h << 5) - h))
+            h = (Int(char) + ((h << 5) - h))
         }
 
         // Simple seeded random to get nice colors
