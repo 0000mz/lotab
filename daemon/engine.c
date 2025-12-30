@@ -168,8 +168,8 @@ static void* uds_read_thread_run(void* arg) {
   ServerContext* sc = (ServerContext*)arg;
   uint32_t msg_len = 0;
 
-  // Reuse buffer for payload to avoid constant malloc for small messages
-  #define MAX_UDS_MSG_SIZE 65536
+// Reuse buffer for payload to avoid constant malloc for small messages
+#define MAX_UDS_MSG_SIZE 65536
   char* buffer = malloc(MAX_UDS_MSG_SIZE);
   if (!buffer) {
     vlog(LOG_LEVEL_ERROR, sc, "Failed to allocate UDS buffer\n");
@@ -1045,9 +1045,15 @@ void engine_handle_event(EngineContext* ectx, DaemonEvent event, void* data) {
           TabEventType type = parse_event_type(json);
           if (type != TAB_EVENT_UNKNOWN) {
             tab_event_handle(ectx->tab_state, type, json);
-            if (type == TAB_EVENT_ALL_TABS || type == TAB_EVENT_TAB_REMOVED || type == TAB_EVENT_CREATED ||
-                type == TAB_EVENT_UPDATED) {
-              send_tabs_update_to_uds(ectx);
+            switch (type) {
+              case TAB_EVENT_ALL_TABS:
+              case TAB_EVENT_TAB_REMOVED:
+              case TAB_EVENT_CREATED:
+              case TAB_EVENT_UPDATED:
+                send_tabs_update_to_uds(ectx);
+                break;
+              default:
+                vlog(LOG_LEVEL_TRACE, ectx->serv_ctx, "ignoring tab event type: %d\n", type);
             }
           }
           cJSON_Delete(json);
