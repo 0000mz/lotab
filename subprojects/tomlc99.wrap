@@ -1,0 +1,4 @@
+[wrap-git]
+url = https://github.com/cktan/tomlc99.git
+revision = head
+patch_directory = tomlc99

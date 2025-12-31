@@ -45,6 +45,8 @@ class EngineTest : public ::testing::Test {
     EngineCreationInfo create_info = {
         .port = port_,
         .enable_statusbar = 0,
+        .app_path = nullptr,
+        .uds_path = nullptr,
     };
     if (!config_uds_path_.empty()) {
       create_info.uds_path = config_uds_path_.c_str();

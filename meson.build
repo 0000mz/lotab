@@ -6,6 +6,8 @@ lws_proj = subproject('libwebsockets', default_options: ['default_library=static
 lws_dep = lws_proj.get_variable('libwebsockets_dep')
 cjson_proj = subproject('cjson')
 cjson_dep = cjson_proj.get_variable('libcjson_dep')
+tomlc99_proj = subproject('tomlc99')
+tomlc99_dep = tomlc99_proj.get_variable('tomlc99_dep')
 carbon_dep = dependency('appleframeworks', modules : 'Carbon')
 cocoa_dep = dependency('appleframeworks', modules : 'Cocoa')
 argparse_dep = dependency('argparse')
@@ -51,13 +53,13 @@ configure_file(output : 'config.h',
 
 engine_lib = static_library('daemon_engine',
     ['daemon/engine.c', 'daemon/statusbar.m'],
-    dependencies : [lws_dep, cjson_dep, cocoa_dep, carbon_dep, engine_util_dep],
+    dependencies : [lws_dep, cjson_dep, tomlc99_dep, cocoa_dep, carbon_dep, engine_util_dep],
     install : false)
 
 engine_dep = declare_dependency(
   link_with : engine_lib,
   include_directories : include_directories('daemon'),
-  dependencies : [lws_dep, cjson_dep, cocoa_dep, carbon_dep]
+  dependencies : [lws_dep, cjson_dep, tomlc99_dep, cocoa_dep, carbon_dep]
 )
 
 executable('lotab_daemon', daemon_engine_src,
