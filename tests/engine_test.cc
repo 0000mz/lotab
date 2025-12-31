@@ -12,6 +12,7 @@
 extern "C" {
 #include <libwebsockets.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <sys/un.h>
 }
 
@@ -286,6 +287,30 @@ TEST_F(EngineTest, TabUpdated) {
   EXPECT_EQ(ectx_->tab_state->nb_tabs, 1);
   tab = ectx_->tab_state->tabs;
   EXPECT_STREQ(tab->title, "New Title");
+}
+
+TEST_F(EngineTest, ConfigCreated) {
+  char tmp_dir[] = "/tmp/lotab_test_XXXXXX";
+  ASSERT_NE(mkdtemp(tmp_dir), nullptr);
+
+  EngineCreationInfo cinfo = {
+      .port = NextPort(),
+      .enable_statusbar = 0,
+      .config_path = tmp_dir,
+  };
+
+  EngineContext* ec = nullptr;
+  ASSERT_EQ(engine_init(&ec, cinfo), 0);
+
+  std::string config_path = std::string(tmp_dir) + "/config.toml";
+  struct stat st;
+  EXPECT_EQ(stat(config_path.c_str(), &st), 0) << "Config file was not created at " << config_path;
+
+  engine_destroy(ec);
+
+  // Cleanup
+  std::string cmd = std::string("rm -rf ") + tmp_dir;
+  system(cmd.c_str());
 }
 
 int main(int argc, char** argv) {

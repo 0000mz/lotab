@@ -71,6 +71,7 @@ typedef struct EngineCreationInfo {
   int enable_statusbar;
   const char* app_path;
   const char* uds_path;
+  const char* config_path;
 } EngineCreationInfo;
 
 // Initializes the daemon engine.

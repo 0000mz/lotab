@@ -12,6 +12,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <sys/un.h>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -485,6 +486,43 @@ static void lws_log_emit_cb(int level, const char* line) {
 int engine_init(EngineContext** ectx, EngineCreationInfo cinfo) {
   assert(ectx != NULL);
   assert(*ectx == NULL);
+
+  // Setup config directory
+  char config_dir[256];
+  if (cinfo.config_path && strlen(cinfo.config_path) > 0) {
+    strncpy(config_dir, cinfo.config_path, sizeof(config_dir) - 1);
+  } else {
+    const char* home_dir = getenv("HOME");
+    if (home_dir) {
+      snprintf(config_dir, sizeof(config_dir), "%s/.lotab", home_dir);
+    } else {
+      config_dir[0] = '\0';
+    }
+  }
+
+  if (strlen(config_dir) > 0) {
+    struct stat st = {0};
+    if (stat(config_dir, &st) == -1) {
+      if (mkdir(config_dir, 0755) != 0) {
+        vlog(LOG_LEVEL_ERROR, NULL, "Failed to create config directory: %s (err: %s)\n", config_dir, strerror(errno));
+      } else {
+        vlog(LOG_LEVEL_INFO, NULL, "Created config directory: %s\n", config_dir);
+      }
+    }
+
+    char config_file[512];
+    snprintf(config_file, sizeof(config_file), "%s/config.toml", config_dir);
+    if (stat(config_file, &st) == -1) {
+      FILE* fp = fopen(config_file, "w");
+      if (fp) {
+        fprintf(fp, "# Lotab Configuration\n");
+        fclose(fp);
+        vlog(LOG_LEVEL_INFO, NULL, "Created config file: %s\n", config_file);
+      } else {
+        vlog(LOG_LEVEL_ERROR, NULL, "Failed to create config file: %s\n", strerror(errno));
+      }
+    }
+  }
 
   EngineContext* ec = NULL;
   ServerContext* sc = NULL;
