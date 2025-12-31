@@ -64,13 +64,13 @@ struct ContentView: View {
             }
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
-            .onChange(of: lotab.tabs) { newTabs in
+            .onChange(of: lotab.tabs) { _, newTabs in
                 if lotab.selection == nil || !newTabs.contains(where: { $0.id == lotab.selection })
                 {
                     lotab.selection = newTabs.first(where: { $0.active })?.id ?? newTabs.first?.id
                 }
             }
-            .onChange(of: lotab.selection) { newSel in
+            .onChange(of: lotab.selection) { _, newSel in
                 if let id = newSel {
                     proxy.scrollTo(id, anchor: .center)
                 }
@@ -108,7 +108,7 @@ struct ContentView: View {
             }
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
-            .onChange(of: lotab.labelListSelection) { newSel in
+            .onChange(of: lotab.labelListSelection) { _, newSel in
                 proxy.scrollTo(newSel, anchor: .center)
             }
         }
@@ -202,7 +202,7 @@ struct ContentView: View {
             }
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
-            .onChange(of: lotab.labelSelectionCursor) { newSel in
+            .onChange(of: lotab.labelSelectionCursor) { _, newSel in
                 proxy.scrollTo(newSel, anchor: .center)
             }
         }

@@ -64,3 +64,4 @@ TODO:
 - Debug close behavior on chrome.
 - Carve out use case of having multiple browsers connected to socket.
 - Load existing tab groups into application.
+- Change naming scheme of events from extension->daemon and daemon->ui to be easily parsable.
