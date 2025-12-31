@@ -65,3 +65,5 @@ TODO:
 - Carve out use case of having multiple browsers connected to socket.
 - Load existing tab groups into application.
 - Change naming scheme of events from extension->daemon and daemon->ui to be easily parsable.
+- Websocket+UDS: Add confirmation response to each message.
+- Add browser id to allow app to be used for multiple browser instances.
