@@ -64,6 +64,7 @@ typedef struct EngineContext {
   int app_pid;  // TODO: internalize this
   int destroyed;
   int init_statusline;
+  char* ui_toggle_keybind;
 } EngineContext;
 
 typedef struct EngineCreationInfo {

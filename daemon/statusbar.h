@@ -8,6 +8,7 @@ typedef void (*StatusBarOptionCallback)(void*);
 typedef struct StatusBarRunContext {
   StatusBarOptionCallback on_toggle;
   StatusBarOptionCallback on_quit;
+  const char* keybind;
   void* privdata;
 } StatusBarRunContext;
 

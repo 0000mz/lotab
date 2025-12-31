@@ -1,7 +1,9 @@
 #include "engine.h"
+#include <toml.h>
 
 #include <assert.h>
 #include <cJSON.h>
+#include <ctype.h>
 #include <errno.h>
 #include <libwebsockets.h>
 #include <pthread.h>
@@ -483,14 +485,16 @@ static void lws_log_emit_cb(int level, const char* line) {
   vlog(vlevel, &ec, "%s", line);
 }
 
-int engine_init(EngineContext** ectx, EngineCreationInfo cinfo) {
-  assert(ectx != NULL);
-  assert(*ectx == NULL);
+// @returns 0 on failure.
+static int setup_app_config_dir(const EngineCreationInfo* cinfo, OUT char** out_keyboard_toggle) {
+  char config_dir[512];
+  char* keybind_val = NULL;
+  static const char* DEFAULT_UI_TOGGLE_KEYBIND = "CMD+SHIFT+J";
 
-  // Setup config directory
-  char config_dir[256];
-  if (cinfo.config_path && strlen(cinfo.config_path) > 0) {
-    strncpy(config_dir, cinfo.config_path, sizeof(config_dir) - 1);
+  assert(out_keyboard_toggle);
+
+  if (cinfo->config_path && strlen(cinfo->config_path) > 0) {
+    strncpy(config_dir, cinfo->config_path, sizeof(config_dir) - 1);
   } else {
     const char* home_dir = getenv("HOME");
     if (home_dir) {
@@ -505,6 +509,7 @@ int engine_init(EngineContext** ectx, EngineCreationInfo cinfo) {
     if (stat(config_dir, &st) == -1) {
       if (mkdir(config_dir, 0755) != 0) {
         vlog(LOG_LEVEL_ERROR, NULL, "Failed to create config directory: %s (err: %s)\n", config_dir, strerror(errno));
+        goto fail;
       } else {
         vlog(LOG_LEVEL_INFO, NULL, "Created config directory: %s\n", config_dir);
       }
@@ -516,13 +521,66 @@ int engine_init(EngineContext** ectx, EngineCreationInfo cinfo) {
       FILE* fp = fopen(config_file, "w");
       if (fp) {
         fprintf(fp, "# Lotab Configuration\n");
+        fprintf(fp, "UiToggleKeybind = \"%s\"\n", DEFAULT_UI_TOGGLE_KEYBIND);
         fclose(fp);
         vlog(LOG_LEVEL_INFO, NULL, "Created config file: %s\n", config_file);
       } else {
         vlog(LOG_LEVEL_ERROR, NULL, "Failed to create config file: %s\n", strerror(errno));
       }
     }
+
+    FILE* fp = fopen(config_file, "r");
+    if (fp) {
+      char errbuf[200];
+      toml_table_t* conf = toml_parse_file(fp, errbuf, sizeof(errbuf));
+      fclose(fp);
+
+      if (conf) {
+        toml_datum_t bind = toml_string_in(conf, "UiToggleKeybind");
+        if (bind.ok) {
+          keybind_val = strdup(bind.u.s);
+          free(bind.u.s);
+          vlog(LOG_LEVEL_INFO, NULL, "Loaded keybind: %s\n", keybind_val);
+        }
+        toml_free(conf);
+      } else {
+        vlog(LOG_LEVEL_ERROR, NULL, "Failed to parse config file: %s\n", errbuf);
+      }
+    } else {
+      vlog(LOG_LEVEL_ERROR, NULL, "Failed to open config file for reading: %s\n", config_file);
+    }
   }
+
+  if (!keybind_val) {
+    keybind_val = strdup(DEFAULT_UI_TOGGLE_KEYBIND);
+  }
+
+  // Validate Keybind
+  char* upper = strdup(keybind_val);
+  for (int i = 0; upper[i]; i++) {
+    upper[i] = toupper(upper[i]);
+  }
+  int has_cmd = (strstr(upper, "CMD") != NULL) || (strstr(upper, "COMMAND") != NULL);
+  int has_shift = (strstr(upper, "SHIFT") != NULL);
+  free(upper);
+
+  if (!has_cmd || !has_shift) {
+    vlog(LOG_LEVEL_ERROR, NULL, "Invalid UiToggleKeybind: '%s'. Must contain CMD and SHIFT.\n", keybind_val);
+    goto fail;
+  }
+
+  *out_keyboard_toggle = keybind_val;
+  return 1;
+
+fail:
+  if (keybind_val)
+    free(keybind_val);
+  return 0;
+}
+
+int engine_init(EngineContext** ectx, EngineCreationInfo cinfo) {
+  assert(ectx != NULL);
+  assert(*ectx == NULL);
 
   EngineContext* ec = NULL;
   ServerContext* sc = NULL;
@@ -545,6 +603,11 @@ int engine_init(EngineContext** ectx, EngineCreationInfo cinfo) {
   // TODO: Placeholder task, remove once task creation flow is implemented.
   task_state_add(ec->task_state, "Placeholder Task");
   ec->init_statusline = cinfo.enable_statusbar != 0;
+
+  if (setup_app_config_dir(&cinfo, &ec->ui_toggle_keybind) == 0) {
+    ret = -1;
+    goto fail;
+  }
 
   // Setup websocket server
   vlog(LOG_LEVEL_INFO, ec, "Setting up websocket server.\n");
@@ -616,6 +679,9 @@ fail:
     kill_process(ec->app_pid);
     ec->app_pid = -1;
   }
+  if (ec && ec->ui_toggle_keybind) {
+    free(ec->ui_toggle_keybind);
+  }
   if (sc && sc->lws_ctx) {
     lws_context_destroy(sc->lws_ctx);
   }
@@ -650,6 +716,7 @@ void engine_run(EngineContext* ectx) {
   }
   ectx->run_ctx->on_toggle = on_status_toggle;
   ectx->run_ctx->on_quit = on_status_quit;
+  ectx->run_ctx->keybind = ectx->ui_toggle_keybind;
   ectx->run_ctx->privdata = ectx;
   if (ectx->init_statusline) {
     vlog(LOG_LEVEL_INFO, ectx, "Starting cocoa event loop\n");
@@ -704,6 +771,10 @@ void engine_destroy(EngineContext* ectx) {
   if (ectx->task_state) {
     task_state_free(ectx->task_state);
     ectx->task_state = NULL;
+  }
+  if (ectx->ui_toggle_keybind) {
+    free(ectx->ui_toggle_keybind);
+    ectx->ui_toggle_keybind = NULL;
   }
   ectx->destroyed = 1;
 }

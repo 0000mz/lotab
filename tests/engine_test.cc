@@ -47,6 +47,7 @@ class EngineTest : public ::testing::Test {
         .enable_statusbar = 0,
         .app_path = nullptr,
         .uds_path = nullptr,
+        .config_path = nullptr,
     };
     if (!config_uds_path_.empty()) {
       create_info.uds_path = config_uds_path_.c_str();
@@ -309,6 +310,66 @@ TEST_F(EngineTest, ConfigCreated) {
   EXPECT_EQ(stat(config_path.c_str(), &st), 0) << "Config file was not created at " << config_path;
 
   engine_destroy(ec);
+
+  // Cleanup
+  std::string cmd = std::string("rm -rf ") + tmp_dir;
+  system(cmd.c_str());
+}
+
+TEST_F(EngineTest, ConfigKeybindParsed) {
+  char tmp_dir[] = "/tmp/lotab_test_keybind_XXXXXX";
+  ASSERT_NE(mkdtemp(tmp_dir), nullptr);
+
+  // Pre-create config with custom keybind
+  std::string config_path = std::string(tmp_dir) + "/config.toml";
+  FILE* fp = fopen(config_path.c_str(), "w");
+  ASSERT_NE(fp, nullptr);
+  fprintf(fp, "UiToggleKeybind = \"CMD+SHIFT+K\"\n");
+  fclose(fp);
+
+  EngineCreationInfo cinfo = {
+      .port = NextPort(),
+      .enable_statusbar = 0,
+      .app_path = nullptr,
+      .uds_path = nullptr,
+      .config_path = tmp_dir,
+  };
+
+  EngineContext* ec = nullptr;
+  ASSERT_EQ(engine_init(&ec, cinfo), 0);
+
+  ASSERT_NE(ec->ui_toggle_keybind, nullptr);
+  EXPECT_STREQ(ec->ui_toggle_keybind, "CMD+SHIFT+K");
+
+  engine_destroy(ec);
+
+  // Cleanup
+  std::string cmd = std::string("rm -rf ") + tmp_dir;
+  system(cmd.c_str());
+}
+
+TEST_F(EngineTest, ConfigKeybindInvalid) {
+  char tmp_dir[] = "/tmp/lotab_test_keybind_invalid_XXXXXX";
+  ASSERT_NE(mkdtemp(tmp_dir), nullptr);
+
+  // Pre-create config with invalid keybind (missing modifiers)
+  std::string config_path = std::string(tmp_dir) + "/config.toml";
+  FILE* fp = fopen(config_path.c_str(), "w");
+  ASSERT_NE(fp, nullptr);
+  fprintf(fp, "UiToggleKeybind = \"CTRL+K\"\n");
+  fclose(fp);
+
+  EngineCreationInfo cinfo = {
+      .port = NextPort(),
+      .enable_statusbar = 0,
+      .app_path = nullptr,
+      .uds_path = nullptr,
+      .config_path = tmp_dir,
+  };
+
+  EngineContext* ec = nullptr;
+  // Should fail
+  ASSERT_EQ(engine_init(&ec, cinfo), -1);
 
   // Cleanup
   std::string cmd = std::string("rm -rf ") + tmp_dir;

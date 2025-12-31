@@ -46,7 +46,7 @@ OSStatus HotKeyHandler(EventHandlerCallRef nextHandler, EventRef theEvent, void*
 
   self.statusItem.menu = menu;
 
-  // Register Global Hotkey (Cmd+Shift+J)
+  // Register Global Hotkey
   EventHotKeyRef gMyHotKeyRef;
   EventHotKeyID gMyHotKeyID;
   EventTypeSpec eventType;
@@ -57,7 +57,41 @@ OSStatus HotKeyHandler(EventHandlerCallRef nextHandler, EventRef theEvent, void*
 
   gMyHotKeyID.signature = 'htk1';
   gMyHotKeyID.id = 1;
-  RegisterEventHotKey(38, cmdKey | shiftKey, gMyHotKeyID, GetApplicationEventTarget(), 0, &gMyHotKeyRef);
+
+  UInt32 keyCode = 38;  // Default J
+  UInt32 modifiers = cmdKey | shiftKey;
+
+  if (self.context && self.context->keybind) {
+    NSString* bind = [NSString stringWithUTF8String:self.context->keybind];
+    NSArray* parts = [bind componentsSeparatedByString:@"+"];
+    modifiers = 0;
+    for (NSString* part in parts) {
+      NSString* p = [part uppercaseString];
+      if ([p isEqualToString:@"CMD"] || [p isEqualToString:@"COMMAND"])
+        modifiers |= cmdKey;
+      else if ([p isEqualToString:@"CTRL"] || [p isEqualToString:@"CONTROL"])
+        modifiers |= controlKey;  // Carbon ctrl is controlKey
+      else if ([p isEqualToString:@"ALT"] || [p isEqualToString:@"OPTION"])
+        modifiers |= optionKey;
+      else if ([p isEqualToString:@"SHIFT"])
+        modifiers |= shiftKey;
+      else {
+        // Simple char mapping
+        if ([p isEqualToString:@"J"])
+          keyCode = 38;
+        else if ([p isEqualToString:@"K"])
+          keyCode = 40;
+        else if ([p isEqualToString:@"L"])
+          keyCode = 37;
+        else if ([p isEqualToString:@"SPACE"])
+          keyCode = 49;
+        // Add more as needed or use a robust valid mapping
+        // Fallback for demo
+      }
+    }
+  }
+
+  RegisterEventHotKey(keyCode, modifiers, gMyHotKeyID, GetApplicationEventTarget(), 0, &gMyHotKeyRef);
 }
 
 - (void)toggleAction {
