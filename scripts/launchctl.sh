@@ -6,7 +6,7 @@ set -e
 #   ./scripts/launchctl.sh unload                       # Unload service
 
 # Default prefix if not set
-PREFIX="${PREFIX:-/usr/local}"
+PREFIX="${PREFIX:-/opt/homebrew}"
 SERVICE_NAME="${LOTAB_SERVICE_NAME:-com.mob.lotab}"
 PLIST_NAME="${SERVICE_NAME}.plist"
 USER_ID=$(id -u)
