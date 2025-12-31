@@ -3,214 +3,17 @@
 #include <cJSON.h>
 #include <gtest/gtest.h>
 #include <stdio.h>
-#include <atomic>
-#include <chrono>
 #include <mutex>
-#include <queue>
 #include <string>
 #include <thread>
-#include <vector>
+
+#include "test_util.h"
 
 extern "C" {
 #include <libwebsockets.h>
+#include <sys/socket.h>
+#include <sys/un.h>
 }
-
-class TestWebSocketClient {
- public:
-  TestWebSocketClient() {
-  }
-
-  ~TestWebSocketClient() {
-    Disconnect();
-  }
-
-  void Connect(const uint32_t port) {
-    if (running_)
-      return;
-    this->port_ = port;
-    running_ = true;
-
-    struct lws_context_creation_info info;
-    memset(&info, 0, sizeof info);
-    info.port = CONTEXT_PORT_NO_LISTEN;
-
-    // We need to pass the client pointer to protocols or context
-    // Here using context user data
-    info.user = this;
-
-    static struct lws_protocols protocols[] = {
-        {.name = "minimal", .callback = Callback, .per_session_data_size = 0, .rx_buffer_size = 0},
-        LWS_PROTOCOL_LIST_TERM};
-    info.protocols = protocols;
-
-    context_ = lws_create_context(&info);
-    if (!context_)
-      return;
-
-    struct lws_client_connect_info i;
-    memset(&i, 0, sizeof i);
-    i.context = context_;
-    i.address = "localhost";
-    i.port = port;
-    i.path = "/";
-    i.host = i.address;
-    i.origin = i.address;
-    i.protocol = "minimal";
-    i.userdata = this;
-
-    ASSERT_NE(lws_client_connect_via_info(&i), nullptr) << "Error connecting to server.";
-    service_thread_ = std::thread(&TestWebSocketClient::ServiceLoop, this);
-
-    // Wait for connection AND writeable
-    int retries = 50;
-    while (retries-- > 0 && (!connected_ || !writeable_)) {
-      std::this_thread::sleep_for(std::chrono::milliseconds(100));
-    }
-  }
-
-  void Disconnect() {
-    if (!running_)
-      return;
-    running_ = false;
-    if (service_thread_.joinable()) {
-      service_thread_.join();
-    }
-    connected_ = false;
-  }
-
-  void Send(const std::string& msg) {
-    send_mutex_.lock();
-    send_queue_.push(msg);
-    send_mutex_.unlock();
-    if (wsi_)
-      lws_callback_on_writable(wsi_);
-  }
-
-  std::vector<std::string> GetReceivedMessages() {
-    std::lock_guard<std::mutex> lock(recv_mutex_);
-    std::vector<std::string> msgs = received_msgs_;
-    received_msgs_.clear();
-    return msgs;
-  }
-
-  bool WaitForEvent(const std::string& event_type, int timeout_ms) {
-    int waited = 0;
-    while (waited < timeout_ms) {
-      {
-        std::lock_guard<std::mutex> lock(recv_mutex_);
-        for (auto it = received_msgs_.begin(); it != received_msgs_.end();) {
-          bool match = false;
-          cJSON* json = cJSON_Parse(it->c_str());
-          if (json) {
-            cJSON* event = cJSON_GetObjectItemCaseSensitive(json, "event");
-            if (cJSON_IsString(event) && (event_type == event->valuestring)) {
-              match = true;
-            }
-            cJSON_Delete(json);
-          }
-
-          if (match) {
-            received_msgs_.erase(it);
-            return true;
-          } else {
-            ++it;
-          }
-        }
-      }
-      std::this_thread::sleep_for(std::chrono::milliseconds(100));
-      waited += 100;
-    }
-    return false;
-  }
-
-  bool IsConnected() const {
-    return connected_;
-  }
-
- private:
-  struct lws_context* context_ = nullptr;
-  struct lws* wsi_ = nullptr;
-  std::thread service_thread_;
-  std::atomic<bool> running_{false};
-  std::atomic<bool> connected_{false};
-  std::atomic<bool> writeable_{false};
-  uint32_t port_ = 0;
-
-  std::vector<std::string> received_msgs_;
-  std::mutex recv_mutex_;
-
-  std::queue<std::string> send_queue_;
-  std::mutex send_mutex_;
-
-  static int Callback(struct lws* wsi, enum lws_callback_reasons reason, void* user, void* in, size_t len) {
-    TestWebSocketClient* client = (TestWebSocketClient*)user;
-    // Check if user is set in wsi context if it's not passed directly (sometimes lws differs)
-    if (!client && wsi) {
-      void* cx_user = lws_context_user(lws_get_context(wsi));
-      if (cx_user)
-        client = (TestWebSocketClient*)cx_user;
-    }
-
-    switch (reason) {
-      case LWS_CALLBACK_CLIENT_ESTABLISHED:
-        if (client) {
-          client->connected_ = true;
-          client->wsi_ = wsi;
-          lws_callback_on_writable(wsi);
-        }
-        break;
-
-      case LWS_CALLBACK_CLIENT_RECEIVE:
-        if (client && in && len > 0) {
-          std::lock_guard<std::mutex> lock(client->recv_mutex_);
-          client->received_msgs_.emplace_back(std::string((char*)in, len));
-        }
-        break;
-
-      case LWS_CALLBACK_CLIENT_WRITEABLE: {
-        if (client) {
-          client->writeable_ = true;
-          std::lock_guard<std::mutex> lock(client->send_mutex_);
-          if (!client->send_queue_.empty()) {
-            std::string msg = client->send_queue_.front();
-            size_t len = msg.length();
-            std::vector<unsigned char> buf(LWS_PRE + len + 1);
-            memcpy(&buf[LWS_PRE], msg.c_str(), len);
-            buf[LWS_PRE + len] = '\0';
-            printf("[test] sending message to server: %s\n", buf.data());
-            int n = lws_write(wsi, &buf[LWS_PRE], len, LWS_WRITE_TEXT);
-            printf("TestClient: lws_write returned %d (expected %zu)\n", n, len);
-            client->send_queue_.pop();
-          }
-          lws_callback_on_writable(wsi);
-        }
-        break;
-      }
-
-      case LWS_CALLBACK_CLIENT_CLOSED:
-      case LWS_CALLBACK_CLIENT_CONNECTION_ERROR:
-        if (client) {
-          client->connected_ = false;
-          client->wsi_ = nullptr;
-        }
-        break;
-
-      default:
-        break;
-    }
-    return 0;
-  }
-
-  void ServiceLoop() {
-    while (running_) {
-      lws_service(context_, 50);
-    }
-
-    lws_context_destroy(context_);
-    context_ = nullptr;
-    wsi_ = nullptr;
-  }
-};
 
 class EngineTest : public ::testing::Test {
  protected:
@@ -232,6 +35,8 @@ class EngineTest : public ::testing::Test {
     return port_;
   }
 
+  std::string config_uds_path_;
+
   void SetUp() override {
     engine_set_log_level(LOG_LEVEL_TRACE);
 
@@ -240,11 +45,17 @@ class EngineTest : public ::testing::Test {
         .port = port_,
         .enable_statusbar = 0,
     };
+    if (!config_uds_path_.empty()) {
+      create_info.uds_path = config_uds_path_.c_str();
+    }
+
     int ret = engine_init(&ectx_, create_info);
     ASSERT_EQ(ret, 0);
     ASSERT_NE(ectx_, nullptr);
     engine_thread_ = std::thread(engine_run, ectx_);
     sleep(2);
+    // If we are using a custom UDS path (mock server), we need to ensure the daemon connected.
+    // The daemon tries to connect in setup_uds_client.
   }
 
   void TearDown() override {
@@ -275,6 +86,66 @@ class EngineTest : public ::testing::Test {
     }
   }
 };
+
+class WebsockedAndUdsStreamTest : public EngineTest {
+ protected:
+  std::string socket_path_;
+  std::unique_ptr<TestUDSServer> server_;
+
+  void SetUp() override {
+    const testing::TestInfo* const test_info = testing::UnitTest::GetInstance()->current_test_info();
+    ASSERT_NE(test_info, nullptr);
+    socket_path_ = std::string("/tmp/sockstream_") + test_info->test_suite_name() + ".sock";
+    config_uds_path_ = socket_path_;
+    server_ = std::unique_ptr<TestUDSServer>(new TestUDSServer(socket_path_));
+    EngineTest::SetUp();
+  }
+
+  void TearDown() override {
+    EngineTest::TearDown();
+  }
+};
+
+TEST_F(WebsockedAndUdsStreamTest, ConnectsToCustomUDS_And_WS) {
+  ASSERT_TRUE(server_->Accept(2)) << "Daemon did not connect to custom UDS path";
+
+  TestWebSocketClient ws_client;
+  ws_client.Connect(GetPort());
+  ASSERT_TRUE(ws_client.IsConnected()) << "Failed to connect WebSocket";
+  ASSERT_TRUE(ws_client.WaitForEvent("request_tab_info", 2000));
+
+  // 3. Test UDS -> Daemon -> WS Flow
+  // Simulate App (via UDS) sending a 'tab_selected' event
+  /*
+     Event JSON from engine.c:
+     { "event": "tab_selected", "data": { "tabId": 999 } }
+
+     Daemon should translate this to WS message:
+     { "event": "activate_tab", "data": { "tabId": 999 } }
+  */
+
+  const char* uds_evt = R"pb({
+                               "event": "tab_selected",
+                               "data": { "tabId": 999 }
+                             })pb";
+  ASSERT_TRUE(server_->Send(uds_evt));
+  ASSERT_TRUE(ws_client.WaitForEvent("activate_tab", 2000)) << "Daemon did not forward UDS tab_selected event to WS";
+
+  // 4. Test WS -> Daemon -> UDS Flow
+  // Simulate Extension (via WS) sending 'tabs.onCreated'
+  // Daemon should forward this to UDS as 'tabs_update' (as per engine_handle_event)
+  const char* ws_evt = R"pb({
+                              "event": "tabs.onCreated",
+                              "data": { "id": 888, "title": "New Tab via WS", "active": true }
+                            })pb";
+  ws_client.Send(ws_evt);
+
+  // Verify UDS Server receives 'tabs_update'
+  // engine.c: send_tabs_update_to_uds sends {"event":"tabs_update", ...}
+  std::string received_msg;
+  ASSERT_TRUE(server_->WaitForEvent("tabs_update", 2000, &received_msg)) << "Daemon did not send tabs_update to UDS";
+  EXPECT_NE(received_msg.find("New Tab via WS"), std::string::npos);
+}
 
 int EngineTest::next_port_ = 9002;
 std::mutex EngineTest::port_mtx_;

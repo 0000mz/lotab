@@ -101,7 +101,7 @@ endforeach
 gtest_dep = dependency('gtest', main : true, required : false)
 if gtest_dep.found()
   e_test = executable('engine_test',
-                      ['tests/engine_test.cpp'],
+                      ['tests/engine_test.cpp', 'tests/test_util.cc'],
                       dependencies : [gtest_dep, engine_dep, lws_dep])
   test('engine_test', e_test)
 else
