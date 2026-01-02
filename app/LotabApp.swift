@@ -259,7 +259,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     }
 
                     if !idsToClose.isEmpty {
-                        self.sendUDSMessage(event: "close_tabs", data: ["tabIds": idsToClose])
+                        // Use C client to send close_tabs
+                        if let client = self.udsClient {
+                            let cIds = idsToClose.map { Int32($0) }
+                            cIds.withUnsafeBufferPointer { buffer in
+                                lotab_client_send_close_tabs(
+                                    client, buffer.baseAddress, Int(buffer.count))
+                            }
+                        }
                         tm.multiSelection = []
                     }
                     return nil
@@ -319,7 +326,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             if !tm.isFiltering && event.keyCode == 36 {
                 if !tm.multiSelection.isEmpty { return nil }
                 if let selectedId = Lotab.shared.selection {
-                    self.sendUDSMessage(event: "tab_selected", data: ["tabId": selectedId])
+                    // Use C client to send tab_selected
+                    if let client = self.udsClient {
+                        lotab_client_send_tab_selected(client, Int32(selectedId))
+                    }
                     self.hideUI()
                     return nil
                 }
@@ -378,236 +388,93 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         Lotab.shared.markText = ""
     }
 
+    private var udsClient: OpaquePointer?
+
     private func startUDSServer() {
-        unlink(socketPath)
-        serverSocket = socket(AF_UNIX, SOCK_STREAM, 0)
-        vlog_s(.info, LotabApp.appClass, "Attempting to connect to UDS server")
-        guard serverSocket >= 0 else {
-            vlog_s(.error, LotabApp.appClass, "Failed to create socket")
-            return
-        }
+        let socketPath = "/tmp/lotab.sock"
 
-        var addr = sockaddr_un()
-        addr.sun_family = sa_family_t(AF_UNIX)
-        let pathLen = socketPath.withCString { Int(strlen($0)) }
-        socketPath.withCString { src in
-            withUnsafeMutablePointer(to: &addr.sun_path) { dest in
-                let destPtr = UnsafeMutableRawPointer(dest).assumingMemoryBound(to: Int8.self)
-                strncpy(destPtr, src, 104)  // 104 is the max length for sun_path
+        // Define callbacks
+        let onTabsUpdate: lotab_on_tabs_update_cb = { userData, tabsList in
+            vlog_s(.info, LotabApp.appClass, "onTabsUpdate callback entered")
+            guard let tabsList = tabsList else { return }
+            var newTabs: [BrowserTab] = []
+            let count = Int(tabsList.pointee.count)
+            if count > 0 {
+                let buffer = UnsafeBufferPointer(start: tabsList.pointee.tabs, count: count)
+                for i in 0..<count {
+                    let cTab = buffer[i]
+                    let title = String(cString: cTab.title)
+                    newTabs.append(BrowserTab(id: Int(cTab.id), title: title, active: cTab.active))
+                }
             }
-        }
-        addr.sun_len = UInt8(
-            MemoryLayout<sa_family_t>.size + MemoryLayout<UInt8>.size + pathLen + 1)
 
-        let addrLen = socklen_t(addr.sun_len)
-        let bindResult = withUnsafePointer(to: &addr) {
-            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
-                Darwin.bind(serverSocket, $0, addrLen)
+            DispatchQueue.main.async {
+                Lotab.shared.tabs = newTabs
+                vlog_s(.info, LotabApp.appClass, "Updated tabs: \(newTabs.count)")
             }
         }
 
-        guard bindResult == 0 else {
-            vlog_s(
-                .error, LotabApp.appClass,
-                "Failed to bind socket. Error: \(String(cString: strerror(errno)))")
-            return
-        }
+        let onTasksUpdate: lotab_on_tasks_update_cb = { userData, tasksList in
+            vlog_s(.info, LotabApp.appClass, "onTasksUpdate callback entered")
+            guard let tasksList = tasksList else { return }
+            var newTasks: [Task] = []
+            let count = Int(tasksList.pointee.count)
+            if count > 0 {
+                let buffer = UnsafeBufferPointer(start: tasksList.pointee.tasks, count: count)
+                for i in 0..<count {
+                    let cTask = buffer[i]
+                    let name = String(cString: cTask.name)
+                    newTasks.append(Task(id: Int(cTask.id), name: name))
+                }
+            }
 
-        guard Darwin.listen(serverSocket, 5) == 0 else {
-            vlog_s(.error, LotabApp.appClass, "Failed to listen on socket")
-            return
-        }
-
-        vlog_s(.info, LotabApp.appClass, "UDS server started at \(socketPath)")
-        Thread.detachNewThread {
-            self.runServerLoop()
-        }
-    }
-
-    private func runServerLoop() {
-        var clientAddr = sockaddr_un()
-        var len = socklen_t(MemoryLayout<sockaddr_un>.size)
-
-        let clientSocket = withUnsafeMutablePointer(to: &clientAddr) {
-            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
-                Darwin.accept(self.serverSocket, $0, &len)
+            DispatchQueue.main.async {
+                Lotab.shared.tasks = newTasks
+                vlog_s(.info, LotabApp.appClass, "Updated tasks: \(newTasks.count)")
             }
         }
 
-        if clientSocket >= 0 {
-            self.activeClientSocket = clientSocket
-            vlog_s(.info, LotabApp.appClass, "Accepted new UDS connection")
-
-            defer {
-                close(clientSocket)
-            }
-
-            while true {
-                // 1. Read Header (4 bytes)
-                var headerData = Data(count: 4)
-                let headerBytesRead = headerData.withUnsafeMutableBytes { buffer in
-                    return read(clientSocket, buffer.baseAddress, 4)
-                }
-
-                if headerBytesRead == 0 {
-                    vlog_s(.info, LotabApp.appClass, "UDS connection closed by peer")
-                    break
-                } else if headerBytesRead < 0 {
-                    vlog_s(
-                        .error, LotabApp.appClass,
-                        "UDS header read error: \(String(cString: strerror(errno)))")
-                    break
-                } else if headerBytesRead < 4 {
-                    vlog_s(.error, LotabApp.appClass, "UDS partial header read")
-                    break
-                }
-
-                let msgLen = headerData.withUnsafeBytes { $0.load(as: UInt32.self).littleEndian }
-
-                // 2. Read Payload
-                var payloadData = Data(count: Int(msgLen))
-                var totalRead = 0
-                var readError = false
-
-                payloadData.withUnsafeMutableBytes { buffer in
-                    while totalRead < Int(msgLen) {
-                        let n = read(
-                            clientSocket, buffer.baseAddress! + totalRead, Int(msgLen) - totalRead)
-                        if n <= 0 {
-                            readError = true
-                            break
-                        }
-                        totalRead += n
-                    }
-                }
-
-                if readError {
-                    vlog_s(
-                        .error, LotabApp.appClass, "UDS payload read error or closed prematurely")
-                    break
-                }
-
-                // 3. Process Message
-                if let messageData = String(data: payloadData, encoding: .utf8)?.data(using: .utf8)
-                {
-                    do {
-                        let baseMessage = try JSONDecoder().decode(
-                            UDSMessage.self, from: messageData)
-                        vlog_s(.trace, LotabApp.appClass, "uds-event: \(baseMessage.event)")
-
-                        switch baseMessage.event {
-                        case "tabs_update":
-                            do {
-                                let payload = try JSONDecoder().decode(
-                                    TabListPayload.self, from: messageData)
-                                vlog_s(
-                                    .info, LotabApp.appClass,
-                                    "Successfully decoded \(payload.data.tabs.count) tabs")
-                                DispatchQueue.main.async {
-                                    Lotab.shared.tabs = payload.data.tabs
-                                }
-                            } catch {
-                                vlog_s(
-                                    .error, LotabApp.appClass,
-                                    "JSON Decoding Error for tabs_update: \(error)")
-                            }
-
-                        case "tasks_update":
-                            do {
-                                let payload = try JSONDecoder().decode(
-                                    TaskListPayload.self, from: messageData)
-                                vlog_s(
-                                    .info, LotabApp.appClass,
-                                    "Successfully decoded \(payload.data.tasks.count) tasks")
-                                DispatchQueue.main.async {
-                                    Lotab.shared.tasks = payload.data.tasks
-                                }
-                            } catch {
-                                vlog_s(
-                                    .error, LotabApp.appClass,
-                                    "JSON Decoding Error for tasks_update: \(error)")
-                            }
-
-                        case "ui_visibility_toggle":
-                            showUI()
-
-                        default:
-                            vlog_s(
-                                .info, LotabApp.appClass, "Unknown UDS event: \(baseMessage.event)")
-                        }
-                    } catch {
-                        vlog_s(
-                            .error, LotabApp.appClass, "Failed to decode base UDS message: \(error)"
-                        )
-                    }
+        let onUIToggle: lotab_on_ui_toggle_cb = { userData in
+            vlog_s(.info, LotabApp.appClass, "onUIToggle callback entered")
+            DispatchQueue.main.async {
+                vlog_s(.info, LotabApp.appClass, "DispatchQueue.main.async entered")
+                if let appDelegate = AppDelegate.shared {
+                    appDelegate.showUI()
+                    NSApp.activate(ignoringOtherApps: true)
+                } else {
+                    vlog_s(.error, LotabApp.appClass, "AppDelegate.shared is nil")
                 }
             }
         }
-    }
 
-    func sendUDSMessage(event: String, data: Any) {
-        guard activeClientSocket >= 0 else {
-            vlog_s(.error, LotabApp.appClass, "Cannot send message: No active UDS connection")
-            return
-        }
+        let callbacks = ClientCallbacks(
+            on_tabs_update: onTabsUpdate,
+            on_tasks_update: onTasksUpdate,
+            on_ui_toggle: onUIToggle
+        )
 
-        let messageParams: [String: Any] = [
-            "event": event,
-            "data": data,
-        ]
+        self.udsClient = lotab_client_new(socketPath, callbacks, nil)
 
-        do {
-            let jsonData = try JSONSerialization.data(withJSONObject: messageParams, options: [])
-            var length = UInt32(jsonData.count).littleEndian
-            let lengthData = Data(bytes: &length, count: MemoryLayout<UInt32>.size)
-
-            let combinedData = lengthData + jsonData
-
-            let result = combinedData.withUnsafeBytes { buffer -> Int in
-                guard let baseAddress = buffer.baseAddress else { return -1 }
-                return Int(write(activeClientSocket, baseAddress, buffer.count))
+        if self.udsClient != nil {
+            Thread.detachNewThread {
+                vlog_s(.info, LotabApp.appClass, "Starting UDS Client Loop")
+                lotab_client_run_loop(self.udsClient)
             }
-
-            if result < 0 {
-                vlog_s(
-                    .error, LotabApp.appClass,
-                    "Failed to send UDS message: \(String(cString: strerror(errno)))")
-            } else {
-                vlog_s(.info, LotabApp.appClass, "uds-send: \(event) (len: \(jsonData.count))")
-            }
-        } catch {
-            vlog_s(.error, LotabApp.appClass, "Failed to serialize UDS message: \(error)")
+        } else {
+            vlog_s(.error, LotabApp.appClass, "Failed to create UDS client")
         }
     }
 }
 
-struct BrowserTab: Identifiable, Decodable, Hashable {
+struct BrowserTab: Identifiable, Hashable {
     let id: Int
     let title: String
     let active: Bool
 }
 
-struct TabListPayload: Decodable {
-    struct Data: Decodable {
-        let tabs: [BrowserTab]
-    }
-    let data: Data
-}
-
-struct Task: Identifiable, Decodable, Hashable {
+struct Task: Identifiable, Hashable {
     let id: Int
     let name: String
-}
-
-struct TaskListPayload: Decodable {
-    struct Data: Decodable {
-        let tasks: [Task]
-    }
-    let data: Data
-}
-
-struct UDSMessage: Decodable {
-    let event: String
 }
 
 class Lotab: ObservableObject {

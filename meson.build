@@ -18,6 +18,17 @@ engine_util_dep = declare_dependency(
   include_directories : include_directories('daemon'),
 )
 
+client_lib = static_library('daemon_client',
+    ['daemon/client.c'],
+    dependencies : [cjson_dep, engine_util_dep],
+    install : false)
+
+client_dep = declare_dependency(
+  link_with : client_lib,
+  include_directories : include_directories('daemon'),
+  dependencies : [cjson_dep]
+)
+
 # --- GUI ---
 # Link required frameworks for a SwiftUI app
 apple_frameworks = dependency('appleframeworks', modules : ['Foundation', 'AppKit', 'SwiftUI'])
@@ -34,7 +45,8 @@ daemon_deps = [lws_dep, cjson_dep, carbon_dep, cocoa_dep, argparse_dep]
 info_plist_path = meson.current_source_dir() / 'app/Info.plist'
 lotab_linker_args = ['-Xlinker', '-sectcreate', '-Xlinker', '__TEXT', '-Xlinker', '__info_plist', '-Xlinker', info_plist_path]
 lotab_swift_args = ['-import-bridging-header', meson.current_source_dir() / 'app/bridge.h']
-lotab_deps = [apple_frameworks, engine_util_dep]
+lotab_deps = [apple_frameworks, engine_util_dep, client_dep]
+
 
 app_target = executable('Lotab',
            app_src,
@@ -55,6 +67,8 @@ engine_lib = static_library('daemon_engine',
     ['daemon/engine.c', 'daemon/statusbar.m'],
     dependencies : [lws_dep, cjson_dep, tomlc99_dep, cocoa_dep, carbon_dep, engine_util_dep],
     install : false)
+
+
 
 engine_dep = declare_dependency(
   link_with : engine_lib,
@@ -106,6 +120,11 @@ if gtest_dep.found()
                       ['tests/engine_test.cc', 'tests/test_util.cc'],
                       dependencies : [gtest_dep, engine_dep, lws_dep])
   test('engine_test', e_test)
+  
+  c_test = executable('client_test',
+                      ['tests/client_test.cc'],
+                      dependencies : [gtest_dep, client_dep])
+  test('client_test', c_test)
 else
   message('gtest not found, skipping unit tests')
 endif
