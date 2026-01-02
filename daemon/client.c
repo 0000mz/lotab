@@ -91,7 +91,7 @@ void lotab_client_process_message(ClientContext* ctx, const char* json_str) {
 
   vlog(LOG_LEVEL_TRACE, ctx, "uds-event: %s\n", event->valuestring);
 
-  if (strcmp(event->valuestring, "tabs_update") == 0) {
+  if (strcmp(event->valuestring, "Daemon::UDS::TabsUpdate") == 0) {
     // Parse tabs
     cJSON* data = cJSON_GetObjectItem(json, "data");
     cJSON* tabs_json = cJSON_GetObjectItem(data, "tabs");
@@ -121,7 +121,7 @@ void lotab_client_process_message(ClientContext* ctx, const char* json_str) {
 
       free_tab_list(&list);
     }
-  } else if (strcmp(event->valuestring, "tasks_update") == 0) {
+  } else if (strcmp(event->valuestring, "Daemon::UDS::TasksUpdate") == 0) {
     // Parse tasks
     cJSON* data = cJSON_GetObjectItem(json, "data");
     cJSON* tasks_json = cJSON_GetObjectItem(data, "tasks");
@@ -149,8 +149,8 @@ void lotab_client_process_message(ClientContext* ctx, const char* json_str) {
 
       free_task_list(&list);
     }
-  } else if (strcmp(event->valuestring, "ui_visibility_toggle") == 0) {
-    vlog(LOG_LEVEL_INFO, ctx, "Processing ui_visibility_toggle\n");
+  } else if (strcmp(event->valuestring, "Daemon::UDS::ToggleGuiRequest") == 0) {
+    vlog(LOG_LEVEL_INFO, ctx, "Processing Daemon::UDS::ToggleGuiRequest\n");
     if (ctx->callbacks.on_ui_toggle) {
       ctx->callbacks.on_ui_toggle(ctx->user_data);
     } else {
@@ -302,7 +302,7 @@ void lotab_client_send_close_tabs(ClientContext* ctx, const int* tab_ids, size_t
     return;
 
   cJSON* root = cJSON_CreateObject();
-  cJSON_AddStringToObject(root, "event", "close_tabs");
+  cJSON_AddStringToObject(root, "event", "GUI::UDS::CloseTabsRequest");
 
   cJSON* data = cJSON_CreateObject();
   cJSON_AddItemToObject(root, "data", data);
@@ -323,7 +323,7 @@ void lotab_client_send_tab_selected(ClientContext* ctx, int tab_id) {
     return;
 
   cJSON* root = cJSON_CreateObject();
-  cJSON_AddStringToObject(root, "event", "tab_selected");
+  cJSON_AddStringToObject(root, "event", "GUI::UDS::TabSelected");
 
   cJSON* data = cJSON_CreateObject();
   cJSON_AddItemToObject(root, "data", data);

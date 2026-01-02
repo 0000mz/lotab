@@ -60,13 +60,13 @@ class ClientTest : public ::testing::Test {
 };
 
 TEST_F(ClientTest, ParseTabsUpdate) {
-  const char* json = R"pb({
-                            "event": "tabs_update",
+  const char* json = R"json({
+        "event": "Daemon::UDS::TabsUpdate",
                             "data": {
                               "tabs":
                               [ { "id": 1, "title": "Google", "active": true }]
                             }
-                          })pb";
+                          })json";
   lotab_client_process_message(ctx, json);
 
   EXPECT_EQ(data.tabs_count, 1);
@@ -74,13 +74,13 @@ TEST_F(ClientTest, ParseTabsUpdate) {
 }
 
 TEST_F(ClientTest, ParseTasksUpdate) {
-  const char* json = R"pb({
-                            "event": "tasks_update",
+  const char* json = R"json({
+        "event": "Daemon::UDS::TasksUpdate",
                             "data": {
                               "tasks":
                               [ { "id": 101, "name": "Buy Milk" }]
                             }
-                          })pb";
+                          })json";
   lotab_client_process_message(ctx, json);
 
   EXPECT_EQ(data.tasks_count, 1);
@@ -88,7 +88,9 @@ TEST_F(ClientTest, ParseTasksUpdate) {
 }
 
 TEST_F(ClientTest, ParseUIToggle) {
-  const char* json = R"pb({ "event": "ui_visibility_toggle" })pb";
+  const char* json = R"json({
+        "event": "Daemon::UDS::ToggleGuiRequest"
+    })json";
   lotab_client_process_message(ctx, json);
 
   EXPECT_TRUE(data.ui_toggled);

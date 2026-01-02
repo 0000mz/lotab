@@ -101,7 +101,7 @@ static void handle_gui_msg(ServerContext* sc, const char* msg) {
 
   cJSON* event = cJSON_GetObjectItem(json, "event");
   if (cJSON_IsString(event) && event->valuestring) {
-    if (strcmp(event->valuestring, "tab_selected") == 0) {
+    if (strcmp(event->valuestring, "GUI::UDS::TabSelected") == 0) {
       cJSON* data = cJSON_GetObjectItem(json, "data");
       cJSON* tab_id = cJSON_GetObjectItem(data, "tabId");
       if (cJSON_IsNumber(tab_id)) {
@@ -111,7 +111,7 @@ static void handle_gui_msg(ServerContext* sc, const char* msg) {
         if (sc->client_wsi) {
           vlog(LOG_LEVEL_TRACE, sc, "queueing message to websocket\n");
           cJSON* ws_payload = cJSON_CreateObject();
-          cJSON_AddStringToObject(ws_payload, "event", "activate_tab");
+          cJSON_AddStringToObject(ws_payload, "event", "Daemon::WS::ActivateTabRequest");
           cJSON* ws_data = cJSON_CreateObject();
           cJSON_AddNumberToObject(ws_data, "tabId", tab_id->valuedouble);
           cJSON_AddItemToObject(ws_payload, "data", ws_data);
@@ -133,7 +133,7 @@ static void handle_gui_msg(ServerContext* sc, const char* msg) {
       } else {
         vlog(LOG_LEVEL_ERROR, sc, "gui-evt: No tab id found for tab_selected\n");
       }
-    } else if (strcmp(event->valuestring, "close_tabs") == 0) {
+    } else if (strcmp(event->valuestring, "GUI::UDS::CloseTabsRequest") == 0) {
       cJSON* data = cJSON_GetObjectItem(json, "data");
       cJSON* tab_ids = cJSON_GetObjectItem(data, "tabIds");
       if (cJSON_IsArray(tab_ids)) {
@@ -141,7 +141,7 @@ static void handle_gui_msg(ServerContext* sc, const char* msg) {
 
         if (sc->client_wsi) {
           cJSON* ws_payload = cJSON_CreateObject();
-          cJSON_AddStringToObject(ws_payload, "event", "close_tabs");
+          cJSON_AddStringToObject(ws_payload, "event", "Daemon::WS::CloseTabsRequest");
           cJSON* ws_data = cJSON_CreateObject();
           cJSON_AddItemToObject(ws_data, "tabIds", cJSON_Duplicate(tab_ids, 1));
           cJSON_AddItemToObject(ws_payload, "data", ws_data);
@@ -248,7 +248,7 @@ static int setup_uds_client(ServerContext* sctx) {
     if (connect(uds_fd, (struct sockaddr*)&addr, sizeof(addr)) == 0) {
       vlog(LOG_LEVEL_INFO, sctx, "Connected to App UDS at %s\n", sctx->uds_path);
 
-      const char* ping_json = "{\"event\":\"daemon_startup\",\"data\":\"ping\"}";
+      const char* ping_json = "{\"event\":\"Daemon::UDS::Ping\",\"data\":\"ping\"}";
       size_t len = strlen(ping_json);
       size_t frame_len = sizeof(uint32_t) + len;
       char* msg = malloc(frame_len);
@@ -354,7 +354,7 @@ static int callback_minimal(struct lws* wsi, enum lws_callback_reasons reason, v
     case LWS_CALLBACK_SERVER_WRITEABLE:
       vlog(LOG_LEVEL_TRACE, sc, "lws-server-writeable\n");
       if (sc->send_tab_request) {
-        const char* msg = "{\"event\":\"request_tab_info\"}";
+        const char* msg = "{\"event\":\"Daemon::WS::AllTabsInfoRequest\"}";
         size_t msg_len = strlen(msg);
         unsigned char buf[LWS_PRE + 256];
         memset(buf, 0, sizeof(buf));
@@ -1001,13 +1001,13 @@ struct TabEventMapEntry {
 };
 // clang-format off
 static const struct TabEventMapEntry TAB_EVENT_MAP[] = {
-    {"tabs.onActivated", TAB_EVENT_ACTIVATED},
-    {"tabs.onUpdated", TAB_EVENT_UPDATED},
-    {"tabs.onCreated", TAB_EVENT_CREATED},
-    {"tabs.onHighlighted", TAB_EVENT_HIGHLIGHTED},
-    {"tabs.onZoomChange", TAB_EVENT_ZOOM_CHANGE},
-    {"tabs.onAllTabs", TAB_EVENT_ALL_TABS},
-    {"tabs.onRemoved", TAB_EVENT_TAB_REMOVED},
+    {"Extension::WS::TabActivated", TAB_EVENT_ACTIVATED},
+    {"Extension::WS::TabUpdated", TAB_EVENT_UPDATED},
+    {"Extension::WS::TabCreated", TAB_EVENT_CREATED},
+    {"Extension::WS::TabHighlighted", TAB_EVENT_HIGHLIGHTED},
+    {"Extension::WS::TabZoomChanged", TAB_EVENT_ZOOM_CHANGE},
+    {"Extension::WS::AllTabsInfoResponse", TAB_EVENT_ALL_TABS},
+    {"Extension::WS::TabRemoved", TAB_EVENT_TAB_REMOVED},
     {NULL, TAB_EVENT_UNKNOWN},
 };
 
@@ -1063,7 +1063,7 @@ void tab_event_handle(TabState* ts, TabEventType type, cJSON* json_data) {
 
 static void send_tabs_update_to_uds(EngineContext* ectx) {
   cJSON* tab_update_msg = cJSON_CreateObject();
-  cJSON_AddStringToObject(tab_update_msg, "event", "tabs_update");
+  cJSON_AddStringToObject(tab_update_msg, "event", "Daemon::UDS::TabsUpdate");
 
   cJSON* event_data = cJSON_CreateObject();
   cJSON_AddItemToObject(tab_update_msg, "data", event_data);
@@ -1093,7 +1093,7 @@ void engine_handle_event(EngineContext* ectx, DaemonEvent event, void* data) {
     case EVENT_HOTKEY_TOGGLE: {
       // 1. Send Tab Update
       cJSON* tab_update_msg = cJSON_CreateObject();
-      cJSON_AddStringToObject(tab_update_msg, "event", "tabs_update");
+      cJSON_AddStringToObject(tab_update_msg, "event", "Daemon::UDS::TabsUpdate");
 
       cJSON* event_data = cJSON_CreateObject();
       cJSON_AddItemToObject(tab_update_msg, "data", event_data);
@@ -1117,7 +1117,7 @@ void engine_handle_event(EngineContext* ectx, DaemonEvent event, void* data) {
 
       // 2. Send Task Update
       cJSON* task_update_msg = cJSON_CreateObject();
-      cJSON_AddStringToObject(task_update_msg, "event", "tasks_update");
+      cJSON_AddStringToObject(task_update_msg, "event", "Daemon::UDS::TasksUpdate");
 
       cJSON* task_data = cJSON_CreateObject();
       cJSON_AddItemToObject(task_update_msg, "data", task_data);
@@ -1140,7 +1140,7 @@ void engine_handle_event(EngineContext* ectx, DaemonEvent event, void* data) {
 
       // 3. Send Toggle
       cJSON* toggle_msg = cJSON_CreateObject();
-      cJSON_AddStringToObject(toggle_msg, "event", "ui_visibility_toggle");
+      cJSON_AddStringToObject(toggle_msg, "event", "Daemon::UDS::ToggleGuiRequest");
       cJSON_AddStringToObject(toggle_msg, "data", "toggle");
       send_uds(ectx->serv_ctx->uds_fd, toggle_msg);
       cJSON_Delete(toggle_msg);

@@ -12,7 +12,7 @@ function sendAllTabs() {
             url: t.url,
             active: t.active,
         }));
-        logEvent('tabs.onAllTabs', reduced_tabs);
+        logEvent('Extension::WS::AllTabsInfoResponse', reduced_tabs);
     });
 }
 
@@ -31,7 +31,7 @@ function connectToDaemon() {
         console.log(`[${new Date().toISOString()}] Message from Daemon:`, event.data);
         try {
             const message = JSON.parse(event.data);
-            if (message.event === 'request_tab_info') {
+            if (message.event === 'Daemon::WS::AllTabsInfoRequest') {
                 console.log('Received request_tab_info, querying tabs...');
                 chrome.tabs.query({}, (tabs) => {
                     console.log("active tabs:", tabs.filter(el => el.active));
@@ -41,9 +41,9 @@ function connectToDaemon() {
                         url: t.url,
                         active: t.active,
                     }));
-                    logEvent('tabs.onAllTabs', reduced_tabs);
+                    logEvent('Extension::WS::AllTabsInfoResponse', reduced_tabs);
                 });
-            } else if (message.event === 'activate_tab') {
+            } else if (message.event === 'Daemon::WS::ActivateTabRequest') {
                 const tabId = message.data.tabId;
                 if (tabId) {
                     console.log(`Activating tab: ${tabId}`);
@@ -54,7 +54,7 @@ function connectToDaemon() {
                         }
                     });
                 }
-            } else if (message.event === 'close_tabs') {
+            } else if (message.event === 'Daemon::WS::CloseTabsRequest') {
                 const tabIds = message.data.tabIds;
                 if (tabIds && Array.isArray(tabIds)) {
                     console.log(`Closing tabs:`, tabIds);
@@ -118,15 +118,15 @@ connectToDaemon();
 // --- Tab Events ---
 
 chrome.tabs.onCreated.addListener((tab) => {
-    logEvent('tabs.onCreated', tab);
+    logEvent('Extension::WS::TabCreated', tab);
 });
 
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-    logEvent('tabs.onUpdated', { tabId, changeInfo, tab });
+    logEvent('Extension::WS::TabUpdated', { tabId, changeInfo, tab });
 });
 
 chrome.tabs.onRemoved.addListener((tabId, removeInfo) => {
-    logEvent('tabs.onRemoved', { tabId, removeInfo });
+    logEvent('Extension::WS::TabRemoved', { tabId, removeInfo });
 });
 
 chrome.tabs.onMoved.addListener((tabId, moveInfo) => {
@@ -134,11 +134,11 @@ chrome.tabs.onMoved.addListener((tabId, moveInfo) => {
 });
 
 chrome.tabs.onActivated.addListener((activeInfo) => {
-    logEvent('tabs.onActivated', activeInfo);
+    logEvent('Extension::WS::TabActivated', activeInfo);
 });
 
 chrome.tabs.onHighlighted.addListener((highlightInfo) => {
-    logEvent('tabs.onHighlighted', highlightInfo);
+    logEvent('Extension::WS::TabHighlighted', highlightInfo);
 });
 
 chrome.tabs.onDetached.addListener((tabId, detachInfo) => {
@@ -154,7 +154,7 @@ chrome.tabs.onReplaced.addListener((addedTabId, removedTabId) => {
 });
 
 chrome.tabs.onZoomChange.addListener((zoomChangeInfo) => {
-    logEvent('tabs.onZoomChange', zoomChangeInfo);
+    logEvent('Extension::WS::TabZoomChanged', zoomChangeInfo);
 });
 
 // --- Tab Group Events ---
