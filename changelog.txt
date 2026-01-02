@@ -1,5 +1,8 @@
 2026-Jan-01:
 - Refactor GUI to separate client UDS from GUI logic.
+- Change naming scheme of events from extension->daemon and daemon->ui to be easily parsable.
+- When in search mode, do not make the list selectable or navigateable until the search is
+  confirmed or canceled.
 
 2025-Dec-28:
 - Start implementation of release build+install process.
@@ -55,8 +58,6 @@ TODO:
 - Figure out how to make the websocket connection happen all the time on startup. Currently,
   the extension's service worker sometimes need to be woken up.
 - Treat tabs.onHighlight as tab activation.
-- When in search mode, do not make the list selectable or navigateable until the search is
-  confirmed or canceled.
 - Color/label tabs that are associated with the currently focused browser window.
 - Add confirmation for serious actions such as closing multiple tabs.
 - Marked tabs should create a tab group in the browser.
@@ -67,7 +68,6 @@ TODO:
 - Debug close behavior on chrome.
 - Carve out use case of having multiple browsers connected to socket.
 - Load existing tab groups into application.
-- Change naming scheme of events from extension->daemon and daemon->ui to be easily parsable.
 - Websocket+UDS: Add confirmation response to each message.
 - Add browser id to allow app to be used for multiple browser instances.
 - Create ASAN and TSAN versions of the integration test.

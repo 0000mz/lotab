@@ -31,41 +31,45 @@ function connectToDaemon() {
         console.log(`[${new Date().toISOString()}] Message from Daemon:`, event.data);
         try {
             const message = JSON.parse(event.data);
-            if (message.event === 'Daemon::WS::AllTabsInfoRequest') {
-                console.log('Received request_tab_info, querying tabs...');
-                chrome.tabs.query({}, (tabs) => {
-                    console.log("active tabs:", tabs.filter(el => el.active));
-                    const reduced_tabs = tabs.map(t => ({
-                        title: t.title,
-                        id: t.id,
-                        url: t.url,
-                        active: t.active,
-                    }));
-                    logEvent('Extension::WS::AllTabsInfoResponse', reduced_tabs);
-                });
-            } else if (message.event === 'Daemon::WS::ActivateTabRequest') {
-                const tabId = message.data.tabId;
-                if (tabId) {
-                    console.log(`Activating tab: ${tabId}`);
-                    chrome.tabs.update(tabId, { active: true });
-                    chrome.tabs.get(tabId, (tab) => {
-                        if (tab && tab.windowId) {
-                            chrome.windows.update(tab.windowId, { focused: true });
-                        }
+            switch (message.event) {
+                case 'Daemon::WS::AllTabsInfoRequest':
+                    console.log('Received request_tab_info, querying tabs...');
+                    chrome.tabs.query({}, (tabs) => {
+                        console.log("active tabs:", tabs.filter(el => el.active));
+                        const reduced_tabs = tabs.map(t => ({
+                            title: t.title,
+                            id: t.id,
+                            url: t.url,
+                            active: t.active,
+                        }));
+                        logEvent('Extension::WS::AllTabsInfoResponse', reduced_tabs);
                     });
-                }
-            } else if (message.event === 'Daemon::WS::CloseTabsRequest') {
-                const tabIds = message.data.tabIds;
-                if (tabIds && Array.isArray(tabIds)) {
-                    console.log(`Closing tabs:`, tabIds);
-                    // Convert to integers just in case and filter
-                    const ids = tabIds.map(id => parseInt(id)).filter(id => Number.isInteger(id));
-                    if (ids.length > 0) {
-                        chrome.tabs.remove(ids, () => {
-                            sendAllTabs();
+                    break;
+                case 'Daemon::WS::ActivateTabRequest':
+                    const tabId = message.data.tabId;
+                    if (tabId) {
+                        console.log(`Activating tab: ${tabId}`);
+                        chrome.tabs.update(tabId, { active: true });
+                        chrome.tabs.get(tabId, (tab) => {
+                            if (tab && tab.windowId) {
+                                chrome.windows.update(tab.windowId, { focused: true });
+                            }
                         });
                     }
-                }
+                    break;
+                case 'Daemon::WS::CloseTabsRequest':
+                    const tabIds = message.data.tabIds;
+                    if (tabIds && Array.isArray(tabIds)) {
+                        console.log(`Closing tabs:`, tabIds);
+                        // Convert to integers just in case and filter
+                        const ids = tabIds.map(id => parseInt(id)).filter(id => Number.isInteger(id));
+                        if (ids.length > 0) {
+                            chrome.tabs.remove(ids, () => {
+                                sendAllTabs();
+                            });
+                        }
+                    }
+                    break;
             }
         } catch (e) {
             console.error('Failed to parse message from daemon:', e);
