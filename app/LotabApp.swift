@@ -46,7 +46,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             let tm = Lotab.shared
 
             // Marking Mode
-            // Marking Mode
             if tm.isMarking {
                 if tm.isCreatingLabel {
                     // --- CREATION INPUT MODE ---
@@ -421,120 +420,126 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         vlog_s(.info, LotabApp.appClass, "UDS server started at \(socketPath)")
         Thread.detachNewThread {
-            self.acceptConnections()
+            self.runServerLoop()
         }
     }
 
-    private func acceptConnections() {
-        while true {
-            var clientAddr = sockaddr_un()
-            var len = socklen_t(MemoryLayout<sockaddr_un>.size)
-            let clientSocket = withUnsafeMutablePointer(to: &clientAddr) {
-                $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
-                    Darwin.accept(self.serverSocket, $0, &len)
-                }
-            }
+    private func runServerLoop() {
+        var clientAddr = sockaddr_un()
+        var len = socklen_t(MemoryLayout<sockaddr_un>.size)
 
-            if clientSocket >= 0 {
-                self.activeClientSocket = clientSocket
-                vlog_s(.info, LotabApp.appClass, "Accepted new UDS connection")
-                Thread.detachNewThread {
-                    self.handleClient(clientSocket)
-                }
+        let clientSocket = withUnsafeMutablePointer(to: &clientAddr) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                Darwin.accept(self.serverSocket, $0, &len)
             }
         }
-    }
 
-    private func handleClient(_ clientSocket: Int32) {
-        defer {
-            close(clientSocket)
-        }
+        if clientSocket >= 0 {
+            self.activeClientSocket = clientSocket
+            vlog_s(.info, LotabApp.appClass, "Accepted new UDS connection")
 
-        while true {
-            // 1. Read Header (4 bytes)
-            var headerData = Data(count: 4)
-            let headerBytesRead = headerData.withUnsafeMutableBytes { buffer in
-                return read(clientSocket, buffer.baseAddress, 4)
+            defer {
+                close(clientSocket)
             }
 
-            if headerBytesRead == 0 {
-                vlog_s(.info, LotabApp.appClass, "UDS connection closed by peer")
-                break
-            } else if headerBytesRead < 0 {
-                vlog_s(
-                    .error, LotabApp.appClass,
-                    "UDS header read error: \(String(cString: strerror(errno)))")
-                break
-            } else if headerBytesRead < 4 {
-                vlog_s(.error, LotabApp.appClass, "UDS partial header read")
-                break
-            }
-
-            let msgLen = headerData.withUnsafeBytes { $0.load(as: UInt32.self).littleEndian }
-
-            // 2. Read Payload
-            var payloadData = Data(count: Int(msgLen))
-            var totalRead = 0
-            var readError = false
-
-            payloadData.withUnsafeMutableBytes { buffer in
-                while totalRead < Int(msgLen) {
-                    let n = read(
-                        clientSocket, buffer.baseAddress! + totalRead, Int(msgLen) - totalRead)
-                    if n <= 0 {
-                        readError = true
-                        break
-                    }
-                    totalRead += n
+            while true {
+                // 1. Read Header (4 bytes)
+                var headerData = Data(count: 4)
+                let headerBytesRead = headerData.withUnsafeMutableBytes { buffer in
+                    return read(clientSocket, buffer.baseAddress, 4)
                 }
-            }
 
-            if readError {
-                vlog_s(.error, LotabApp.appClass, "UDS payload read error or closed prematurely")
-                break
-            }
+                if headerBytesRead == 0 {
+                    vlog_s(.info, LotabApp.appClass, "UDS connection closed by peer")
+                    break
+                } else if headerBytesRead < 0 {
+                    vlog_s(
+                        .error, LotabApp.appClass,
+                        "UDS header read error: \(String(cString: strerror(errno)))")
+                    break
+                } else if headerBytesRead < 4 {
+                    vlog_s(.error, LotabApp.appClass, "UDS partial header read")
+                    break
+                }
 
-            // 3. Process Message
-            if let message = String(data: payloadData, encoding: .utf8) {
-                vlog_s(.trace, LotabApp.appClass, "uds-read: \(message)")
-                if message.contains("tabs_update") {
-                    // Decode tabs
-                    if let jsonData = message.data(using: .utf8) {
-                        do {
-                            let payload = try JSONDecoder().decode(
-                                TabListPayload.self, from: jsonData)
-                            vlog_s(
-                                .info, LotabApp.appClass,
-                                "Successfully decoded \(payload.data.tabs.count) tabs")
-                            DispatchQueue.main.async {
-                                Lotab.shared.tabs = payload.data.tabs
-                            }
-                        } catch {
-                            vlog_s(
-                                .error, LotabApp.appClass,
-                                "JSON Decoding Error for tabs_update: \(error)")
+                let msgLen = headerData.withUnsafeBytes { $0.load(as: UInt32.self).littleEndian }
+
+                // 2. Read Payload
+                var payloadData = Data(count: Int(msgLen))
+                var totalRead = 0
+                var readError = false
+
+                payloadData.withUnsafeMutableBytes { buffer in
+                    while totalRead < Int(msgLen) {
+                        let n = read(
+                            clientSocket, buffer.baseAddress! + totalRead, Int(msgLen) - totalRead)
+                        if n <= 0 {
+                            readError = true
+                            break
                         }
+                        totalRead += n
                     }
-                } else if message.contains("tasks_update") {
-                    // Decode tasks
-                    if let jsonData = message.data(using: .utf8) {
-                        do {
-                            let payload = try JSONDecoder().decode(
-                                TaskListPayload.self, from: jsonData)
-                            vlog_s(
-                                .info, LotabApp.appClass,
-                                "Successfully decoded \(payload.data.tasks.count) tasks")
-                            DispatchQueue.main.async {
-                                Lotab.shared.tasks = payload.data.tasks
+                }
+
+                if readError {
+                    vlog_s(
+                        .error, LotabApp.appClass, "UDS payload read error or closed prematurely")
+                    break
+                }
+
+                // 3. Process Message
+                if let messageData = String(data: payloadData, encoding: .utf8)?.data(using: .utf8)
+                {
+                    do {
+                        let baseMessage = try JSONDecoder().decode(
+                            UDSMessage.self, from: messageData)
+                        vlog_s(.trace, LotabApp.appClass, "uds-event: \(baseMessage.event)")
+
+                        switch baseMessage.event {
+                        case "tabs_update":
+                            do {
+                                let payload = try JSONDecoder().decode(
+                                    TabListPayload.self, from: messageData)
+                                vlog_s(
+                                    .info, LotabApp.appClass,
+                                    "Successfully decoded \(payload.data.tabs.count) tabs")
+                                DispatchQueue.main.async {
+                                    Lotab.shared.tabs = payload.data.tabs
+                                }
+                            } catch {
+                                vlog_s(
+                                    .error, LotabApp.appClass,
+                                    "JSON Decoding Error for tabs_update: \(error)")
                             }
-                        } catch {
+
+                        case "tasks_update":
+                            do {
+                                let payload = try JSONDecoder().decode(
+                                    TaskListPayload.self, from: messageData)
+                                vlog_s(
+                                    .info, LotabApp.appClass,
+                                    "Successfully decoded \(payload.data.tasks.count) tasks")
+                                DispatchQueue.main.async {
+                                    Lotab.shared.tasks = payload.data.tasks
+                                }
+                            } catch {
+                                vlog_s(
+                                    .error, LotabApp.appClass,
+                                    "JSON Decoding Error for tasks_update: \(error)")
+                            }
+
+                        case "ui_visibility_toggle":
+                            showUI()
+
+                        default:
                             vlog_s(
-                                .error, LotabApp.appClass,
-                                "JSON Decoding Error for tasks_update: \(error)")
+                                .info, LotabApp.appClass, "Unknown UDS event: \(baseMessage.event)")
                         }
+                    } catch {
+                        vlog_s(
+                            .error, LotabApp.appClass, "Failed to decode base UDS message: \(error)"
+                        )
                     }
-                } else if message.contains("ui_visibility_toggle") {
-                    showUI()
                 }
             }
         }
@@ -599,6 +604,10 @@ struct TaskListPayload: Decodable {
         let tasks: [Task]
     }
     let data: Data
+}
+
+struct UDSMessage: Decodable {
+    let event: String
 }
 
 class Lotab: ObservableObject {
