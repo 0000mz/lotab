@@ -5,8 +5,6 @@ import SwiftUI
 // Might not be necessary -- seems the issues I am facing might just be
 // a quark of executing the binary from the terminal.
 class AppDelegate: NSObject, NSApplicationDelegate {
-    private var serverSocket: Int32 = -1
-    private var activeClientSocket: Int32 = -1
     private let socketPath = "/tmp/lotab.sock"
 
     static var shared: AppDelegate?
@@ -347,6 +345,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidResignActive(_ notification: Notification) {
         hideUI()
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        if let client = udsClient {
+            // This will stop the run loop and free resources.
+            // Note: Since the loop is in a detached thread, there's a small race
+            // but for app termination the OS will clean up soon anyway.
+            lotab_client_destroy(client)
+            udsClient = nil
+        }
     }
 
     private func showUI() {

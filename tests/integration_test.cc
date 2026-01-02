@@ -110,12 +110,11 @@ class TestableClientDriver {
   }
 
   void Stop() {
-    // Since lotab_client_run_loop is blocking and doesn't have a clean stop mechanism exposed yet
-    // (daemon/client.c creates socket and runs accept loop), we might just detach or leave it be for this simple test.
-    // In a real scenario, we'd need lotab_client_stop() or similar.
-    // For now, let's just detach, as the process will end.
+    if (ctx_) {
+      lotab_client_stop(ctx_);
+    }
     if (thread_.joinable()) {
-      thread_.detach();
+      thread_.join();
     }
   }
 

@@ -9,6 +9,8 @@
 #include <pthread.h>
 #include <signal.h>
 #include <spawn.h>
+#include <stdatomic.h>
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -33,12 +35,12 @@ typedef struct ServerContext {
   struct lws* client_wsi;
   pthread_t ws_thread;
   int uds_fd;
-  int ws_thread_exit;  // TODO: this should be protected by mutex.
-  int send_tab_request;
+  atomic_bool ws_thread_exit;
+  atomic_bool send_tab_request;
   pthread_t uds_read_thread;
-  int uds_read_exit;
+  atomic_bool uds_read_exit;
   char* pending_ws_msg;
-  int send_pending_msg;
+  atomic_bool send_pending_msg;
   pthread_mutex_t pending_msg_mutex;
   char* uds_path;
 } ServerContext;
@@ -123,7 +125,7 @@ static void handle_gui_msg(ServerContext* sc, const char* msg) {
             free(sc->pending_ws_msg);
           }
           sc->pending_ws_msg = ws_str;
-          sc->send_pending_msg = 1;
+          atomic_store(&sc->send_pending_msg, true);
           pthread_mutex_unlock(&sc->pending_msg_mutex);
           cJSON_Delete(ws_payload);
 
@@ -153,7 +155,7 @@ static void handle_gui_msg(ServerContext* sc, const char* msg) {
             free(sc->pending_ws_msg);
           }
           sc->pending_ws_msg = ws_str;
-          sc->send_pending_msg = 1;
+          atomic_store(&sc->send_pending_msg, true);
           pthread_mutex_unlock(&sc->pending_msg_mutex);
           cJSON_Delete(ws_payload);
 
@@ -181,7 +183,7 @@ static void* uds_read_thread_run(void* arg) {
 
   vlog(LOG_LEVEL_INFO, sc, "Starting UDS read loop (Framed)\n");
 
-  while (!sc->uds_read_exit) {
+  while (!atomic_load(&sc->uds_read_exit)) {
     // 1. Read Length (4 bytes)
     ssize_t n = recv(sc->uds_fd, &msg_len, sizeof(msg_len), 0);
 
@@ -260,7 +262,7 @@ static int setup_uds_client(ServerContext* sctx) {
         free(msg);
       }
       sctx->uds_fd = uds_fd;
-      sctx->uds_read_exit = 0;
+      atomic_store(&sctx->uds_read_exit, 0);
       pthread_create(&sctx->uds_read_thread, NULL, uds_read_thread_run, sctx);
       return 0;
     }
@@ -321,7 +323,7 @@ static int callback_minimal(struct lws* wsi, enum lws_callback_reasons reason, v
     case LWS_CALLBACK_ESTABLISHED:
       lwsl_user("LWS_CALLBACK_ESTABLISHED (new connection)\n");
       sc->client_wsi = wsi;
-      sc->send_tab_request = 1;
+      atomic_store(&sc->send_tab_request, 1);
       if (pss) {
         pss_clear_message(pss, 0);
       }
@@ -344,7 +346,7 @@ static int callback_minimal(struct lws* wsi, enum lws_callback_reasons reason, v
     case LWS_CALLBACK_EVENT_WAIT_CANCELLED:
       if (sc && sc->client_wsi) {
         pthread_mutex_lock(&sc->pending_msg_mutex);
-        if (sc->send_pending_msg) {
+        if (atomic_load(&sc->send_pending_msg)) {
           lws_callback_on_writable(sc->client_wsi);
         }
         pthread_mutex_unlock(&sc->pending_msg_mutex);
@@ -353,18 +355,18 @@ static int callback_minimal(struct lws* wsi, enum lws_callback_reasons reason, v
 
     case LWS_CALLBACK_SERVER_WRITEABLE:
       vlog(LOG_LEVEL_TRACE, sc, "lws-server-writeable\n");
-      if (sc->send_tab_request) {
+      if (atomic_load(&sc->send_tab_request)) {
         const char* msg = "{\"event\":\"Daemon::WS::AllTabsInfoRequest\"}";
         size_t msg_len = strlen(msg);
         unsigned char buf[LWS_PRE + 256];
         memset(buf, 0, sizeof(buf));
         memcpy(&buf[LWS_PRE], msg, msg_len);
         lws_write(wsi, &buf[LWS_PRE], msg_len, LWS_WRITE_TEXT);
-        sc->send_tab_request = 0;
+        atomic_store(&sc->send_tab_request, 0);
         vlog(LOG_LEVEL_INFO, sc, "Sent request_tab_info to extension\n");
       }
       pthread_mutex_lock(&sc->pending_msg_mutex);
-      if (sc->send_pending_msg && sc->pending_ws_msg) {
+      if (atomic_load(&sc->send_pending_msg) && sc->pending_ws_msg) {
         vlog(LOG_LEVEL_TRACE, sc, "Sending pending message to websocket.\n");
         size_t msg_len = strlen(sc->pending_ws_msg);
         // Allocate buffer with LWS_PRE padding
@@ -377,7 +379,7 @@ static int callback_minimal(struct lws* wsi, enum lws_callback_reasons reason, v
         }
         free(sc->pending_ws_msg);
         sc->pending_ws_msg = NULL;
-        sc->send_pending_msg = 0;
+        atomic_store(&sc->send_pending_msg, 0);
       }
       pthread_mutex_unlock(&sc->pending_msg_mutex);
       break;
@@ -457,7 +459,7 @@ static void* ws_thread_run(void* arg) {
   ServerContext* sc = (ServerContext*)arg;
   do {
     n = lws_service(sc->lws_ctx, 100);
-  } while (n >= 0 && !sc->ws_thread_exit);
+  } while (n >= 0 && !atomic_load(&sc->ws_thread_exit));
   return NULL;
 }
 
@@ -621,6 +623,11 @@ int engine_init(EngineContext** ectx, EngineCreationInfo cinfo) {
   sc->cls = &SERVER_CONTEXT_CLASS;
   sc->uds_fd = -1;
   pthread_mutex_init(&sc->pending_msg_mutex, NULL);
+  atomic_init(&sc->ws_thread_exit, 0);
+  atomic_init(&sc->send_tab_request, 0);
+  atomic_init(&sc->uds_read_exit, 0);
+  atomic_init(&sc->send_pending_msg, 0);
+
   lws_set_log_level(LLL_USER | LLL_ERR | LLL_WARN | LLL_NOTICE | LLL_INFO, lws_log_emit_cb);
 
   if (cinfo.uds_path && strlen(cinfo.uds_path) > 0) {
@@ -726,7 +733,7 @@ void engine_run(EngineContext* ectx) {
 
 void engine_destroy(EngineContext* ectx) {
   assert(ectx);
-  if (ectx->destroyed)
+  if (__atomic_exchange_n(&ectx->destroyed, 1, __ATOMIC_SEQ_CST))
     return;
   if (ectx->app_pid >= 0) {
     kill_process(ectx->app_pid);
@@ -736,7 +743,7 @@ void engine_destroy(EngineContext* ectx) {
     if (ectx->serv_ctx->lws_ctx) {
       lws_cancel_service(ectx->serv_ctx->lws_ctx);
       if (ectx->serv_ctx->ws_thread) {
-        ectx->serv_ctx->ws_thread_exit = 1;
+        atomic_store(&ectx->serv_ctx->ws_thread_exit, 1);
         pthread_join(ectx->serv_ctx->ws_thread, NULL);
       }
       lws_context_destroy(ectx->serv_ctx->lws_ctx);
@@ -744,7 +751,7 @@ void engine_destroy(EngineContext* ectx) {
         stop_daemon_cocoa_app();
     }
     if (ectx->serv_ctx->uds_read_thread) {
-      ectx->serv_ctx->uds_read_exit = 1;
+      atomic_store(&ectx->serv_ctx->uds_read_exit, 1);
       if (ectx->serv_ctx->uds_fd >= 0) {
         shutdown(ectx->serv_ctx->uds_fd, SHUT_RDWR);
         close(ectx->serv_ctx->uds_fd);

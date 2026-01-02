@@ -1,4 +1,5 @@
 #include "client.h"
+#include <stdatomic.h>
 #include "util.h"
 
 #include <cJSON.h>
@@ -17,6 +18,7 @@ struct ClientContext {
   void* user_data;
   int server_fd;
   int active_client_fd;
+  atomic_bool should_stop;
 };
 
 static struct EngClass CLIENT_CLS = {.name = "client"};
@@ -32,6 +34,7 @@ ClientContext* lotab_client_new(const char* socket_path, ClientCallbacks callbac
   ctx->user_data = user_data;
   ctx->server_fd = -1;
   ctx->active_client_fd = -1;
+  atomic_init(&ctx->should_stop, false);
   ctx->cls = &CLIENT_CLS;
 
   return ctx;
@@ -40,6 +43,8 @@ ClientContext* lotab_client_new(const char* socket_path, ClientCallbacks callbac
 void lotab_client_destroy(ClientContext* ctx) {
   if (!ctx)
     return;
+
+  lotab_client_stop(ctx);
 
   if (ctx->active_client_fd >= 0) {
     close(ctx->active_client_fd);
@@ -52,6 +57,26 @@ void lotab_client_destroy(ClientContext* ctx) {
     free(ctx->socket_path);
   }
   free(ctx);
+}
+
+void lotab_client_stop(ClientContext* ctx) {
+  if (!ctx)
+    return;
+
+  atomic_store(&ctx->should_stop, true);
+
+  if (ctx->server_fd >= 0) {
+    // Shutdown and close to wake up accept()
+    // Using shutdown(SHUT_RDWR) ensures accept() returns with an error.
+    shutdown(ctx->server_fd, SHUT_RDWR);
+    close(ctx->server_fd);
+    ctx->server_fd = -1;
+  }
+  if (ctx->active_client_fd >= 0) {
+    shutdown(ctx->active_client_fd, SHUT_RDWR);
+    close(ctx->active_client_fd);
+    ctx->active_client_fd = -1;
+  }
 }
 
 // Helper to free tab list
@@ -255,7 +280,7 @@ void lotab_client_run_loop(ClientContext* ctx) {
   // NOTE: The previous Swift logic accepted LOOP connection. Here we do one for simplicity as per refactor req?
   // Actually the swift logic had wait loop. Let's do simple loop.
 
-  while (1) {
+  while (!atomic_load(&ctx->should_stop)) {
     struct sockaddr_un client_addr;
     socklen_t len = sizeof(client_addr);
     int client_socket = accept(ctx->server_fd, (struct sockaddr*)&client_addr, &len);
@@ -263,6 +288,14 @@ void lotab_client_run_loop(ClientContext* ctx) {
     if (client_socket >= 0) {
       vlog(LOG_LEVEL_INFO, ctx, "Accepted new UDS connection\n");
       handle_client(ctx, client_socket);
+    } else {
+      if (atomic_load(&ctx->should_stop)) {
+        break;
+      }
+      if (errno != EINTR) {
+        vlog(LOG_LEVEL_ERROR, ctx, "accept error: %s\n", strerror(errno));
+        break;
+      }
     }
   }
 }

@@ -49,6 +49,7 @@ typedef struct ClientCallbacks {
 // API
 ClientContext* lotab_client_new(const char* socket_path, ClientCallbacks callbacks, void* user_data);
 void lotab_client_destroy(ClientContext* ctx);
+void lotab_client_stop(ClientContext* ctx);
 
 // Runs the accepting loop. Blocking. Call in a thread.
 void lotab_client_run_loop(ClientContext* ctx);
