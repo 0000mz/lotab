@@ -1,3 +1,6 @@
+2026-Jan-01:
+- Refactor GUI to separate client UDS from GUI logic.
+
 2025-Dec-28:
 - Start implementation of release build+install process.
 - Change daemon name to lotab_daemon.
@@ -67,3 +70,4 @@ TODO:
 - Change naming scheme of events from extension->daemon and daemon->ui to be easily parsable.
 - Websocket+UDS: Add confirmation response to each message.
 - Add browser id to allow app to be used for multiple browser instances.
+- Create ASAN and TSAN versions of the integration test.

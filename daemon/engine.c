@@ -1157,6 +1157,7 @@ void engine_handle_event(EngineContext* ectx, DaemonEvent event, void* data) {
           if (type != TAB_EVENT_UNKNOWN) {
             tab_event_handle(ectx->tab_state, type, json);
             switch (type) {
+              case TAB_EVENT_ACTIVATED:
               case TAB_EVENT_ALL_TABS:
               case TAB_EVENT_TAB_REMOVED:
               case TAB_EVENT_CREATED:

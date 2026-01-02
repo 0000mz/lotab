@@ -120,11 +120,16 @@ if gtest_dep.found()
                       ['tests/engine_test.cc', 'tests/test_util.cc'],
                       dependencies : [gtest_dep, engine_dep, lws_dep])
   test('engine_test', e_test)
-  
+
   c_test = executable('client_test',
                       ['tests/client_test.cc'],
                       dependencies : [gtest_dep, client_dep])
   test('client_test', c_test)
+
+  i_test = executable('integration_test',
+                      ['tests/integration_test.cc'],
+                      dependencies : [gtest_dep, engine_dep, client_dep])
+  test('integration_test', i_test)
 else
   message('gtest not found, skipping unit tests')
 endif

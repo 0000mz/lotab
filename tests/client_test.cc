@@ -41,10 +41,8 @@ class ClientTest : public ::testing::Test {
   MockData data;
 
   void SetUp() override {
-    ClientCallbacks cbs = {0};
-    cbs.on_tabs_update = on_tabs_update;
-    cbs.on_tasks_update = on_tasks_update;
-    cbs.on_ui_toggle = on_ui_toggle;
+    ClientCallbacks cbs = {
+        .on_tabs_update = on_tabs_update, .on_tasks_update = on_tasks_update, .on_ui_toggle = on_ui_toggle};
 
     memset(&data, 0, sizeof(data));
     ctx = lotab_client_new("/tmp/test.sock", cbs, &data);
