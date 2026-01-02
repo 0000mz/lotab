@@ -170,9 +170,12 @@ TEST_F(EngineTest, EngineInit) {
   // Simulate extension response
   const char* mock_response = R"pb({
                                      "event": "Extension::WS::AllTabsInfoResponse",
-                                     "data":
-                                     [ { "id": 101, "title": "Mock Tab 1", "url": "http://example.com" }
-                                       , { "id": 102, "title": "Mock Tab 2", "url": "http://google.com" }],
+                                     "data": {
+                                       "tabs":
+                                       [ { "id": 101, "title": "Mock Tab 1", "url": "http://example.com" }
+                                         , { "id": 102, "title": "Mock Tab 2", "url": "http://google.com" }],
+                                       "groups": []
+                                     },
                                      "activeTabIds": [ 101 ]
                                    })pb";
   client.Send(mock_response);
@@ -199,9 +202,12 @@ TEST_F(EngineTest, TabRemoved) {
   // 1. Send Initial State
   const char* init_response = R"pb({
                                      "event": "Extension::WS::AllTabsInfoResponse",
-                                     "data":
-                                     [ { "id": 201, "title": "Tab To Remove", "url": "http://example.com/1" }
-                                       , { "id": 202, "title": "Tab To Keep", "url": "http://example.com/2" }],
+                                     "data": {
+                                       "tabs":
+                                       [ { "id": 201, "title": "Tab To Remove", "url": "http://example.com/1" }
+                                         , { "id": 202, "title": "Tab To Keep", "url": "http://example.com/2" }],
+                                       "groups": []
+                                     },
                                      "activeTabIds": [ 201 ]
                                    })pb";
   client.Send(init_response);
@@ -240,7 +246,13 @@ TEST_F(EngineTest, TabCreated) {
   const char* create_event =
       R"pb({
              "event": "Extension::WS::TabCreated",
-             "data": { "id": 301, "title": "New Created Tab", "url": "http://example.com/new", "active": true }
+             "data": {
+               "id": 301,
+               "title": "New Created Tab",
+               "url": "http://example.com/new",
+               "active": true,
+               "groupId": -1
+             }
            })pb";
   client.Send(create_event);
   sleep(1);
@@ -293,6 +305,42 @@ TEST_F(EngineTest, TabUpdated) {
   EXPECT_EQ(ectx_->tab_state->nb_tabs, 1);
   tab = ectx_->tab_state->tabs;
   EXPECT_STREQ(tab->title, "New Title");
+}
+
+TEST_F(EngineTest, TabGroupSync) {
+  ASSERT_TRUE(ectx_ != nullptr);
+
+  TestWebSocketClient client;
+  client.Connect(GetPort());
+  ASSERT_TRUE(client.IsConnected());
+  ASSERT_TRUE(client.WaitForEvent("Daemon::WS::AllTabsInfoRequest", 2000));
+
+  // Simulate extension response with groups
+  const char* mock_response = R"pb({
+                                     "event": "Extension::WS::AllTabsInfoResponse",
+                                     "data": {
+                                       "tabs":
+                                       [ { "id": 501, "title": "Grouped Tab", "url": "http://a.com", "groupId": 10 }],
+                                       "groups":
+                                       [ { "id": 10, "title": "Work Group", "color": "blue", "collapsed": false }]
+                                     },
+                                     "activeTabIds": [ 501 ]
+                                   })pb";
+  client.Send(mock_response);
+  sleep(1);
+
+  // 1. Verify Task was created for the group
+  ASSERT_NE(ectx_->task_state, nullptr);
+  TaskInfo* task = task_state_find_by_external_id(ectx_->task_state, 10);
+  ASSERT_NE(task, nullptr);
+  EXPECT_STREQ(task->task_name, "Work Group");
+  EXPECT_EQ(task->external_id, 10);
+
+  // 2. Verify Tab is associated with the correct task_id
+  ASSERT_NE(ectx_->tab_state, nullptr);
+  TabInfo* tab = tab_state_find_tab(ectx_->tab_state, 501);
+  ASSERT_NE(tab, nullptr);
+  EXPECT_EQ(tab->task_id, (int64_t)task->task_id);
 }
 
 TEST_F(EngineTest, ConfigCreated) {

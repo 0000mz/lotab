@@ -132,10 +132,12 @@ void lotab_client_process_message(ClientContext* ctx, const char* json_str) {
         cJSON* id = cJSON_GetObjectItem(item, "id");
         cJSON* title = cJSON_GetObjectItem(item, "title");
         cJSON* active = cJSON_GetObjectItem(item, "active");
+        cJSON* task_id = cJSON_GetObjectItem(item, "task_id");
 
         list.tabs[i].id = cJSON_IsNumber(id) ? (int)id->valuedouble : 0;
         list.tabs[i].title = (cJSON_IsString(title) && title->valuestring) ? strdup(title->valuestring) : strdup("");
         list.tabs[i].active = cJSON_IsBool(active) ? cJSON_IsTrue(active) : false;
+        list.tabs[i].task_id = cJSON_IsNumber(task_id) ? (int)task_id->valuedouble : -1;
       }
 
       if (ctx->callbacks.on_tabs_update) {

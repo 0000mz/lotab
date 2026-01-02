@@ -63,7 +63,7 @@ static struct EngClass SERVER_CONTEXT_CLASS = {
     .name = "server",
 };
 
-void task_state_add(TaskState* ts, const char* task_name);
+void task_state_add(TaskState* ts, const char* task_name, int64_t external_id);
 void tab_state_update_active(TabState* ts, const cJSON* json_data);
 
 static void tab_state_free(TabState* ts) {
@@ -603,7 +603,7 @@ int engine_init(EngineContext** ectx, EngineCreationInfo cinfo) {
   ec->task_state = calloc(1, sizeof(TaskState));
   ec->task_state->cls = &TASK_STATE_CLASS;
   // TODO: Placeholder task, remove once task creation flow is implemented.
-  task_state_add(ec->task_state, "Placeholder Task");
+  task_state_add(ec->task_state, "Placeholder Task", -1);
   ec->init_statusline = cinfo.enable_statusbar != 0;
 
   if (setup_app_config_dir(&cinfo, &ec->ui_toggle_keybind) == 0) {
@@ -797,20 +797,24 @@ TabInfo* tab_state_find_tab(TabState* ts, const uint64_t id) {
   return NULL;
 }
 
-void tab_state_update_tab(TabState* ts, const char* title, const uint64_t id) {
+void tab_state_update_tab(TabState* ts, const char* title, const uint64_t id, int64_t task_id) {
   TabInfo* ti = tab_state_find_tab(ts, id);
-  if (ti && ti->title && strcmp(title, ti->title) != 0) {
-    free(ti->title);
-    ti->title = strdup(title);
+  if (ti) {
+    if (ti->title && strcmp(title, ti->title) != 0) {
+      free(ti->title);
+      ti->title = strdup(title);
+    }
+    ti->task_id = task_id;
   }
 }
 
-void tab_state_add_tab(TabState* ts, const char* title, const uint64_t id) {
+void tab_state_add_tab(TabState* ts, const char* title, const uint64_t id, int64_t task_id) {
   TabInfo* new_tab = malloc(sizeof(TabInfo));
   if (new_tab) {
     new_tab->id = id;
     new_tab->title = strdup(title);
     new_tab->active = 0;
+    new_tab->task_id = task_id;
     new_tab->next = ts->tabs;
     ts->tabs = new_tab;
     ts->nb_tabs++;
@@ -838,30 +842,86 @@ void tab_state_remove_tab(TabState* ts, const uint64_t id) {
   }
 }
 
-void task_state_add(TaskState* ts, const char* task_name) {
+TaskInfo* task_state_find_by_external_id(TaskState* ts, int64_t external_id) {
+  assert(ts);
+  if (external_id < 0)
+    return NULL;
+  TaskInfo* cur = ts->tasks;
+  while (cur) {
+    if (cur->external_id == external_id)
+      return cur;
+    cur = cur->next;
+  }
+  return NULL;
+}
+
+void task_state_add(TaskState* ts, const char* task_name, int64_t external_id) {
   TaskInfo* new_task = malloc(sizeof(TaskInfo));
   if (new_task) {
     new_task->task_id = ts->nb_tasks++;
     new_task->task_name = strdup(task_name ? task_name : "Unknown Task");
+    new_task->external_id = external_id;
     new_task->next = ts->tasks;
     ts->tasks = new_task;
   }
 }
 
-void tab_event__handle_all_tabs(TabState* ts, const cJSON* json_data) {
+void tab_event__handle_all_tabs(EngineContext* ec, const cJSON* json_data) {
+  TabState* ts = ec->tab_state;
+  TaskState* tks = ec->task_state;
   cJSON* data = cJSON_GetObjectItem(json_data, "data");
-  if (data && cJSON_IsArray(data)) {
-    int count = cJSON_GetArraySize(data);
+  if (!data) {
+    vlog(LOG_LEVEL_WARN, ts, "onAllTabs: 'data' key missing.\n");
+    return;
+  }
+
+  cJSON* tabs_json = NULL;
+  cJSON* groups_json = NULL;
+
+  if (cJSON_IsArray(data)) {
+    // Legacy format: 'data' is the array of tabs
+    tabs_json = data;
+  } else if (cJSON_IsObject(data)) {
+    tabs_json = cJSON_GetObjectItem(data, "tabs");
+    groups_json = cJSON_GetObjectItem(data, "groups");
+  }
+
+  if (groups_json && cJSON_IsArray(groups_json)) {
+    int group_count = cJSON_GetArraySize(groups_json);
+    for (int i = 0; i < group_count; i++) {
+      cJSON* g = cJSON_GetArrayItem(groups_json, i);
+      cJSON* gid_json = cJSON_GetObjectItemCaseSensitive(g, "id");
+      cJSON* gtitle_json = cJSON_GetObjectItemCaseSensitive(g, "title");
+
+      int64_t external_id = -1;
+      if (cJSON_IsNumber(gid_json)) {
+        external_id = (int64_t)gid_json->valuedouble;
+      }
+      char* group_title = "Browser Group";
+      if (cJSON_IsString(gtitle_json) && gtitle_json->valuestring && strlen(gtitle_json->valuestring) > 0) {
+        group_title = gtitle_json->valuestring;
+      }
+
+      if (task_state_find_by_external_id(tks, external_id) == NULL) {
+        task_state_add(tks, group_title, external_id);
+      }
+    }
+  }
+
+  if (tabs_json && cJSON_IsArray(tabs_json)) {
+    int count = cJSON_GetArraySize(tabs_json);
     vlog(LOG_LEVEL_INFO, ts, "Received %d tabs (current state: %d)\n", count, ts->nb_tabs);
     int tabs_added = 0, tabs_updated = 0;
 
     for (int i = 0; i < count; i++) {
-      cJSON* item = cJSON_GetArrayItem(data, i);
+      cJSON* item = cJSON_GetArrayItem(tabs_json, i);
       cJSON* title_json = cJSON_GetObjectItemCaseSensitive(item, "title");
       cJSON* id_json = cJSON_GetObjectItemCaseSensitive(item, "id");
+      cJSON* gid_json = cJSON_GetObjectItemCaseSensitive(item, "groupId");
 
       char* tab_title = NULL;
       uint64_t tab_id = 0;
+      int64_t task_id = -1;
 
       if (cJSON_IsString(title_json) && (title_json->valuestring != NULL)) {
         tab_title = title_json->valuestring;
@@ -869,19 +929,26 @@ void tab_event__handle_all_tabs(TabState* ts, const cJSON* json_data) {
       if (cJSON_IsNumber(id_json)) {
         tab_id = (uint64_t)id_json->valuedouble;
       }
+      if (cJSON_IsNumber(gid_json)) {
+        int64_t external_id = (int64_t)gid_json->valuedouble;
+        TaskInfo* task = task_state_find_by_external_id(tks, external_id);
+        if (task) {
+          task_id = task->task_id;
+        }
+      }
 
       if (tab_state_find_tab(ts, tab_id) != NULL) {
-        tab_state_update_tab(ts, tab_title ? tab_title : "Unknown", tab_id);
+        tab_state_update_tab(ts, tab_title ? tab_title : "Unknown", tab_id, task_id);
         ++tabs_updated;
       } else {
-        tab_state_add_tab(ts, tab_title ? tab_title : "Unknown", tab_id);
+        tab_state_add_tab(ts, tab_title ? tab_title : "Unknown", tab_id, task_id);
         ++tabs_added;
       }
     }
     vlog(LOG_LEVEL_INFO, ts, "Tab State Synced: %d updated, %d added. Total: %d\n", tabs_updated, tabs_added,
          ts->nb_tabs);
   } else {
-    vlog(LOG_LEVEL_WARN, ts, "onAllTabs: 'data' key missing or not an array.\n");
+    vlog(LOG_LEVEL_WARN, ts, "onAllTabs: 'tabs' data missing or not an array.\n");
   }
   tab_state_update_active(ts, json_data);
 }
@@ -915,7 +982,8 @@ void tab_state_update_active(TabState* ts, const cJSON* json_data) {
   }
 }
 
-void tab_event__handle_remove_tab(TabState* ts, const cJSON* json_data) {
+void tab_event__handle_remove_tab(EngineContext* ec, const cJSON* json_data) {
+  TabState* ts = ec->tab_state;
   // {"event": "tabs.onRemoved", "data": {"tabId": 123, "removeInfo": {...}}}
   cJSON* data = cJSON_GetObjectItem(json_data, "data");
   if (data) {
@@ -931,7 +999,8 @@ void tab_event__handle_remove_tab(TabState* ts, const cJSON* json_data) {
   tab_state_update_active(ts, json_data);
 }
 
-void tab_event__handle_activated(TabState* ts, const cJSON* json_data) {
+void tab_event__handle_activated(EngineContext* ec, const cJSON* json_data) {
+  TabState* ts = ec->tab_state;
   // {"event": "tabs.onActivated", "data": {"tabId": 123, "windowId": 456}}
   cJSON* data = cJSON_GetObjectItem(json_data, "data");
   if (data) {
@@ -946,7 +1015,8 @@ void tab_event__handle_activated(TabState* ts, const cJSON* json_data) {
   tab_state_update_active(ts, json_data);
 }
 
-void tab_event__handle_created(TabState* ts, const cJSON* json_data) {
+void tab_event__handle_created(EngineContext* ec, const cJSON* json_data) {
+  TabState* ts = ec->tab_state;
   // {"event": "tabs.onCreated", "data": {"id": 123, "title": "New Tab", ...}}
   cJSON* data = cJSON_GetObjectItem(json_data, "data");
   if (data) {
@@ -959,7 +1029,7 @@ void tab_event__handle_created(TabState* ts, const cJSON* json_data) {
       if (cJSON_IsString(title_json) && title_json->valuestring) {
         title = title_json->valuestring;
       }
-      tab_state_add_tab(ts, title, id);
+      tab_state_add_tab(ts, title, id, -1);
       vlog(LOG_LEVEL_INFO, ts, "Tab Created: %llu, Title: %s\n", id, title);
     } else {
       vlog(LOG_LEVEL_WARN, ts, "onCreated: id missing or invalid\n");
@@ -968,13 +1038,14 @@ void tab_event__handle_created(TabState* ts, const cJSON* json_data) {
   tab_state_update_active(ts, json_data);
 }
 
-void tab_event__do_nothing(TabState* ts, const cJSON* json_data) {
-  (void)ts;
+void tab_event__do_nothing(EngineContext* ec, const cJSON* json_data) {
+  (void)ec;
   (void)json_data;
-  vlog(LOG_LEVEL_TRACE, ts, "tab_event -- do nothing\n");
+  vlog(LOG_LEVEL_TRACE, ec, "tab_event -- do nothing\n");
 }
 
-void tab_event__handle_updated(TabState* ts, const cJSON* json_data) {
+void tab_event__handle_updated(EngineContext* ec, const cJSON* json_data) {
+  TabState* ts = ec->tab_state;
   // {"event": "tabs.onUpdated", "data": {"tabId": 123, "changeInfo": {...}, "tab": {"id": 123, "title": "..."}}}
   cJSON* data = cJSON_GetObjectItem(json_data, "data");
   if (!data)
@@ -993,10 +1064,10 @@ void tab_event__handle_updated(TabState* ts, const cJSON* json_data) {
     title = title_json->valuestring;
   }
   if (tab_state_find_tab(ts, id)) {
-    tab_state_update_tab(ts, title, id);
+    tab_state_update_tab(ts, title, id, -1);
     vlog(LOG_LEVEL_INFO, ts, "Tab Updated: %llu, Title: %s\n", id, title);
   } else {
-    tab_state_add_tab(ts, title, id);
+    tab_state_add_tab(ts, title, id, -1);
     vlog(LOG_LEVEL_INFO, ts, "Tab Updated (New): %llu, Title: %s\n", id, title);
   }
   tab_state_update_active(ts, json_data);
@@ -1020,7 +1091,7 @@ static const struct TabEventMapEntry TAB_EVENT_MAP[] = {
 
 static struct {
   TabEventType type;
-  void (*event_handler)(TabState* ts, const cJSON* json_data);
+  void (*event_handler)(EngineContext* ec, const cJSON* json_data);
 } TAB_EVENT_HANDLERS[] = {
     {TAB_EVENT_ALL_TABS, tab_event__handle_all_tabs},
     {TAB_EVENT_TAB_REMOVED, tab_event__handle_remove_tab},
@@ -1054,21 +1125,26 @@ static TabEventType parse_event_type(cJSON* json) {
   return type;
 }
 
-void tab_event_handle(TabState* ts, TabEventType type, cJSON* json_data) {
+void tab_event_handle(EngineContext* ec, TabEventType type, cJSON* json_data) {
   int event_handled = 0;
   for (int i = 0; TAB_EVENT_HANDLERS[i].type != TAB_EVENT_UNKNOWN; ++i) {
     if (TAB_EVENT_HANDLERS[i].type == type) {
-      TAB_EVENT_HANDLERS[i].event_handler(ts, json_data);
+      if (TAB_EVENT_HANDLERS[i].event_handler) {
+        TAB_EVENT_HANDLERS[i].event_handler(ec, json_data);
+      }
       event_handled = 1;
       break;
     }
   }
   if (!event_handled) {
-    vlog(LOG_LEVEL_WARN, ts, "Unhandled tab event type: %d\n", type);
+    vlog(LOG_LEVEL_WARN, ec->tab_state, "Unhandled tab event type: %d\n", type);
   }
 }
 
 static void send_tabs_update_to_uds(EngineContext* ectx) {
+  if (!ectx->serv_ctx || ectx->serv_ctx->uds_fd < 0)
+    return;
+
   cJSON* tab_update_msg = cJSON_CreateObject();
   cJSON_AddStringToObject(tab_update_msg, "event", "Daemon::UDS::TabsUpdate");
 
@@ -1085,6 +1161,7 @@ static void send_tabs_update_to_uds(EngineContext* ectx) {
       cJSON_AddNumberToObject(tab_obj, "id", (double)current->id);
       cJSON_AddStringToObject(tab_obj, "title", current->title ? current->title : "Unknown");
       cJSON_AddBoolToObject(tab_obj, "active", current->active);
+      cJSON_AddNumberToObject(tab_obj, "task_id", (double)current->task_id);
       cJSON_AddItemToArray(tabs_array, tab_obj);
       current = current->next;
     }
@@ -1093,57 +1170,40 @@ static void send_tabs_update_to_uds(EngineContext* ectx) {
   cJSON_Delete(tab_update_msg);
 }
 
+static void send_tasks_update_to_uds(EngineContext* ectx) {
+  if (!ectx->serv_ctx || ectx->serv_ctx->uds_fd < 0)
+    return;
+
+  cJSON* task_update_msg = cJSON_CreateObject();
+  cJSON_AddStringToObject(task_update_msg, "event", "Daemon::UDS::TasksUpdate");
+
+  cJSON* task_data = cJSON_CreateObject();
+  cJSON_AddItemToObject(task_update_msg, "data", task_data);
+
+  cJSON* tasks_array = cJSON_CreateArray();
+  cJSON_AddItemToObject(task_data, "tasks", tasks_array);
+
+  if (ectx->task_state) {
+    TaskInfo* current = ectx->task_state->tasks;
+    while (current) {
+      cJSON* task_obj = cJSON_CreateObject();
+      cJSON_AddNumberToObject(task_obj, "id", (double)current->task_id);
+      cJSON_AddStringToObject(task_obj, "name", current->task_name ? current->task_name : "Unknown");
+      cJSON_AddItemToArray(tasks_array, task_obj);
+      current = current->next;
+    }
+  }
+  send_uds(ectx->serv_ctx->uds_fd, task_update_msg);
+  cJSON_Delete(task_update_msg);
+}
+
 void engine_handle_event(EngineContext* ectx, DaemonEvent event, void* data) {
   assert(ectx != NULL);
 
   switch (event) {
     case EVENT_HOTKEY_TOGGLE: {
-      // 1. Send Tab Update
-      cJSON* tab_update_msg = cJSON_CreateObject();
-      cJSON_AddStringToObject(tab_update_msg, "event", "Daemon::UDS::TabsUpdate");
-
-      cJSON* event_data = cJSON_CreateObject();
-      cJSON_AddItemToObject(tab_update_msg, "data", event_data);
-
-      cJSON* tabs_array = cJSON_CreateArray();
-      cJSON_AddItemToObject(event_data, "tabs", tabs_array);
-
-      if (ectx->tab_state) {
-        TabInfo* current = ectx->tab_state->tabs;
-        while (current) {
-          cJSON* tab_obj = cJSON_CreateObject();
-          cJSON_AddNumberToObject(tab_obj, "id", (double)current->id);
-          cJSON_AddStringToObject(tab_obj, "title", current->title ? current->title : "Unknown");
-          cJSON_AddBoolToObject(tab_obj, "active", current->active);
-          cJSON_AddItemToArray(tabs_array, tab_obj);
-          current = current->next;
-        }
-      }
-      send_uds(ectx->serv_ctx->uds_fd, tab_update_msg);
-      cJSON_Delete(tab_update_msg);
-
-      // 2. Send Task Update
-      cJSON* task_update_msg = cJSON_CreateObject();
-      cJSON_AddStringToObject(task_update_msg, "event", "Daemon::UDS::TasksUpdate");
-
-      cJSON* task_data = cJSON_CreateObject();
-      cJSON_AddItemToObject(task_update_msg, "data", task_data);
-
-      cJSON* tasks_array = cJSON_CreateArray();
-      cJSON_AddItemToObject(task_data, "tasks", tasks_array);
-
-      if (ectx->task_state) {
-        TaskInfo* current = ectx->task_state->tasks;
-        while (current) {
-          cJSON* task_obj = cJSON_CreateObject();
-          cJSON_AddNumberToObject(task_obj, "id", (double)current->task_id);
-          cJSON_AddStringToObject(task_obj, "name", current->task_name ? current->task_name : "Unknown");
-          cJSON_AddItemToArray(tasks_array, task_obj);
-          current = current->next;
-        }
-      }
-      send_uds(ectx->serv_ctx->uds_fd, task_update_msg);
-      cJSON_Delete(task_update_msg);
+      send_tabs_update_to_uds(ectx);
+      send_tasks_update_to_uds(ectx);
 
       // 3. Send Toggle
       cJSON* toggle_msg = cJSON_CreateObject();
@@ -1162,7 +1222,7 @@ void engine_handle_event(EngineContext* ectx, DaemonEvent event, void* data) {
           vlog(LOG_LEVEL_TRACE, ectx->serv_ctx, "json parsed message: %s\n", cJSON_Print(json));
           TabEventType type = parse_event_type(json);
           if (type != TAB_EVENT_UNKNOWN) {
-            tab_event_handle(ectx->tab_state, type, json);
+            tab_event_handle(ectx, type, json);
             switch (type) {
               case TAB_EVENT_ACTIVATED:
               case TAB_EVENT_ALL_TABS:
@@ -1170,6 +1230,7 @@ void engine_handle_event(EngineContext* ectx, DaemonEvent event, void* data) {
               case TAB_EVENT_CREATED:
               case TAB_EVENT_UPDATED:
                 send_tabs_update_to_uds(ectx);
+                send_tasks_update_to_uds(ectx);
                 break;
               default:
                 vlog(LOG_LEVEL_TRACE, ectx->serv_ctx, "ignoring tab event type: %d\n", type);

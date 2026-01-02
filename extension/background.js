@@ -6,13 +6,25 @@ let event_queue = [];
 // Helper to send all tabs
 function sendAllTabs() {
     chrome.tabs.query({}, (tabs) => {
-        const reduced_tabs = tabs.map(t => ({
-            title: t.title,
-            id: t.id,
-            url: t.url,
-            active: t.active,
-        }));
-        logEvent('Extension::WS::AllTabsInfoResponse', reduced_tabs);
+        chrome.tabGroups.query({}, (groups) => {
+            const reduced_tabs = tabs.map(t => ({
+                title: t.title,
+                id: t.id,
+                url: t.url,
+                active: t.active,
+                groupId: t.groupId,
+            }));
+            const reduced_groups = groups.map(g => ({
+                id: g.id,
+                title: g.title,
+                color: g.color,
+                collapsed: g.collapsed,
+            }));
+            logEvent('Extension::WS::AllTabsInfoResponse', {
+                tabs: reduced_tabs,
+                groups: reduced_groups
+            });
+        });
     });
 }
 
@@ -34,16 +46,7 @@ function connectToDaemon() {
             switch (message.event) {
                 case 'Daemon::WS::AllTabsInfoRequest':
                     console.log('Received request_tab_info, querying tabs...');
-                    chrome.tabs.query({}, (tabs) => {
-                        console.log("active tabs:", tabs.filter(el => el.active));
-                        const reduced_tabs = tabs.map(t => ({
-                            title: t.title,
-                            id: t.id,
-                            url: t.url,
-                            active: t.active,
-                        }));
-                        logEvent('Extension::WS::AllTabsInfoResponse', reduced_tabs);
-                    });
+                    sendAllTabs();
                     break;
                 case 'Daemon::WS::ActivateTabRequest':
                     const tabId = message.data.tabId;

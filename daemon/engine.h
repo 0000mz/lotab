@@ -34,6 +34,7 @@ typedef struct TabInfo {
   uint64_t id;
   char* title;
   int active;
+  int64_t task_id;
   struct TabInfo* next;
 } TabInfo;
 
@@ -46,6 +47,7 @@ typedef struct TabState {
 typedef struct TaskInfo {
   uint64_t task_id;
   char* task_name;
+  int64_t external_id;  // ID from external source (e.g. browser group id)
   struct TaskInfo* next;
 } TaskInfo;
 
@@ -83,6 +85,10 @@ int engine_init(OUT EngineContext** ectx, EngineCreationInfo cinfo);
 void engine_run(EngineContext* ectx);
 void engine_destroy(EngineContext* ectx);
 void engine_handle_event(EngineContext* ectx, DaemonEvent event, void* data);
+
+// State helpers (exposed for testing)
+TabInfo* tab_state_find_tab(TabState* ts, const uint64_t id);
+TaskInfo* task_state_find_by_external_id(TaskState* ts, int64_t external_id);
 
 #ifdef __cplusplus
 }

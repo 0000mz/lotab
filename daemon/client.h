@@ -17,6 +17,7 @@ typedef struct LotabTab {
   int id;
   char* title;
   bool active;
+  int task_id;
 } LotabTab;
 
 typedef struct LotabTask {

@@ -15,13 +15,14 @@
 struct TabData {
   int id;
   std::string title;
+  int task_id;
   bool operator==(const TabData& other) const {
-    return id == other.id && title == other.title;
+    return id == other.id && title == other.title && task_id == other.task_id;
   }
 };
 
-TabData MakeTab(int id, std::string title) {
-  return {id, title};
+TabData MakeTab(int id, std::string title, int task_id = -1) {
+  return {id, title, task_id};
 }
 
 struct CallbackData {
@@ -58,7 +59,7 @@ class TestableClientDriver {
       driver->data_.tabs.clear();
       for (size_t i = 0; i < tabs->count; ++i) {
         std::string title = tabs->tabs[i].title ? tabs->tabs[i].title : "";
-        driver->data_.tabs.push_back({tabs->tabs[i].id, title});
+        driver->data_.tabs.push_back({tabs->tabs[i].id, title, tabs->tabs[i].task_id});
       }
 
       driver->data_.active_tab_title = nullptr;
@@ -259,16 +260,45 @@ TEST_F(IntegrationTest, ExtensionsTabCreatedPropagatesToClient) {
 TEST_F(IntegrationTest, ExtensionsAllTabsPropagatesToClient) {
   const char* ws_msg_full = R"json({
         "event": "Extension::WS::AllTabsInfoResponse",
-        "data": [
-            { "id": 1, "title": "Tab One", "active": false },
-            { "id": 2, "title": "Tab Two", "active": true }
-        ],
+        "data": {
+            "tabs": [
+                { "id": 1, "title": "Tab One", "active": false, "groupId": -1 },
+                { "id": 2, "title": "Tab Two", "active": true, "groupId": -1 }
+            ],
+            "groups": []
+        },
         "activeTabIds": [2]
     })json";
   engine_handle_event(ec_, EVENT_WS_MESSAGE_RECEIVED, (void*)ws_msg_full);
-  // We expect 2 tabs. Our helper only checks count and first title.
   ASSERT_TRUE(client_driver_->WaitForTabsUpdate(2, "Tab Two"));
-  ASSERT_TRUE(client_driver_->WaitForTabs({MakeTab(1, "Tab One"), MakeTab(2, "Tab Two")}));
+  ASSERT_TRUE(client_driver_->WaitForTabs({MakeTab(1, "Tab One", -1), MakeTab(2, "Tab Two", -1)}));
+}
+
+TEST_F(IntegrationTest, TabGroupsPropagateToClient) {
+  const char* ws_msg = R"json({
+        "event": "Extension::WS::AllTabsInfoResponse",
+        "data": {
+            "tabs": [
+                { "id": 100, "title": "Grouped Tab", "groupId": 77 }
+            ],
+            "groups": [
+                { "id": 77, "title": "My Group" }
+            ]
+        }
+    })json";
+
+  engine_handle_event(ec_, EVENT_WS_MESSAGE_RECEIVED, (void*)ws_msg);
+
+  // 1. Verify Task was created
+  // Engine starts with 1 placeholder task, so now we should have 2.
+  ASSERT_TRUE(client_driver_->WaitForTasksUpdate(2, "My Group"));
+
+  // 2. Verify Tab has the correct task_id
+  // The first task created will have task_id 1 (since 0 is the placeholder).
+  // Wait, in engine.c: task_state_add uses ts->nb_tasks++
+  // Engine starts with "Placeholder Task" at task_id 0.
+  // So "My Group" will be task_id 1.
+  ASSERT_TRUE(client_driver_->WaitForTabs({MakeTab(100, "Grouped Tab", 1)}));
 }
 
 TEST_F(IntegrationTest, ExtensionsTabActivatedPropagatesToClient) {

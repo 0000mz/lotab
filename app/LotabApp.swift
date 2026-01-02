@@ -412,7 +412,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 for i in 0..<count {
                     let cTab = buffer[i]
                     let title = String(cString: cTab.title)
-                    newTabs.append(BrowserTab(id: Int(cTab.id), title: title, active: cTab.active))
+                    newTabs.append(
+                        BrowserTab(
+                            id: Int(cTab.id), title: title, active: cTab.active,
+                            taskId: Int(cTab.task_id)))
                 }
             }
 
@@ -478,6 +481,7 @@ struct BrowserTab: Identifiable, Hashable {
     let id: Int
     let title: String
     let active: Bool
+    let taskId: Int
 }
 
 struct Task: Identifiable, Hashable {
