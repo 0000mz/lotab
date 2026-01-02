@@ -81,6 +81,9 @@ executable('lotab_daemon', daemon_engine_src,
            install : true,
            install_rpath : get_option('prefix') / get_option('libdir'))
 
+# --- Unit Tests Dependency ---
+gtest_dep = dependency('gtest', main : true, required : false)
+
 # --- Sanitizer Variants ---
 sanitizers = {
   'address': '_asan',
@@ -90,6 +93,23 @@ sanitizers = {
 install_sanitizers = get_option('buildtype') != 'release'
 
 foreach s, suffix : sanitizers
+  # Libraries with sanitizer
+  engine_util_lib_var = static_library('daemon_util' + suffix, ['daemon/util.c'],
+                                       include_directories : include_directories('daemon'),
+                                       override_options : ['b_sanitize=' + s])
+  engine_util_dep_var = declare_dependency(link_with : engine_util_lib_var, include_directories : include_directories('daemon'))
+
+  client_lib_var = static_library('daemon_client' + suffix, ['daemon/client.c'],
+                                  dependencies : [cjson_dep, engine_util_dep_var],
+                                  override_options : ['b_sanitize=' + s])
+  client_dep_var = declare_dependency(link_with : client_lib_var, include_directories : include_directories('daemon'), dependencies : [cjson_dep])
+
+  engine_lib_var = static_library('daemon_engine' + suffix, ['daemon/engine.c', 'daemon/statusbar.m'],
+                                  dependencies : [lws_dep, cjson_dep, tomlc99_dep, cocoa_dep, carbon_dep, engine_util_dep_var],
+                                  override_options : ['b_sanitize=' + s])
+  engine_dep_var = declare_dependency(link_with : engine_lib_var, include_directories : include_directories('daemon'),
+                                      dependencies : [lws_dep, cjson_dep, tomlc99_dep, cocoa_dep, carbon_dep])
+
   # App Variant
   app_var = executable('Lotab' + suffix,
              app_src,
@@ -107,14 +127,34 @@ foreach s, suffix : sanitizers
                  configuration : conf_var_data)
 
   executable('lotab_daemon' + suffix, daemon_engine_src,
-             dependencies : daemon_deps + [engine_dep],
+             dependencies : daemon_deps + [engine_dep_var],
              c_args : ['-DSANITIZER_CONFIG_H="' + conf_var_output + '"'],
              override_options : ['b_sanitize=' + s],
              install : install_sanitizers)
+
+  # Unit Test Variants
+  if gtest_dep.found()
+    e_test_var = executable('engine_test' + suffix,
+                        ['tests/engine_test.cc', 'tests/test_util.cc'],
+                        dependencies : [gtest_dep, engine_dep_var, lws_dep],
+                        override_options : ['b_sanitize=' + s])
+    test('engine_test' + suffix, e_test_var)
+
+    c_test_var = executable('client_test' + suffix,
+                        ['tests/client_test.cc'],
+                        dependencies : [gtest_dep, client_dep_var],
+                        override_options : ['b_sanitize=' + s])
+    test('client_test' + suffix, c_test_var)
+
+    i_test_var = executable('integration_test' + suffix,
+                        ['tests/integration_test.cc'],
+                        dependencies : [gtest_dep, engine_dep_var, client_dep_var],
+                        override_options : ['b_sanitize=' + s])
+    test('integration_test' + suffix, i_test_var)
+  endif
 endforeach
 
 # --- Unit Tests ---
-gtest_dep = dependency('gtest', main : true, required : false)
 if gtest_dep.found()
   e_test = executable('engine_test',
                       ['tests/engine_test.cc', 'tests/test_util.cc'],
