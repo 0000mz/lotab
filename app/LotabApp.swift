@@ -110,7 +110,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     tm.filterText = ""
                     return nil
                 }
-                if old_mode == LM_MODE_LIST_MULTISELECT && new_mode == LM_MODE_LIST_NORMAL {
+                if old_mode == LM_MODE_LIST_MULTISELECT
+                    && (new_mode == LM_MODE_LIST_NORMAL
+                        || new_mode == LM_MODE_LIST_FILTER_COMMITTED)
+                {
                     tm.clearSelection()
                     return nil
                 }

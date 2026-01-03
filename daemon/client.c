@@ -14,6 +14,8 @@
 #include <sys/un.h>
 #include <unistd.h>
 
+#define ARRAY_SIZE(x) (sizeof(x) / sizeof((x)[0]))
+
 struct ClientContext {
   struct EngClass* cls;  // Logging context - Must be first for vlog
   char* socket_path;
@@ -375,8 +377,8 @@ void lotab_client_send_tab_selected(ClientContext* ctx, int tab_id) {
 struct ModeContext {
   struct EngClass* cls;  // Logging context - Must be first for vlog
   LmMode mode;
-  char filter_text[1024];
-  int filter_text_len;
+  LmMode prev_mode;
+  void* state_priv;
 };
 static struct EngClass MODE_CLS = {.name = "app_mode"};
 
@@ -384,10 +386,14 @@ void filter_text_add_char(ModeContext* mctx, const char c);
 void filter_text_remove_char(ModeContext* mctx);
 void filter_text_clear(ModeContext* mctx);
 
+void transition_state_ctx(ModeContext* mctx, LmMode new_mode);
+
 struct ModeContext* lm_alloc(void) {
   struct ModeContext* ctx = calloc(1, sizeof(struct ModeContext));
   ctx->cls = &MODE_CLS;
-  ctx->mode = LM_MODE_LIST_NORMAL;
+  ctx->mode = LM_MODE_UNKNOWN;
+  ctx->state_priv = NULL;
+  transition_state_ctx(ctx, LM_MODE_LIST_NORMAL);
   return ctx;
 }
 
@@ -412,9 +418,53 @@ int is_special_alnum(const uint8_t c) {
 #define MACOS_ENTER_KEY_CODE 36
 #define MACOS_BACKSPACE_KEY_CODE 51
 
+#define MODIFIER_FLAG_CMD 1 << 0
+#define MODIFIER_FLAG_SHIFT 1 << 1
+
+struct LmModeListNormalState {
+  char filter_text[1024];
+  int filter_text_len;
+};
+void lm_mode_list_normal__init(void* data);
+void lm_mode_list_normal__deinit(void* data);
+void lm_mode_list_normal__process_key(void* data,
+                                      uint16_t key_code,
+                                      const uint8_t ascii_code,
+                                      const uint32_t mod_flags);
+
+struct LmState {
+  LmMode mode;
+  uint32_t state_data_size;
+  void (*init)(void* data);
+  void (*deinit)(void* data);
+  void (*process_key)(void* data, uint16_t key_code, const uint8_t ascii_code, const uint32_t mod_flags);
+};
+
+static struct LmState STATE_MACHINE[] = {
+    {
+        .mode = LM_MODE_LIST_NORMAL,
+        .state_data_size = sizeof(struct LmModeListNormalState),
+        .init = lm_mode_list_normal__init,
+        .deinit = lm_mode_list_normal__deinit,
+        .process_key = lm_mode_list_normal__process_key,
+    },
+};
+
+struct LmState* find_mode_state(const LmMode mode) {
+  struct LmState* state = NULL;
+  for (uint32_t i = 0; i < ARRAY_SIZE(STATE_MACHINE); ++i) {
+    struct LmState* s = &STATE_MACHINE[i];
+    if (mode == s->mode) {
+      state = s;
+      break;
+    }
+  }
+  return state;
+}
+
 void lm_process_key_event(ModeContext* mctx,                 //
                           const uint16_t key_code,           //
-                          const uint8_t character,           //
+                          const uint8_t ascii_code,          //
                           uint8_t cmd,                       //
                           uint8_t shift,                     //
                           LmModeTransition* out_transition,  //
@@ -425,21 +475,51 @@ void lm_process_key_event(ModeContext* mctx,                 //
   assert(out_old_mode);
   assert(out_new_mode);
 
+  struct LmState* current_state = find_mode_state(mctx->mode);
+  if (current_state == NULL) {
+    vlog(LOG_LEVEL_ERROR, mctx, "Unknown state : %d\n", mctx->mode);
+    return;
+  }
+
+  const uint32_t mod_flags = (!!cmd << 0) | (!!shift << 1);
+  // TODO: pass state priv data instead of NULL.
+  current_state->process_key(NULL, key_code, ascii_code, mod_flags);
+}
+
+// TODO: Remove this
+void lm_process_key_event_old(ModeContext* mctx,                 //
+                              const uint16_t key_code,           //
+                              const uint8_t character,           //
+                              uint8_t cmd,                       //
+                              uint8_t shift,                     //
+                              LmModeTransition* out_transition,  //
+                              LmMode* out_old_mode,              //
+                              LmMode* out_new_mode) {
+  assert(mctx);
+  assert(out_transition);
+  assert(out_old_mode);
+  assert(out_new_mode);
+
   vlog(LOG_LEVEL_TRACE, mctx, "lm_process_key_event: key_code=%d\n", key_code);
 
-#define RETURN_ADHERE_TO_MODE(m)              \
-  *out_transition = LM_MODETS_ADHERE_TO_MODE; \
-  *out_old_mode = mctx->mode;                 \
-  *out_new_mode = mctx->mode = m;             \
+#define RETURN_ADHERE_TO_MODE(m)                \
+  if (m == mctx->mode)                          \
+    return;                                     \
+  *out_transition = LM_MODETS_ADHERE_TO_MODE;   \
+  *out_old_mode = mctx->prev_mode = mctx->mode; \
+  *out_new_mode = mctx->mode = m;               \
   return;
 
 #define RETURN_TRANSITION(transition)         \
   *out_transition = transition;               \
   *out_old_mode = *out_new_mode = mctx->mode; \
   return
+
 #define RETURN_TRANSITION_2(transition, new_mode) \
   *out_transition = transition;                   \
-  *out_old_mode = mctx->mode;                     \
+  if (new_mode == mctx->mode)                     \
+    return;                                       \
+  *out_old_mode = mctx->prev_mode = mctx->mode;   \
   *out_new_mode = mctx->mode = new_mode;          \
   return
 
@@ -465,7 +545,17 @@ void lm_process_key_event(ModeContext* mctx,                 //
         if (mctx->mode == LM_MODE_LIST_FILTER_INFLIGHT || mctx->mode == LM_MODE_LIST_FILTER_COMMITTED) {
           filter_text_clear(mctx);
         }
-        RETURN_ADHERE_TO_MODE(LM_MODE_LIST_NORMAL);
+        if (mctx->mode == LM_MODE_LIST_MULTISELECT) {
+          // The transition to multiselect can heppen from LIST_NORMAL or LIST_FILTER_COMMITTED.
+          // Pressint escape should return to that particular state.
+          if (mctx->prev_mode == LM_MODE_LIST_FILTER_COMMITTED)
+            printf("RETURN_ADHERE_TO_MODE: FILTER_COMMITTED\n");
+          else
+            printf("RETURN_ADHERE_TO_MODE: ??? %d\n", mctx->prev_mode);
+          RETURN_ADHERE_TO_MODE(mctx->prev_mode);
+        } else {
+          RETURN_ADHERE_TO_MODE(LM_MODE_LIST_NORMAL);
+        }
       }
       break;
 
@@ -499,7 +589,8 @@ void lm_process_key_event(ModeContext* mctx,                 //
 
     // TODO: When space is pressed in FILTER_COMMITTED mode, it should also select...
     case MACOS_SPACE_CODE:
-      if (mctx->mode == LM_MODE_LIST_NORMAL || mctx->mode == LM_MODE_LIST_MULTISELECT) {
+      if (mctx->mode == LM_MODE_LIST_NORMAL || mctx->mode == LM_MODE_LIST_MULTISELECT ||
+          mctx->mode == LM_MODE_LIST_FILTER_COMMITTED) {
         RETURN_TRANSITION_2(LM_MODETS_SELECT_TAB, LM_MODE_LIST_MULTISELECT);
       }
       break;
@@ -523,6 +614,26 @@ void lm_process_key_event(ModeContext* mctx,                 //
       vlog(LOG_LEVEL_WARN, mctx, "unhandled key code: %d (cmd=%d shift=%d mode=%d)\n", key_code, cmd, shift,
            mctx->mode);
   }
+}
+
+void transition_state_ctx(ModeContext* mctx, LmMode new_mode) {
+  LmMode old_mode = mctx->mode;
+
+  // Cleanup old state
+  struct LmState* old_state = find_mode_state(old_mode);
+  if (old_state->deinit)
+    old_state->deinit(mctx->state_priv);
+  if (mctx->state_priv != NULL) {
+    free(mctx->state_priv);
+  }
+
+  // Setup new state
+  struct LmState* state = find_mode_state(new_mode);
+  mctx->state_priv = malloc(state->state_data_size);
+  memset(mctx->state_priv, 0, state->state_data_size);
+  state->init(mctx->state_priv);
+
+  mctx->mode = new_mode;
 }
 
 void filter_text_add_char(ModeContext* mctx, const char c) {

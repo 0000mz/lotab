@@ -110,7 +110,7 @@ void lm_destroy(ModeContext* mctx);
 // are not the same.
 void lm_process_key_event(ModeContext* mctx,                 //
                           uint16_t key_code,                 //
-                          uint8_t character,                 //
+                          uint8_t ascii_code,                //
                           uint8_t cmd,                       //
                           uint8_t shift,                     //
                           LmModeTransition* out_transition,  //
