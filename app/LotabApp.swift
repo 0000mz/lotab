@@ -43,6 +43,98 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         NSEvent.addLocalMonitorForEvents(matching: .keyDown) { (event: NSEvent) -> NSEvent? in
             let tm = Lotab.shared
 
+            let charValue = event.characters?.first?.asciiValue ?? 0
+
+            var transition: LmModeTransition = LM_MODETS_UNKNOWN
+            var old_mode: LmMode = LM_MODE_UNKNOWN
+            var new_mode: LmMode = LM_MODE_UNKNOWN
+            lm_process_key_event(
+                self.modeContext,
+                event.keyCode,
+                charValue,
+                event.modifierFlags.contains(.command) ? 1 : 0,
+                event.modifierFlags.contains(.shift) ? 1 : 0,
+                &transition,
+                &old_mode,
+                &new_mode)
+
+            vlog_s(.warn, LotabApp.appClass, "DBG tx=\(transition) old=\(old_mode) new=\(new_mode)")
+            switch transition {
+            case LM_MODETS_UNKNOWN:
+                break
+            case LM_MODETS_HIDE_UI:
+                self.hideUI()
+                return nil
+
+            case LM_MODETS_SELECT_TAB:
+                tm.addTabToSelection()
+                return nil
+
+            case LM_MODETS_SELECT_ALL_TABS:
+                tm.selectAllTabs()
+                return nil
+
+            case LM_MODETS_NAVIGATE_UP:
+                tm.listNavigateUp()
+                return nil
+
+            case LM_MODETS_NAVIGATE_DOWN:
+                tm.listNavigateDown()
+                return nil
+
+            case LM_MODETS_CLOSE_SELECTED_TABS:
+                tm.closeSelectedTabs(udsClient: self.udsClient)
+                return nil
+
+            case LM_MODETS_ACTIVATE_TO_TAB:
+                if !tm.multiSelection.isEmpty { return nil }
+                if let selectedId = Lotab.shared.selection {
+                    if let client = self.udsClient {
+                        lotab_client_send_tab_selected(client, Int32(selectedId))
+                    }
+                    self.hideUI()
+                    return nil
+                }
+                return nil
+
+            case LM_MODETS_ADHERE_TO_MODE:
+                if old_mode == LM_MODE_LIST_NORMAL && new_mode == LM_MODE_LIST_FILTER_INFLIGHT {
+                    tm.isFiltering = true
+                    tm.filterText = ""
+                    return nil
+                }
+                if (old_mode == LM_MODE_LIST_FILTER_INFLIGHT
+                    || old_mode == LM_MODE_LIST_FILTER_COMMITTED) && new_mode == LM_MODE_LIST_NORMAL
+                {
+                    tm.isFiltering = false
+                    tm.filterText = ""
+                    return nil
+                }
+                if old_mode == LM_MODE_LIST_MULTISELECT && new_mode == LM_MODE_LIST_NORMAL {
+                    tm.clearSelection()
+                    return nil
+                }
+                break
+
+            case LM_MODETS_COMMIT_LIST_FILTER:
+                tm.isFiltering = false
+                break
+
+            case LM_MODETS_UPDATE_LIST_FILTER:
+                vlog_s(.trace, LotabApp.appClass, ".inside this...")
+                if let filter_txt = lm_get_filter_text(self.modeContext) {
+                    tm.filterText = String(cString: filter_txt)
+                } else {
+                    tm.filterText = ""
+                }
+                vlog_s(.trace, LotabApp.appClass, "updated filter text: \(tm.filterText)")
+
+            default:
+                vlog_s(.warn, LotabApp.appClass, "unknown transition id: \(transition)")
+            }
+
+            return event
+            /*
             // Marking Mode
             if tm.isMarking {
                 if tm.isCreatingLabel {
@@ -333,8 +425,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             }
             return event
+            */
         }
 
+        self.modeContext = lm_alloc()
         startUDSServer()
 
         // Explicitly hide initially
@@ -354,6 +448,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             // but for app termination the OS will clean up soon anyway.
             lotab_client_destroy(client)
             udsClient = nil
+        }
+        if let mctx = modeContext {
+            lm_destroy(mctx)
+            modeContext = nil
         }
     }
 
@@ -397,6 +495,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private var udsClient: OpaquePointer?
+    private var modeContext: OpaquePointer?
 
     private func startUDSServer() {
         let socketPath = "/tmp/lotab.sock"
@@ -517,6 +616,87 @@ class Lotab: ObservableObject {
         let active = filtered.filter { $0.active }
         let other = filtered.filter { !$0.active }
         return active + other
+    }
+
+    public func listNavigateDown() {
+        let tabs = self.displayedTabs
+        if !tabs.isEmpty {
+            if let sel = self.selection, let idx = tabs.firstIndex(where: { $0.id == sel }) {
+                if idx == tabs.count - 1 {
+                    self.selection = tabs.first?.id
+                } else {
+                    self.selection = tabs[idx + 1].id
+                }
+            } else {
+                self.selection = tabs.first?.id
+            }
+        }
+    }
+
+    public func listNavigateUp() {
+        let tabs = self.displayedTabs
+        if !tabs.isEmpty {
+            if let sel = self.selection, let idx = tabs.firstIndex(where: { $0.id == sel }) {
+                if idx == 0 {
+                    self.selection = tabs.last?.id
+                } else {
+                    self.selection = tabs[idx - 1].id
+                }
+            } else {
+                self.selection = tabs.first?.id
+            }
+        }
+    }
+
+    public func addTabToSelection() {
+        if let sel = self.selection {
+            if self.multiSelection.contains(sel) {
+                self.multiSelection.remove(sel)
+            } else {
+                self.multiSelection.insert(sel)
+            }
+        }
+    }
+
+    public func selectAllTabs() {
+        self.multiSelection = Set(self.displayedTabs.map { $0.id })
+    }
+
+    public func clearSelection() {
+        self.multiSelection.removeAll()
+    }
+
+    public func closeSelectedTabs(udsClient: OpaquePointer?) {
+        let idsToClose: [Int]
+        // TODO: Re-enable
+        // if event.modifierFlags.contains(.shift) && !tm.multiSelection.isEmpty {
+        //     // Close all but selected
+        //     idsToClose = tm.tabs.filter { !tm.multiSelection.contains($0.id) }.map {
+        //         $0.id
+        //     }
+        // } else {
+        // Normal Close
+        if !self.multiSelection.isEmpty {
+            idsToClose = Array(self.multiSelection)
+        } else if let sel = self.selection {
+            idsToClose = [sel]
+        } else {
+            idsToClose = []
+        }
+        // }
+
+        if !idsToClose.isEmpty {
+            // Use C client to send close_tabs
+            if let client = udsClient {
+                let cIds = idsToClose.map { Int32($0) }
+                cIds.withUnsafeBufferPointer { buffer in
+                    lotab_client_send_close_tabs(
+                        client, buffer.baseAddress, Int(buffer.count))
+                }
+            }
+            self.multiSelection = []
+        }
+
     }
 }
 

@@ -64,13 +64,13 @@ struct ContentView: View {
             }
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
-            .onChange(of: lotab.tabs) { _, newTabs in
+            .onChange(of: lotab.tabs) { newTabs in
                 if lotab.selection == nil || !newTabs.contains(where: { $0.id == lotab.selection })
                 {
                     lotab.selection = newTabs.first(where: { $0.active })?.id ?? newTabs.first?.id
                 }
             }
-            .onChange(of: lotab.selection) { _, newSel in
+            .onChange(of: lotab.selection) { newSel in
                 if let id = newSel {
                     proxy.scrollTo(id, anchor: .center)
                 }
@@ -108,7 +108,7 @@ struct ContentView: View {
             }
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
-            .onChange(of: lotab.labelListSelection) { _, newSel in
+            .onChange(of: lotab.labelListSelection) { newSel in
                 proxy.scrollTo(newSel, anchor: .center)
             }
         }
@@ -202,7 +202,7 @@ struct ContentView: View {
             }
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
-            .onChange(of: lotab.labelSelectionCursor) { _, newSel in
+            .onChange(of: lotab.labelSelectionCursor) { newSel in
                 proxy.scrollTo(newSel, anchor: .center)
             }
         }
@@ -316,7 +316,7 @@ struct ContentView: View {
             }
 
             items.append(
-                FooterItem(components: [.key("shift"), .key("a")], description: "to select all"))
+                FooterItem(components: [.key("cmd"), .key("a")], description: "to select all"))
             items.append(FooterItem(components: [.key("s")], description: "to select"))
 
             if !lotab.multiSelection.isEmpty {

@@ -2,8 +2,11 @@
 #include <stdatomic.h>
 #include "util.h"
 
+#include <assert.h>
 #include <cJSON.h>
+#include <ctype.h>
 #include <errno.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -21,7 +24,7 @@ struct ClientContext {
   atomic_bool should_stop;
 };
 
-static struct EngClass CLIENT_CLS = {.name = "client"};
+static struct EngClass CLIENT_CLS = {.name = "uds_client"};
 
 ClientContext* lotab_client_new(const char* socket_path, ClientCallbacks callbacks, void* user_data) {
   ClientContext* ctx = (ClientContext*)malloc(sizeof(ClientContext));
@@ -367,4 +370,181 @@ void lotab_client_send_tab_selected(ClientContext* ctx, int tab_id) {
 
   send_json_message(ctx, root);
   cJSON_Delete(root);
+}
+
+struct ModeContext {
+  struct EngClass* cls;  // Logging context - Must be first for vlog
+  LmMode mode;
+  char filter_text[1024];
+  int filter_text_len;
+};
+static struct EngClass MODE_CLS = {.name = "app_mode"};
+
+void filter_text_add_char(ModeContext* mctx, const char c);
+void filter_text_remove_char(ModeContext* mctx);
+void filter_text_clear(ModeContext* mctx);
+
+struct ModeContext* lm_alloc(void) {
+  struct ModeContext* ctx = calloc(1, sizeof(struct ModeContext));
+  ctx->cls = &MODE_CLS;
+  ctx->mode = LM_MODE_LIST_NORMAL;
+  return ctx;
+}
+
+void lm_destroy(ModeContext* mctx) {
+  assert(mctx);
+  free(mctx);
+}
+
+int is_special_alnum(const uint8_t c) {
+  return isalnum(c) || c == ' ' || c == '_' || c == '-';
+}
+
+#define MACOS_FORWARD_SLASH_KEY_CODE 44
+#define MACOS_ESC_CODE 53
+#define MACOS_SPACE_CODE 49
+#define MACOS_DOWN_ARROW_KEY_CODE 125
+#define MACOS_UP_ARROW_KEY_CODE 126
+#define MACOS_A_KEY_CODE 0
+#define MACOS_J_KEY_CODE 38
+#define MACOS_K_KEY_CODE 40
+#define MACOS_X_KEY_CODE 7
+#define MACOS_ENTER_KEY_CODE 36
+#define MACOS_BACKSPACE_KEY_CODE 51
+
+void lm_process_key_event(ModeContext* mctx,                 //
+                          const uint16_t key_code,           //
+                          const uint8_t character,           //
+                          uint8_t cmd,                       //
+                          uint8_t shift,                     //
+                          LmModeTransition* out_transition,  //
+                          LmMode* out_old_mode,              //
+                          LmMode* out_new_mode) {
+  assert(mctx);
+  assert(out_transition);
+  assert(out_old_mode);
+  assert(out_new_mode);
+
+  vlog(LOG_LEVEL_TRACE, mctx, "lm_process_key_event: key_code=%d\n", key_code);
+
+#define RETURN_ADHERE_TO_MODE(m)              \
+  *out_transition = LM_MODETS_ADHERE_TO_MODE; \
+  *out_old_mode = mctx->mode;                 \
+  *out_new_mode = mctx->mode = m;             \
+  return;
+
+#define RETURN_TRANSITION(transition)         \
+  *out_transition = transition;               \
+  *out_old_mode = *out_new_mode = mctx->mode; \
+  return
+#define RETURN_TRANSITION_2(transition, new_mode) \
+  *out_transition = transition;                   \
+  *out_old_mode = mctx->mode;                     \
+  *out_new_mode = mctx->mode = new_mode;          \
+  return
+
+  // Certain modes will absorb all key events until it's exited from, such as
+  // filtering mode.
+  if (mctx->mode == LM_MODE_LIST_FILTER_INFLIGHT) {
+    if (key_code == MACOS_BACKSPACE_KEY_CODE) {
+      filter_text_remove_char(mctx);
+      RETURN_TRANSITION(LM_MODETS_UPDATE_LIST_FILTER);
+    } else if (is_special_alnum(character)) {
+      filter_text_add_char(mctx, character);
+      RETURN_TRANSITION(LM_MODETS_UPDATE_LIST_FILTER);
+    }
+  }
+
+  // Handle any mode transitions...
+  switch (key_code) {
+    case MACOS_ESC_CODE:
+      if (mctx->mode == LM_MODE_LIST_NORMAL) {
+        RETURN_TRANSITION(LM_MODETS_HIDE_UI);
+      } else if (mctx->mode == LM_MODE_LIST_MULTISELECT || mctx->mode == LM_MODE_LIST_FILTER_INFLIGHT ||
+                 mctx->mode == LM_MODE_LIST_FILTER_COMMITTED) {
+        if (mctx->mode == LM_MODE_LIST_FILTER_INFLIGHT || mctx->mode == LM_MODE_LIST_FILTER_COMMITTED) {
+          filter_text_clear(mctx);
+        }
+        RETURN_ADHERE_TO_MODE(LM_MODE_LIST_NORMAL);
+      }
+      break;
+
+    case MACOS_ENTER_KEY_CODE:
+      if (mctx->mode == LM_MODE_LIST_FILTER_INFLIGHT) {
+        RETURN_TRANSITION_2(LM_MODETS_COMMIT_LIST_FILTER, LM_MODE_LIST_FILTER_COMMITTED);
+      } else if (mctx->mode == LM_MODE_LIST_NORMAL || mctx->mode == LM_MODE_LIST_FILTER_COMMITTED) {
+        RETURN_TRANSITION(LM_MODETS_ACTIVATE_TO_TAB);
+      }
+      break;
+
+    case MACOS_FORWARD_SLASH_KEY_CODE:
+      filter_text_clear(mctx);
+      RETURN_ADHERE_TO_MODE(LM_MODE_LIST_FILTER_INFLIGHT);
+
+    case MACOS_DOWN_ARROW_KEY_CODE:
+    case MACOS_J_KEY_CODE:
+      if (mctx->mode == LM_MODE_LIST_NORMAL || mctx->mode == LM_MODE_LIST_MULTISELECT ||
+          mctx->mode == LM_MODE_LIST_FILTER_COMMITTED) {
+        RETURN_TRANSITION(LM_MODETS_NAVIGATE_DOWN);
+      }
+      break;
+
+    case MACOS_UP_ARROW_KEY_CODE:
+    case MACOS_K_KEY_CODE:
+      if (mctx->mode == LM_MODE_LIST_NORMAL || mctx->mode == LM_MODE_LIST_MULTISELECT ||
+          mctx->mode == LM_MODE_LIST_FILTER_COMMITTED) {
+        RETURN_TRANSITION(LM_MODETS_NAVIGATE_UP);
+      }
+      break;
+
+    // TODO: When space is pressed in FILTER_COMMITTED mode, it should also select...
+    case MACOS_SPACE_CODE:
+      if (mctx->mode == LM_MODE_LIST_NORMAL || mctx->mode == LM_MODE_LIST_MULTISELECT) {
+        RETURN_TRANSITION_2(LM_MODETS_SELECT_TAB, LM_MODE_LIST_MULTISELECT);
+      }
+      break;
+
+    // TODO: When cmd+A is pressed in FILTER_COMMITTED mode, it should also select all...
+    case MACOS_A_KEY_CODE:
+      if (cmd) {
+        if (mctx->mode == LM_MODE_LIST_NORMAL || mctx->mode == LM_MODE_LIST_MULTISELECT) {
+          RETURN_TRANSITION_2(LM_MODETS_SELECT_ALL_TABS, LM_MODE_LIST_MULTISELECT);
+        }
+      }
+      break;
+
+    case MACOS_X_KEY_CODE:
+      if (mctx->mode == LM_MODE_LIST_MULTISELECT) {
+        RETURN_TRANSITION(LM_MODETS_CLOSE_SELECTED_TABS);
+      }
+      break;
+
+    default:
+      vlog(LOG_LEVEL_WARN, mctx, "unhandled key code: %d (cmd=%d shift=%d mode=%d)\n", key_code, cmd, shift,
+           mctx->mode);
+  }
+}
+
+void filter_text_add_char(ModeContext* mctx, const char c) {
+  mctx->filter_text_len += 1;
+  mctx->filter_text[mctx->filter_text_len - 1] = c;
+  mctx->filter_text[mctx->filter_text_len] = '\0';
+}
+
+void filter_text_remove_char(ModeContext* mctx) {
+  if (mctx->filter_text_len == 0)
+    return;
+  mctx->filter_text[mctx->filter_text_len - 1] = '\0';
+  mctx->filter_text_len -= 1;
+}
+
+void filter_text_clear(ModeContext* mctx) {
+  mctx->filter_text[0] = '\0';
+  mctx->filter_text_len = 0;
+}
+
+char* lm_get_filter_text(ModeContext* mctx) {
+  if (mctx->filter_text_len == 0)
+    return NULL;
+  return mctx->filter_text;
 }
