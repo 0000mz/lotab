@@ -176,16 +176,57 @@ static void handle_gui_msg(ServerContext* sc, const char* msg) {
         int64_t task_id = (int64_t)task_id_json->valuedouble;
         EngineContext* ec = (EngineContext*)lws_context_user(sc->lws_ctx);
         if (ec && ec->tab_state) {
-             cJSON* id_item = NULL;
-             cJSON_ArrayForEach(id_item, tab_ids) {
-                if (cJSON_IsNumber(id_item)) {
-                    TabInfo* tab = tab_state_find_tab(ec->tab_state, (uint64_t)id_item->valuedouble);
-                    if (tab) {
-                        tab->task_id = task_id;
-                    }
-                }
-             }
-             send_tabs_update_to_uds(ec);
+          cJSON* id_item = NULL;
+          // We need to collect tab IDs for both local update and WS forwarding
+          cJSON_ArrayForEach(id_item, tab_ids) {
+            if (cJSON_IsNumber(id_item)) {
+              TabInfo* tab = tab_state_find_tab(ec->tab_state, (uint64_t)id_item->valuedouble);
+              if (tab) {
+                tab->task_id = task_id;
+              }
+            }
+          }
+          send_tabs_update_to_uds(ec);
+
+          // Forward to Extension to update real Tab Groups
+          // Find matching TaskInfo for external_id
+          int64_t group_id = 0;
+          if (ec->task_state) {
+            TaskInfo* curr = ec->task_state->tasks;
+            while (curr) {
+              if ((int64_t)curr->task_id == task_id) {
+                group_id = curr->external_id;
+                break;
+              }
+              curr = curr->next;
+            }
+          }
+
+          // If group_id is 0, it means it's a local-only task or creates a new group.
+          // We generally only want to sync if we have a valid external ID or if intended.
+          // For now, let's forward everything. If group_id is 0, extension treats as new group.
+
+          cJSON* ws_payload = cJSON_CreateObject();
+          cJSON_AddStringToObject(ws_payload, "event", "Daemon::WS::GroupTabs");
+          cJSON* ws_data = cJSON_CreateObject();
+          cJSON_AddItemToObject(ws_data, "tabIds", cJSON_Duplicate(tab_ids, 1));
+          if (group_id != 0) {
+            cJSON_AddNumberToObject(ws_data, "groupId", (double)group_id);
+          }
+          cJSON_AddItemToObject(ws_payload, "data", ws_data);
+
+          char* ws_str = cJSON_PrintUnformatted(ws_payload);
+
+          pthread_mutex_lock(&sc->pending_msg_mutex);
+          if (sc->pending_ws_msg) {
+            free(sc->pending_ws_msg);
+          }
+          sc->pending_ws_msg = ws_str;
+          atomic_store(&sc->send_pending_msg, true);
+          pthread_mutex_unlock(&sc->pending_msg_mutex);
+          cJSON_Delete(ws_payload);
+
+          lws_cancel_service(sc->lws_ctx);
         }
       }
     } else if (strcmp(event->valuestring, "GUI::UDS::CreateTask") == 0) {
@@ -195,23 +236,48 @@ static void handle_gui_msg(ServerContext* sc, const char* msg) {
 
       if (cJSON_IsString(name_json) && name_json->valuestring) {
         EngineContext* ec = (EngineContext*)lws_context_user(sc->lws_ctx);
-        task_state_add(ec->task_state, name_json->valuestring, "grey", 0);
+        // Use -1 for external_id to mark as unconfirmed/local-only initially
+        task_state_add(ec->task_state, name_json->valuestring, "grey", -1);
 
         // New task is head
-        TaskInfo* new_task = ec->task_state->tasks;
-        if (new_task && cJSON_IsArray(associate_tab_ids)) {
-             cJSON* id_item = NULL;
-             cJSON_ArrayForEach(id_item, associate_tab_ids) {
-                if (cJSON_IsNumber(id_item)) {
-                    TabInfo* tab = tab_state_find_tab(ec->tab_state, (uint64_t)id_item->valuedouble);
-                    if (tab) {
-                        tab->task_id = new_task->task_id;
-                    }
-                }
-             }
-        }
+        TaskInfo* new_t = ec->task_state->tasks;
         send_tasks_update_to_uds(ec);
-        send_tabs_update_to_uds(ec);
+
+        // Associate tabs locally
+        if (cJSON_IsArray(associate_tab_ids)) {
+          cJSON* id_item = NULL;
+          cJSON_ArrayForEach(id_item, associate_tab_ids) {
+            if (cJSON_IsNumber(id_item)) {
+              TabInfo* tab = tab_state_find_tab(ec->tab_state, (uint64_t)id_item->valuedouble);
+              if (tab) {
+                tab->task_id = new_t->task_id;
+              }
+            }
+          }
+          send_tabs_update_to_uds(ec);
+
+          // Send request to Extension to create real group
+          cJSON* ws_payload = cJSON_CreateObject();
+          cJSON_AddStringToObject(ws_payload, "event", "Daemon::WS::CreateTabGroupRequest");
+          cJSON* ws_data = cJSON_CreateObject();
+          cJSON_AddStringToObject(ws_data, "title", name_json->valuestring);
+          cJSON_AddItemToObject(ws_data, "tabIds", cJSON_Duplicate(associate_tab_ids, 1));
+          cJSON_AddStringToObject(ws_data, "color", "grey");  // Default
+          cJSON_AddItemToObject(ws_payload, "data", ws_data);
+
+          char* ws_str = cJSON_PrintUnformatted(ws_payload);
+
+          pthread_mutex_lock(&sc->pending_msg_mutex);
+          if (sc->pending_ws_msg) {
+            free(sc->pending_ws_msg);
+          }
+          sc->pending_ws_msg = ws_str;
+          atomic_store(&sc->send_pending_msg, true);
+          pthread_mutex_unlock(&sc->pending_msg_mutex);
+          cJSON_Delete(ws_payload);
+
+          lws_cancel_service(sc->lws_ctx);
+        }
       }
     } else {
       vlog(LOG_LEVEL_INFO, sc, "Received GUI Event: %s\n", event->valuestring);
@@ -917,34 +983,38 @@ void task_state_add(TaskState* ts, const char* task_name, const char* color, int
 }
 
 void task_state_update(TaskState* ts, int64_t external_id, const char* name, const char* color) {
-    TaskInfo* task = task_state_find_by_external_id(ts, external_id);
-    if (task) {
-        if (task->task_name) free(task->task_name);
-        task->task_name = strdup(name ? name : "Unknown Task");
-        if (task->color) free(task->color);
-        task->color = strdup(color ? color : "grey");
-    }
+  TaskInfo* task = task_state_find_by_external_id(ts, external_id);
+  if (task) {
+    if (task->task_name)
+      free(task->task_name);
+    task->task_name = strdup(name ? name : "Unknown Task");
+    if (task->color)
+      free(task->color);
+    task->color = strdup(color ? color : "grey");
+  }
 }
 
 void task_state_remove(TaskState* ts, int64_t external_id) {
-    TaskInfo* current = ts->tasks;
-    TaskInfo* prev = NULL;
-    while (current) {
-        if (current->external_id == external_id) {
-            if (prev) {
-                prev->next = current->next;
-            } else {
-                ts->tasks = current->next;
-            }
-            if (current->task_name) free(current->task_name);
-            if (current->color) free(current->color);
-            free(current);
-            ts->nb_tasks--;
-            return;
-        }
-        prev = current;
-        current = current->next;
+  TaskInfo* current = ts->tasks;
+  TaskInfo* prev = NULL;
+  while (current) {
+    if (current->external_id == external_id) {
+      if (prev) {
+        prev->next = current->next;
+      } else {
+        ts->tasks = current->next;
+      }
+      if (current->task_name)
+        free(current->task_name);
+      if (current->color)
+        free(current->color);
+      free(current);
+      ts->nb_tasks--;
+      return;
     }
+    prev = current;
+    current = current->next;
+  }
 }
 
 void tab_event__handle_all_tabs(EngineContext* ec, const cJSON* json_data) {
@@ -990,7 +1060,34 @@ void tab_event__handle_all_tabs(EngineContext* ec, const cJSON* json_data) {
       }
 
       if (task_state_find_by_external_id(tks, external_id) == NULL) {
-        task_state_add(tks, group_title, group_color, external_id);
+        // Check for unconfirmed task (external_id == -1) with same name
+        int claimed = 0;
+        TaskInfo* curr = tks->tasks;
+        while (curr) {
+          if (curr->external_id == -1 && curr->task_name && strcmp(curr->task_name, group_title) == 0) {
+            // Claim it
+            curr->external_id = external_id;
+            // Update color/name if changed (name matches but case might differ? trust browser?)
+            // Actually keep browser title as truth
+            if (curr->task_name)
+              free(curr->task_name);
+            curr->task_name = strdup(group_title);
+            if (curr->color)
+              free(curr->color);
+            curr->color = strdup(group_color);
+
+            claimed = 1;
+            break;
+          }
+          curr = curr->next;
+        }
+
+        if (!claimed) {
+          task_state_add(tks, group_title, group_color, external_id);
+        }
+      } else {
+        // Update existing task
+        task_state_update(tks, external_id, group_title, group_color);
       }
     }
   }
@@ -1161,76 +1258,77 @@ void tab_event__handle_updated(EngineContext* ec, const cJSON* json_data) {
 }
 
 void tab_event__handle_group_updated(EngineContext* ec, const cJSON* json_data) {
-    // {"event": "...", "data": {"id": 123, "title": "...", "color": "..."}}
-    TaskState* ts = ec->task_state;
-    cJSON* data = cJSON_GetObjectItem(json_data, "data");
-    if (!data) return;
+  // {"event": "...", "data": {"id": 123, "title": "...", "color": "..."}}
+  TaskState* ts = ec->task_state;
+  cJSON* data = cJSON_GetObjectItem(json_data, "data");
+  if (!data)
+    return;
 
-    cJSON* id_json = cJSON_GetObjectItem(data, "id");
-    cJSON* title_json = cJSON_GetObjectItem(data, "title");
-    cJSON* color_json = cJSON_GetObjectItem(data, "color");
+  cJSON* id_json = cJSON_GetObjectItem(data, "id");
+  cJSON* title_json = cJSON_GetObjectItem(data, "title");
+  cJSON* color_json = cJSON_GetObjectItem(data, "color");
 
-    if (cJSON_IsNumber(id_json)) {
-        int64_t external_id = (int64_t)id_json->valuedouble;
-        const char* title = "Browser Group";
-        if (cJSON_IsString(title_json) && title_json->valuestring) {
-            title = title_json->valuestring;
-        }
-        const char* color = "grey";
-        if (cJSON_IsString(color_json) && color_json->valuestring) {
-            color = color_json->valuestring;
-        }
-
-        if (task_state_find_by_external_id(ts, external_id)) {
-            task_state_update(ts, external_id, title, color);
-            vlog(LOG_LEVEL_INFO, ec->tab_state, "Task Updated: %lld, Title: %s, Color: %s\n", external_id, title, color);
-            send_tasks_update_to_uds(ec);
-        }
+  if (cJSON_IsNumber(id_json)) {
+    int64_t external_id = (int64_t)id_json->valuedouble;
+    const char* title = "Browser Group";
+    if (cJSON_IsString(title_json) && title_json->valuestring) {
+      title = title_json->valuestring;
     }
+    const char* color = "grey";
+    if (cJSON_IsString(color_json) && color_json->valuestring) {
+      color = color_json->valuestring;
+    }
+
+    if (task_state_find_by_external_id(ts, external_id)) {
+      task_state_update(ts, external_id, title, color);
+      vlog(LOG_LEVEL_INFO, ec->tab_state, "Task Updated: %lld, Title: %s, Color: %s\n", external_id, title, color);
+      send_tasks_update_to_uds(ec);
+    }
+  }
 }
 
-
-
 void tab_event__handle_group_created(EngineContext* ec, const cJSON* json_data) {
-    TaskState* ts = ec->task_state;
-    cJSON* data = cJSON_GetObjectItem(json_data, "data");
-    if (!data) return;
+  TaskState* ts = ec->task_state;
+  cJSON* data = cJSON_GetObjectItem(json_data, "data");
+  if (!data)
+    return;
 
-    cJSON* id_json = cJSON_GetObjectItem(data, "id");
-    cJSON* title_json = cJSON_GetObjectItem(data, "title");
-    cJSON* color_json = cJSON_GetObjectItem(data, "color");
+  cJSON* id_json = cJSON_GetObjectItem(data, "id");
+  cJSON* title_json = cJSON_GetObjectItem(data, "title");
+  cJSON* color_json = cJSON_GetObjectItem(data, "color");
 
-    if (cJSON_IsNumber(id_json)) {
-        int64_t external_id = (int64_t)id_json->valuedouble;
-        const char* title = "Browser Group";
-        if (cJSON_IsString(title_json) && title_json->valuestring) {
-            title = title_json->valuestring;
-        }
-        const char* color = "grey";
-        if (cJSON_IsString(color_json) && color_json->valuestring) {
-            color = color_json->valuestring;
-        }
-        
-        if (task_state_find_by_external_id(ts, external_id) == NULL) {
-            task_state_add(ts, title, color, external_id);
-            vlog(LOG_LEVEL_INFO, ec->tab_state, "Task Created: %lld, Title: %s, Color: %s\n", external_id, title, color);
-            send_tasks_update_to_uds(ec);
-        }
+  if (cJSON_IsNumber(id_json)) {
+    int64_t external_id = (int64_t)id_json->valuedouble;
+    const char* title = "Browser Group";
+    if (cJSON_IsString(title_json) && title_json->valuestring) {
+      title = title_json->valuestring;
     }
+    const char* color = "grey";
+    if (cJSON_IsString(color_json) && color_json->valuestring) {
+      color = color_json->valuestring;
+    }
+
+    if (task_state_find_by_external_id(ts, external_id) == NULL) {
+      task_state_add(ts, title, color, external_id);
+      vlog(LOG_LEVEL_INFO, ec->tab_state, "Task Created: %lld, Title: %s, Color: %s\n", external_id, title, color);
+      send_tasks_update_to_uds(ec);
+    }
+  }
 }
 
 void tab_event__handle_group_removed(EngineContext* ec, const cJSON* json_data) {
-    TaskState* ts = ec->task_state;
-    cJSON* data = cJSON_GetObjectItem(json_data, "data");
-    if (!data) return;
+  TaskState* ts = ec->task_state;
+  cJSON* data = cJSON_GetObjectItem(json_data, "data");
+  if (!data)
+    return;
 
-    cJSON* id_json = cJSON_GetObjectItem(data, "id");
-    if (cJSON_IsNumber(id_json)) {
-        int64_t external_id = (int64_t)id_json->valuedouble;
-        task_state_remove(ts, external_id);
-        vlog(LOG_LEVEL_INFO, ec->tab_state, "Task Removed: %lld\n", external_id);
-        send_tasks_update_to_uds(ec);
-    }
+  cJSON* id_json = cJSON_GetObjectItem(data, "id");
+  if (cJSON_IsNumber(id_json)) {
+    int64_t external_id = (int64_t)id_json->valuedouble;
+    task_state_remove(ts, external_id);
+    vlog(LOG_LEVEL_INFO, ec->tab_state, "Task Removed: %lld\n", external_id);
+    send_tasks_update_to_uds(ec);
+  }
 }
 
 struct TabEventMapEntry {

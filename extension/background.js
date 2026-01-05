@@ -119,6 +119,55 @@ function connectToDaemon() {
                         }
                     }
                     break;
+                case 'Daemon::WS::GroupTabs':
+                    const groupTabIds = message.data.tabIds;
+                    const targetGroupId = message.data.groupId; // Can be undefined (new group) or integer
+                    if (groupTabIds && groupTabIds.length > 0) {
+                        // Ensure all are integers
+                        const gIds = groupTabIds.map(id => parseInt(id)).filter(Number.isInteger);
+
+                        const opts = { tabIds: gIds };
+                        if (Number.isInteger(targetGroupId)) {
+                            opts.groupId = targetGroupId;
+                        }
+
+                        chrome.tabs.group(opts, (newGroupId) => {
+                            if (chrome.runtime.lastError) {
+                                console.error("GroupTabs error:", chrome.runtime.lastError);
+                            } else {
+                                console.log(`Grouped tabs ${gIds} into group ${newGroupId}`);
+                                sendAllTabs();
+                            }
+                        });
+                    }
+                    break;
+                case 'Daemon::WS::CreateTabGroupRequest':
+                    const createData = message.data;
+                    const createTitle = createData.title;
+                    const createColor = createData.color;
+                    const createTabIds = createData.tabIds;
+
+                    if (createTabIds && createTabIds.length > 0) {
+                        const cIds = createTabIds.map(id => parseInt(id)).filter(Number.isInteger);
+
+                        chrome.tabs.group({ tabIds: cIds }, (newGroupId) => {
+                            if (chrome.runtime.lastError) {
+                                console.error("CreateTabGroupRequest error (group):", chrome.runtime.lastError);
+                            } else {
+                                chrome.tabGroups.update(newGroupId, {
+                                    title: createTitle,
+                                    color: createColor
+                                }, (group) => {
+                                    if (chrome.runtime.lastError) {
+                                        console.error("CreateTabGroupRequest error (update):", chrome.runtime.lastError);
+                                    }
+                                    console.log(`Created group ${newGroupId} with title "${createTitle}"`);
+                                    sendAllTabs();
+                                });
+                            }
+                        });
+                    }
+                    break;
             }
         } catch (e) {
             console.error('Failed to parse message from daemon:', e);
