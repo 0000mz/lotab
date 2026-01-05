@@ -197,20 +197,15 @@ if uv_prog.found()
        args : ['run', meson.current_source_dir() / 'tests/install_test.py'],
        is_parallel : false,
        timeout : 120)
+
+  test('extension_test', uv_prog,
+       args : ['run', '--with', 'playwright', '--with', 'pytest-asyncio', '--with', 'websockets', 'pytest', meson.current_source_dir() / 'tests/extension/test_integration.py'],
+       is_parallel : false,
+       timeout : 60)
 else
   message('uv not found, skipping python UI tests')
 endif
 
-npm_prog = find_program('npm', required : false)
-if npm_prog.found()
-  node_prog = find_program('node', required : false)
-  if node_prog.found()
-      test('extension_test', node_prog,
-           args : [meson.current_source_dir() / 'tests/extension/integration_test.js'],
-           workdir : meson.current_source_dir() / 'tests/extension',
-           timeout : 30)
-  endif
-endif
 
 # --- Install Scripts / Data ---
 # Configure com.mob.lotab.plist
