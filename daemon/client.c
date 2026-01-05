@@ -606,6 +606,7 @@ void lm_mode_list_normal__init_from(void* data, LmMode old_mode, void* old_data)
 }
 
 void lm_mode_list_normal__deinit(void* data) {
+  (void)data;
   // No op
 }
 
@@ -615,6 +616,7 @@ void lm_mode_list_normal__process_key(void* data,
                                       const uint32_t mod_flags,
                                       LmModeTransition* out_transition,
                                       LmMode* out_new_mode) {
+  (void)ascii_code;
   LmModeListNormalState* s = (LmModeListNormalState*)data;
   *out_transition = LM_MODETS_UNKNOWN;
   *out_new_mode = LM_MODE_LIST_NORMAL;
@@ -676,6 +678,7 @@ void lm_mode_filter_inflight__init_from(void* data, LmMode old_mode, void* old_d
 }
 
 void lm_mode_filter_inflight__deinit(void* data) {
+  (void)data;
 }
 
 void lm_mode_filter_inflight__process_key(void* data,
@@ -684,6 +687,7 @@ void lm_mode_filter_inflight__process_key(void* data,
                                           const uint32_t mod_flags,
                                           LmModeTransition* out_transition,
                                           LmMode* out_new_mode) {
+  (void)mod_flags;
   LmModeFilterInflightState* s = (LmModeFilterInflightState*)data;
   *out_transition = LM_MODETS_UNKNOWN;
   *out_new_mode = LM_MODE_LIST_FILTER_INFLIGHT;
@@ -734,6 +738,8 @@ void lm_mode_multiselect__process_key(void* data,
                                       const uint32_t mod_flags,
                                       LmModeTransition* out_transition,
                                       LmMode* out_new_mode) {
+  (void)data;
+  (void)ascii_code;
   *out_transition = LM_MODETS_UNKNOWN;
   *out_new_mode = LM_MODE_LIST_MULTISELECT;
 
@@ -962,6 +968,8 @@ void lm_mode_task_association__process_key(void* data,
                                            const uint32_t mod_flags,
                                            LmModeTransition* out_transition,
                                            LmMode* out_new_mode) {
+  (void)ascii_code;
+  (void)mod_flags;
   LmModeTaskAssociationState* s = (LmModeTaskAssociationState*)data;
   *out_transition = LM_MODETS_UNKNOWN;
   *out_new_mode = LM_MODE_TASK_ASSOCIATION;
@@ -1020,6 +1028,7 @@ void lm_mode_task_creation__process_key(void* data,
                                         const uint32_t mod_flags,
                                         LmModeTransition* out_transition,
                                         LmMode* out_new_mode) {
+  (void)mod_flags;
   LmModeTaskCreationState* s = (LmModeTaskCreationState*)data;
   *out_transition = LM_MODETS_UNKNOWN;
   *out_new_mode = LM_MODE_TASK_CREATION;
