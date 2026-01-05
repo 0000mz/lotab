@@ -5,8 +5,6 @@ import SwiftUI
 // Might not be necessary -- seems the issues I am facing might just be
 // a quark of executing the binary from the terminal.
 class AppDelegate: NSObject, NSApplicationDelegate {
-    private var serverSocket: Int32 = -1
-    private var activeClientSocket: Int32 = -1
     private let socketPath = "/tmp/lotab.sock"
 
     static var shared: AppDelegate?
@@ -43,291 +41,45 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Setup Key monitors
         NSEvent.addLocalMonitorForEvents(matching: .keyDown) { (event: NSEvent) -> NSEvent? in
-            let tm = Lotab.shared
 
-            // Marking Mode
-            // Marking Mode
-            if tm.isMarking {
-                if tm.isCreatingLabel {
-                    // --- CREATION INPUT MODE ---
-                    if event.keyCode == 53 {  // ESC: Cancel creation, back to list
-                        tm.isCreatingLabel = false
-                        tm.markText = ""
-                        return nil
-                    }
-                    if event.keyCode == 36 {  // Enter: Create Label
-                        let label = tm.markText.trimmingCharacters(in: .whitespacesAndNewlines)
-                        if !label.isEmpty {
-                            if !tm.allLabels.contains(label) {
-                                tm.allLabels.append(label)
-                            }
-                            // Apply to selected tabs
-                            let targets =
-                                tm.multiSelection.isEmpty
-                                ? (tm.selection != nil ? [tm.selection!] : [])
-                                : Array(tm.multiSelection)
-                            for id in targets {
-                                var labels = tm.tabLabels[id] ?? []
-                                labels.insert(label)
-                                tm.tabLabels[id] = labels
-                            }
-                        }
-                        tm.isMarking = false
-                        tm.isCreatingLabel = false
-                        tm.markText = ""
-                        return nil
-                    }
-                    if event.keyCode == 51 {  // Backspace
-                        if !tm.markText.isEmpty {
-                            tm.markText.removeLast()
-                        }
-                        return nil
-                    }
-                    if let chars = event.characters, !chars.isEmpty,
-                        !event.modifierFlags.contains(.command) && event.keyCode != 51
-                    {
-                        tm.markText += chars
-                        return nil
-                    }
-                } else {
-                    // --- MENU SELECTION MODE ---
-                    if event.keyCode == 53 {  // ESC: Exit Marking
-                        tm.isMarking = false
-                        return nil
-                    }
-                    let totalItems = 1 + tm.allLabels.count  // 0=Create, 1..N=Labels
-
-                    if event.keyCode == 125 || event.keyCode == 38 {  // Down or 'j'
-                        tm.labelListSelection = (tm.labelListSelection + 1) % totalItems
-                        return nil
-                    }
-                    if event.keyCode == 126 || event.keyCode == 40 {  // Up or 'k'
-                        tm.labelListSelection =
-                            (tm.labelListSelection - 1 + totalItems) % totalItems
-                        return nil
-                    }
-
-                    if event.keyCode == 36 {  // Enter
-                        if tm.labelListSelection == 0 {
-                            // "Create New" selected
-                            tm.isCreatingLabel = true
-                            tm.markText = ""
-                        } else {
-                            // Label selected
-                            let index = tm.labelListSelection - 1
-                            if index >= 0 && index < tm.allLabels.count {
-                                let label = tm.allLabels[index]
-                                // Apply
-                                let targets =
-                                    tm.multiSelection.isEmpty
-                                    ? (tm.selection != nil ? [tm.selection!] : [])
-                                    : Array(tm.multiSelection)
-                                for id in targets {
-                                    var labels = tm.tabLabels[id] ?? []
-                                    labels.insert(label)
-                                    tm.tabLabels[id] = labels
-                                }
-                                tm.isMarking = false
-                            }
-                        }
-                        return nil
-                    }
-                }
-                return nil
-            }
-
-            // Select by Label Mode
-            if tm.isSelectingByLabel {
-                if event.keyCode == 53 {  // ESC
-                    tm.isSelectingByLabel = false
-                    return nil
-                }
-                let total = tm.allLabels.count
-                if total > 0 {
-                    if event.keyCode == 125 || event.keyCode == 38 {  // Down/j
-                        tm.labelSelectionCursor = (tm.labelSelectionCursor + 1) % total
-                        return nil
-                    }
-                    if event.keyCode == 126 || event.keyCode == 40 {  // Up/k
-                        tm.labelSelectionCursor = (tm.labelSelectionCursor - 1 + total) % total
-                        return nil
-                    }
-                    if event.keyCode == 49 {  // Space
-                        let label = tm.allLabels[tm.labelSelectionCursor]
-                        if tm.labelSelectionTemp.contains(label) {
-                            tm.labelSelectionTemp.remove(label)
-                        } else {
-                            tm.labelSelectionTemp.insert(label)
-                        }
-                        return nil
-                    }
-                    if event.keyCode == 36 {  // Enter
-                        if !tm.labelSelectionTemp.isEmpty {
-                            let matching = tm.tabs.filter { tab in
-                                let labels = tm.tabLabels[tab.id] ?? []
-                                return !labels.isDisjoint(with: tm.labelSelectionTemp)
-                            }.map { $0.id }
-                            tm.multiSelection.formUnion(matching)
-                        }
-                        tm.isSelectingByLabel = false
-                        return nil
-                    }
-                }
-                return nil
-            }
-
-            // Toggle Filter Mode OR Handle characters
-            if tm.isFiltering {
-                if event.keyCode == 53 {  // ESC: Cancel filter
-                    tm.isFiltering = false
-                    tm.filterText = ""
-                    return nil
-                }
-                if event.keyCode == 36 {  // Enter: Confirm filter
-                    tm.isFiltering = false
-                    return nil
-                }
-                if event.keyCode == 51 {  // Backspace
-                    if !tm.filterText.isEmpty {
-                        tm.filterText.removeLast()
-                    }
-                    return nil
-                }
-
-                // Handle typing AND swallow navigation keys
-                if event.keyCode == 126 || event.keyCode == 125 {
-                    return nil  // Swallow arrows to prevent list navigation
-                }
-
-                if let chars = event.characters, !chars.isEmpty,
-                    !event.modifierFlags.contains(.command)
-                {
-                    tm.filterText += chars
-                    return nil
-                }
-            } else {
-                // Normal Mode
-                if event.keyCode == 44 {  // Slash: Start filter
-                    if !tm.multiSelection.isEmpty { return nil }
-                    tm.isFiltering = true
-                    tm.filterText = ""
-                    return nil
-                }
-                if event.keyCode == 49 {  // Space: Toggle Multi-Selection
-                    if let sel = tm.selection {
-                        if tm.multiSelection.contains(sel) {
-                            tm.multiSelection.remove(sel)
-                        } else {
-                            tm.multiSelection.insert(sel)
-                        }
-                    }
-                }
-                if event.keyCode == 46 {  // m: Mark tabs
-                    if !tm.multiSelection.isEmpty {
-                        tm.isMarking = true
-                        tm.isCreatingLabel = false
-                        tm.labelListSelection = 0
-                        tm.markText = ""
-                    }
-                    return nil
-                }
-                if event.keyCode == 0 && event.modifierFlags.contains(.shift) {  // A with Shift: Select All
-                    tm.multiSelection = Set(tm.displayedTabs.map { $0.id })
-                    return nil
-                }
-                if event.keyCode == 1 {  // s: Select by Label
-                    tm.isSelectingByLabel = true
-                    tm.labelSelectionCursor = 0
-                    tm.labelSelectionTemp = []
-                    return nil
-                }
-                if event.keyCode == 7 {  // x: Close Selected Tabs
-                    let idsToClose: [Int]
-                    if event.modifierFlags.contains(.shift) && !tm.multiSelection.isEmpty {
-                        // Close all but selected
-                        idsToClose = tm.tabs.filter { !tm.multiSelection.contains($0.id) }.map {
-                            $0.id
-                        }
-                    } else {
-                        // Normal Close
-                        if !tm.multiSelection.isEmpty {
-                            idsToClose = Array(tm.multiSelection)
-                        } else if let sel = tm.selection {
-                            idsToClose = [sel]
-                        } else {
-                            idsToClose = []
-                        }
-                    }
-
-                    if !idsToClose.isEmpty {
-                        self.sendUDSMessage(event: "close_tabs", data: ["tabIds": idsToClose])
-                        tm.multiSelection = []
-                    }
-                    return nil
-                }
-                if event.keyCode == 53 {  // ESC
-                    if !tm.filterText.isEmpty {
-                        tm.filterText = ""
-                        return nil
-                    }
-                    if !tm.multiSelection.isEmpty {
-                        tm.multiSelection = []
-                        return nil
-                    }
-                    self.hideUI()
-                    return nil
+            // Sync List Length for modes that require bounds checking
+            // This is critical for cyclic navigation in client.c
+            if Lotab.shared.isAssociatingTask {
+                let count = Lotab.shared.tasks.count + 1  // +1 for "Create New"
+                var transition: LmModeTransition = LM_MODETS_UNKNOWN
+                var old_mode: LmMode = LM_MODE_UNKNOWN
+                var new_mode: LmMode = LM_MODE_UNKNOWN
+                if let mctx = self.modeContext {
+                    lm_on_list_len_update(mctx, Int32(count), &transition, &old_mode, &new_mode)
                 }
             }
 
-            // Navigation Logic
-            // UP: Arrow (126) or K (40)
-            let isK = event.keyCode == 40
-            if (event.keyCode == 126 || isK) && !tm.isFiltering {
-                let tabs = tm.displayedTabs
-                if !tabs.isEmpty {
-                    if let sel = tm.selection, let idx = tabs.firstIndex(where: { $0.id == sel }) {
-                        if idx == 0 {
-                            tm.selection = tabs.last?.id
-                        } else {
-                            tm.selection = tabs[idx - 1].id
-                        }
-                    } else {
-                        tm.selection = tabs.first?.id
-                    }
-                    return nil
-                }
-            }
+            let charValue = event.characters?.first?.asciiValue ?? 0
 
-            // DOWN: Arrow (125) or J (38)
-            let isJ = event.keyCode == 38
-            if (event.keyCode == 125 || isJ) && !tm.isFiltering {
-                let tabs = tm.displayedTabs
-                if !tabs.isEmpty {
-                    if let sel = tm.selection, let idx = tabs.firstIndex(where: { $0.id == sel }) {
-                        if idx == tabs.count - 1 {
-                            tm.selection = tabs.first?.id
-                        } else {
-                            tm.selection = tabs[idx + 1].id
-                        }
-                    } else {
-                        tm.selection = tabs.first?.id
-                    }
-                    return nil
-                }
-            }
+            var transition: LmModeTransition = LM_MODETS_UNKNOWN
+            var old_mode: LmMode = LM_MODE_UNKNOWN
+            var new_mode: LmMode = LM_MODE_UNKNOWN
+            lm_process_key_event(
+                self.modeContext,
+                event.keyCode,
+                charValue,
+                event.modifierFlags.contains(.command) ? 1 : 0,
+                event.modifierFlags.contains(.shift) ? 1 : 0,
+                &transition,
+                &old_mode,
+                &new_mode)
 
-            // Confirm Selection (Entered Normal Mode)
-            if !tm.isFiltering && event.keyCode == 36 {
-                if !tm.multiSelection.isEmpty { return nil }
-                if let selectedId = Lotab.shared.selection {
-                    self.sendUDSMessage(event: "tab_selected", data: ["tabId": selectedId])
-                    self.hideUI()
-                    return nil
-                }
-            }
-            return event
+            // If the transition was handled (returning nil in original code), we return nil here.
+            // Currently handleTransition doesn't return anything.
+            // We need to adhere to the return type of the monitor: NSEvent?
+            // Most cases in the original switch returned nil (swallowing the event).
+            // A few (unknown/default) returned the event.
+            // I'll make handleTransition return NSEvent?.
+            return self.handleTransition(
+                transition: transition, oldMode: old_mode, newMode: new_mode, originalEvent: event)
         }
 
+        self.modeContext = lm_alloc()
         startUDSServer()
 
         // Explicitly hide initially
@@ -336,8 +88,183 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    func handleTransition(
+        transition: LmModeTransition, oldMode: LmMode, newMode: LmMode,
+        originalEvent: NSEvent? = nil
+    ) -> NSEvent? {
+        let tm = Lotab.shared
+
+        switch transition {
+        case LM_MODETS_UNKNOWN:
+            break
+        case LM_MODETS_HIDE_UI:
+            self.hideUI()
+            return nil
+
+        case LM_MODETS_SELECT_TAB:
+            tm.addTabToSelection()
+            return nil
+
+        case LM_MODETS_SELECT_ALL_TABS:
+            tm.selectAllTabs()
+            return nil
+
+        case LM_MODETS_NAVIGATE_UP:
+            tm.listNavigateUp()
+            return nil
+
+        case LM_MODETS_NAVIGATE_DOWN:
+            tm.listNavigateDown()
+            return nil
+
+        case LM_MODETS_CLOSE_SELECTED_TABS:
+            tm.closeSelectedTabs(udsClient: self.udsClient)
+            return nil
+
+        case LM_MODETS_ACTIVATE_TO_TAB:
+            if !tm.multiSelection.isEmpty { return nil }
+            if let selectedId = Lotab.shared.selection {
+                if let client = self.udsClient {
+                    lotab_client_send_tab_selected(client, Int32(selectedId))
+                }
+                self.hideUI()
+                return nil
+            }
+            return nil
+
+        case LM_MODETS_ADHERE_TO_MODE:
+            if oldMode == LM_MODE_LIST_NORMAL && newMode == LM_MODE_LIST_FILTER_INFLIGHT {
+                tm.isFiltering = true
+                tm.filterText = ""
+                return nil
+            }
+            // Ensure we disable filtering if returning to Normal from anything except Multiselect
+            if newMode == LM_MODE_LIST_NORMAL && oldMode != LM_MODE_LIST_MULTISELECT {
+                tm.isFiltering = false
+                tm.filterText = ""
+                return nil
+            }
+            if oldMode == LM_MODE_LIST_MULTISELECT
+                && (newMode == LM_MODE_LIST_NORMAL
+                    || newMode == LM_MODE_LIST_FILTER_COMMITTED)
+            {
+                tm.clearSelection()
+                // IMPORTANT: If we are adhering to mode NORMAL from MULTISELECT,
+                // we might have a filter text preserved.
+                if let filter_txt = lm_get_filter_text(self.modeContext) {
+                    tm.filterText = String(cString: filter_txt)
+                    tm.isFiltering = !tm.filterText.isEmpty  // Or false if we consider it committed?
+                    // In LIST_NORMAL with filter, usually isFiltering=false implies we are not TYPING, but filter is active.
+                    // But Lotab's isFiltering usually means the INPUT box is active.
+                    // If we just transitioned back with a filter, we probably want isFiltering=false (committed state).
+                    // But we likely want to verify the filterText is reflected.
+                }
+                return nil
+            }
+            if newMode == LM_MODE_TASK_ASSOCIATION {
+                tm.isAssociatingTask = true
+                tm.isCreatingTask = false
+                tm.taskAssociationSelection = Int(
+                    lm_get_task_association_selection(self.modeContext))
+                return nil
+            }
+            if newMode == LM_MODE_TASK_CREATION {
+                tm.isCreatingTask = true
+                tm.isAssociatingTask = false
+                if let cStr = lm_get_task_creation_input(self.modeContext) {
+                    tm.taskCreationInput = String(cString: cStr)
+                }
+                return nil
+            }
+            break
+
+        case LM_MODETS_COMMIT_LIST_FILTER:
+            tm.isFiltering = false
+            break
+
+        case LM_MODETS_UPDATE_LIST_FILTER:
+            vlog_s(.trace, LotabApp.appClass, ".inside this...")
+            if let filter_txt = lm_get_filter_text(self.modeContext) {
+                tm.filterText = String(cString: filter_txt)
+            } else {
+                tm.filterText = ""
+            }
+            vlog_s(.trace, LotabApp.appClass, "updated filter text: \(tm.filterText)")
+
+        case LM_MODETS_START_ASSOCIATION:
+            tm.isAssociatingTask = true
+            tm.isCreatingTask = false
+            tm.taskAssociationSelection = Int(lm_get_task_association_selection(self.modeContext))
+            return nil
+
+        case LM_MODETS_CANCEL_ASSOCIATION:
+            tm.isAssociatingTask = false
+            tm.isCreatingTask = false
+            return nil
+
+        case LM_MODETS_ASSOCIATE_TASK:
+            let selection = tm.taskAssociationSelection
+            // Index 0 is "Create New", so index 1 corresponds to task 0
+            if selection > 0 && selection - 1 < tm.tasks.count {
+                let taskId = tm.tasks[selection - 1].id
+                let idsToAssoc = Array(tm.multiSelection)
+                if !idsToAssoc.isEmpty, let client = self.udsClient {
+                    let cIds = idsToAssoc.map { Int32($0) }
+                    cIds.withUnsafeBufferPointer { buffer in
+                        lotab_client_send_associate_tabs(
+                            client, buffer.baseAddress, Int(buffer.count), Int32(taskId))
+                    }
+                }
+            }
+            tm.isAssociatingTask = false
+            tm.isCreatingTask = false
+            tm.clearSelection()
+            return nil
+
+        case LM_MODETS_CREATE_TASK:
+            let name = tm.taskCreationInput
+            let idsToAssoc = Array(tm.multiSelection)
+            if !name.isEmpty, let client = self.udsClient {
+                name.withCString { taskNamePtr in
+                    if !idsToAssoc.isEmpty {
+                        let cIds = idsToAssoc.map { Int32($0) }
+                        cIds.withUnsafeBufferPointer { buffer in
+                            lotab_client_send_create_task_and_associate(
+                                client, taskNamePtr, buffer.baseAddress, Int(buffer.count))
+                        }
+                    } else {
+                        lotab_client_send_create_task_and_associate(client, taskNamePtr, nil, 0)
+                    }
+                }
+            }
+            tm.isAssociatingTask = false
+            tm.isCreatingTask = false
+            tm.clearSelection()
+            return nil
+
+        default:
+            vlog_s(.warn, LotabApp.appClass, "unknown transition id: \(transition)")
+        }
+
+        return originalEvent
+    }
+
     func applicationDidResignActive(_ notification: Notification) {
         hideUI()
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        if let client = udsClient {
+            // This will stop the run loop and free resources.
+            // Note: Since the loop is in a detached thread, there's a small race
+            // but for app termination the OS will clean up soon anyway.
+            lotab_client_destroy(client)
+            udsClient = nil
+        }
+        if let mctx = modeContext {
+            lm_destroy(mctx)
+            modeContext = nil
+        }
     }
 
     private func showUI() {
@@ -379,226 +306,118 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         Lotab.shared.markText = ""
     }
 
+    private var udsClient: OpaquePointer?
+    private var modeContext: OpaquePointer?
+
     private func startUDSServer() {
-        unlink(socketPath)
-        serverSocket = socket(AF_UNIX, SOCK_STREAM, 0)
-        vlog_s(.info, LotabApp.appClass, "Attempting to connect to UDS server")
-        guard serverSocket >= 0 else {
-            vlog_s(.error, LotabApp.appClass, "Failed to create socket")
-            return
-        }
+        let socketPath = "/tmp/lotab.sock"
 
-        var addr = sockaddr_un()
-        addr.sun_family = sa_family_t(AF_UNIX)
-        let pathLen = socketPath.withCString { Int(strlen($0)) }
-        socketPath.withCString { src in
-            withUnsafeMutablePointer(to: &addr.sun_path) { dest in
-                let destPtr = UnsafeMutableRawPointer(dest).assumingMemoryBound(to: Int8.self)
-                strncpy(destPtr, src, 104)  // 104 is the max length for sun_path
-            }
-        }
-        addr.sun_len = UInt8(
-            MemoryLayout<sa_family_t>.size + MemoryLayout<UInt8>.size + pathLen + 1)
-
-        let addrLen = socklen_t(addr.sun_len)
-        let bindResult = withUnsafePointer(to: &addr) {
-            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
-                Darwin.bind(serverSocket, $0, addrLen)
-            }
-        }
-
-        guard bindResult == 0 else {
-            vlog_s(
-                .error, LotabApp.appClass,
-                "Failed to bind socket. Error: \(String(cString: strerror(errno)))")
-            return
-        }
-
-        guard Darwin.listen(serverSocket, 5) == 0 else {
-            vlog_s(.error, LotabApp.appClass, "Failed to listen on socket")
-            return
-        }
-
-        vlog_s(.info, LotabApp.appClass, "UDS server started at \(socketPath)")
-        Thread.detachNewThread {
-            self.acceptConnections()
-        }
-    }
-
-    private func acceptConnections() {
-        while true {
-            var clientAddr = sockaddr_un()
-            var len = socklen_t(MemoryLayout<sockaddr_un>.size)
-            let clientSocket = withUnsafeMutablePointer(to: &clientAddr) {
-                $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
-                    Darwin.accept(self.serverSocket, $0, &len)
+        // Define callbacks
+        let onTabsUpdate: lotab_on_tabs_update_cb = { userData, tabsList in
+            vlog_s(.info, LotabApp.appClass, "onTabsUpdate callback entered")
+            guard let tabsList = tabsList else { return }
+            var newTabs: [BrowserTab] = []
+            let count = Int(tabsList.pointee.count)
+            if count > 0 {
+                let buffer = UnsafeBufferPointer(start: tabsList.pointee.tabs, count: count)
+                for i in 0..<count {
+                    let cTab = buffer[i]
+                    let title = String(cString: cTab.title)
+                    newTabs.append(
+                        BrowserTab(
+                            id: Int(cTab.id), title: title, active: cTab.active,
+                            taskId: Int(cTab.task_id)))
                 }
             }
 
-            if clientSocket >= 0 {
-                self.activeClientSocket = clientSocket
-                vlog_s(.info, LotabApp.appClass, "Accepted new UDS connection")
-                Thread.detachNewThread {
-                    self.handleClient(clientSocket)
-                }
-            }
-        }
-    }
+            DispatchQueue.main.async {
+                Lotab.shared.tabs = newTabs
+                vlog_s(.trace, LotabApp.appClass, "Updated tabs: \(newTabs.count)")
 
-    private func handleClient(_ clientSocket: Int32) {
-        defer {
-            close(clientSocket)
-        }
+                // --- Notify State Machine of List Update (Auto-Exit Multiselect) ---
+                if let appDelegate = AppDelegate.shared, let mctx = appDelegate.modeContext {
+                    let len = Lotab.shared.displayedTabs.count
+                    var transition: LmModeTransition = LM_MODETS_UNKNOWN
+                    var old_mode: LmMode = LM_MODE_UNKNOWN
+                    var new_mode: LmMode = LM_MODE_UNKNOWN
 
-        while true {
-            // 1. Read Header (4 bytes)
-            var headerData = Data(count: 4)
-            let headerBytesRead = headerData.withUnsafeMutableBytes { buffer in
-                return read(clientSocket, buffer.baseAddress, 4)
-            }
+                    lm_on_list_len_update(mctx, Int32(len), &transition, &old_mode, &new_mode)
 
-            if headerBytesRead == 0 {
-                vlog_s(.info, LotabApp.appClass, "UDS connection closed by peer")
-                break
-            } else if headerBytesRead < 0 {
-                vlog_s(
-                    .error, LotabApp.appClass,
-                    "UDS header read error: \(String(cString: strerror(errno)))")
-                break
-            } else if headerBytesRead < 4 {
-                vlog_s(.error, LotabApp.appClass, "UDS partial header read")
-                break
-            }
-
-            let msgLen = headerData.withUnsafeBytes { $0.load(as: UInt32.self).littleEndian }
-
-            // 2. Read Payload
-            var payloadData = Data(count: Int(msgLen))
-            var totalRead = 0
-            var readError = false
-
-            payloadData.withUnsafeMutableBytes { buffer in
-                while totalRead < Int(msgLen) {
-                    let n = read(
-                        clientSocket, buffer.baseAddress! + totalRead, Int(msgLen) - totalRead)
-                    if n <= 0 {
-                        readError = true
-                        break
+                    if transition != LM_MODETS_UNKNOWN {
+                        _ = appDelegate.handleTransition(
+                            transition: transition, oldMode: old_mode, newMode: new_mode)
                     }
-                    totalRead += n
-                }
-            }
-
-            if readError {
-                vlog_s(.error, LotabApp.appClass, "UDS payload read error or closed prematurely")
-                break
-            }
-
-            // 3. Process Message
-            if let message = String(data: payloadData, encoding: .utf8) {
-                vlog_s(.trace, LotabApp.appClass, "uds-read: \(message)")
-                if message.contains("tabs_update") {
-                    // Decode tabs
-                    if let jsonData = message.data(using: .utf8) {
-                        do {
-                            let payload = try JSONDecoder().decode(
-                                TabListPayload.self, from: jsonData)
-                            vlog_s(
-                                .info, LotabApp.appClass,
-                                "Successfully decoded \(payload.data.tabs.count) tabs")
-                            DispatchQueue.main.async {
-                                Lotab.shared.tabs = payload.data.tabs
-                            }
-                        } catch {
-                            vlog_s(
-                                .error, LotabApp.appClass,
-                                "JSON Decoding Error for tabs_update: \(error)")
-                        }
-                    }
-                } else if message.contains("tasks_update") {
-                    // Decode tasks
-                    if let jsonData = message.data(using: .utf8) {
-                        do {
-                            let payload = try JSONDecoder().decode(
-                                TaskListPayload.self, from: jsonData)
-                            vlog_s(
-                                .info, LotabApp.appClass,
-                                "Successfully decoded \(payload.data.tasks.count) tasks")
-                            DispatchQueue.main.async {
-                                Lotab.shared.tasks = payload.data.tasks
-                            }
-                        } catch {
-                            vlog_s(
-                                .error, LotabApp.appClass,
-                                "JSON Decoding Error for tasks_update: \(error)")
-                        }
-                    }
-                } else if message.contains("ui_visibility_toggle") {
-                    showUI()
                 }
             }
         }
-    }
 
-    func sendUDSMessage(event: String, data: Any) {
-        guard activeClientSocket >= 0 else {
-            vlog_s(.error, LotabApp.appClass, "Cannot send message: No active UDS connection")
-            return
+        let onTasksUpdate: lotab_on_tasks_update_cb = { userData, tasksList in
+            vlog_s(.trace, LotabApp.appClass, "onTasksUpdate callback entered")
+            guard let tasksList = tasksList else { return }
+            var newTasks: [Task] = []
+            let count = Int(tasksList.pointee.count)
+            if count > 0 {
+                let buffer = UnsafeBufferPointer(start: tasksList.pointee.tasks, count: count)
+                for i in 0..<count {
+                    let cTask = buffer[i]
+                    let name = String(cString: cTask.name)
+                    let color = String(cString: cTask.color)
+                    newTasks.append(Task(id: Int(cTask.id), name: name, color: color))
+                }
+            }
+
+            DispatchQueue.main.async {
+                Lotab.shared.tasks = newTasks
+                vlog_s(.trace, LotabApp.appClass, "Updated tasks: \(newTasks.count)")
+                for t in newTasks {
+                    vlog_s(.trace, LotabApp.appClass, "Task[\(t.id)]: \(t.name)")
+                }
+            }
         }
 
-        let messageParams: [String: Any] = [
-            "event": event,
-            "data": data,
-        ]
-
-        do {
-            let jsonData = try JSONSerialization.data(withJSONObject: messageParams, options: [])
-            var length = UInt32(jsonData.count).littleEndian
-            let lengthData = Data(bytes: &length, count: MemoryLayout<UInt32>.size)
-
-            let combinedData = lengthData + jsonData
-
-            let result = combinedData.withUnsafeBytes { buffer -> Int in
-                guard let baseAddress = buffer.baseAddress else { return -1 }
-                return Int(write(activeClientSocket, baseAddress, buffer.count))
+        let onUIToggle: lotab_on_ui_toggle_cb = { userData in
+            vlog_s(.info, LotabApp.appClass, "onUIToggle callback entered")
+            DispatchQueue.main.async {
+                vlog_s(.info, LotabApp.appClass, "DispatchQueue.main.async entered")
+                if let appDelegate = AppDelegate.shared {
+                    appDelegate.showUI()
+                    NSApp.activate(ignoringOtherApps: true)
+                } else {
+                    vlog_s(.error, LotabApp.appClass, "AppDelegate.shared is nil")
+                }
             }
+        }
 
-            if result < 0 {
-                vlog_s(
-                    .error, LotabApp.appClass,
-                    "Failed to send UDS message: \(String(cString: strerror(errno)))")
-            } else {
-                vlog_s(.info, LotabApp.appClass, "uds-send: \(event) (len: \(jsonData.count))")
+        let callbacks = ClientCallbacks(
+            on_tabs_update: onTabsUpdate,
+            on_tasks_update: onTasksUpdate,
+            on_ui_toggle: onUIToggle
+        )
+
+        self.udsClient = lotab_client_new(socketPath, callbacks, nil)
+
+        if self.udsClient != nil {
+            Thread.detachNewThread {
+                vlog_s(.info, LotabApp.appClass, "Starting UDS Client Loop")
+                lotab_client_run_loop(self.udsClient)
             }
-        } catch {
-            vlog_s(.error, LotabApp.appClass, "Failed to serialize UDS message: \(error)")
+        } else {
+            vlog_s(.error, LotabApp.appClass, "Failed to create UDS client")
         }
     }
 }
 
-struct BrowserTab: Identifiable, Decodable, Hashable {
+struct BrowserTab: Identifiable, Hashable {
     let id: Int
     let title: String
     let active: Bool
+    let taskId: Int
 }
 
-struct TabListPayload: Decodable {
-    struct Data: Decodable {
-        let tabs: [BrowserTab]
-    }
-    let data: Data
-}
-
-struct Task: Identifiable, Decodable, Hashable {
+struct Task: Identifiable, Hashable {
     let id: Int
     let name: String
-}
-
-struct TaskListPayload: Decodable {
-    struct Data: Decodable {
-        let tasks: [Task]
-    }
-    let data: Data
+    let color: String
 }
 
 class Lotab: ObservableObject {
@@ -622,6 +441,12 @@ class Lotab: ObservableObject {
     @Published var labelSelectionCursor: Int = 0
     @Published var labelSelectionTemp: Set<String> = []
 
+    // Task Association
+    @Published var isAssociatingTask: Bool = false
+    @Published var isCreatingTask: Bool = false
+    @Published var taskAssociationSelection: Int = 0
+    @Published var taskCreationInput: String = ""
+
     var displayedTabs: [BrowserTab] {
         let filtered =
             filterText.isEmpty
@@ -629,6 +454,87 @@ class Lotab: ObservableObject {
         let active = filtered.filter { $0.active }
         let other = filtered.filter { !$0.active }
         return active + other
+    }
+
+    public func listNavigateDown() {
+        let tabs = self.displayedTabs
+        if !tabs.isEmpty {
+            if let sel = self.selection, let idx = tabs.firstIndex(where: { $0.id == sel }) {
+                if idx == tabs.count - 1 {
+                    self.selection = tabs.first?.id
+                } else {
+                    self.selection = tabs[idx + 1].id
+                }
+            } else {
+                self.selection = tabs.first?.id
+            }
+        }
+    }
+
+    public func listNavigateUp() {
+        let tabs = self.displayedTabs
+        if !tabs.isEmpty {
+            if let sel = self.selection, let idx = tabs.firstIndex(where: { $0.id == sel }) {
+                if idx == 0 {
+                    self.selection = tabs.last?.id
+                } else {
+                    self.selection = tabs[idx - 1].id
+                }
+            } else {
+                self.selection = tabs.first?.id
+            }
+        }
+    }
+
+    public func addTabToSelection() {
+        if let sel = self.selection {
+            if self.multiSelection.contains(sel) {
+                self.multiSelection.remove(sel)
+            } else {
+                self.multiSelection.insert(sel)
+            }
+        }
+    }
+
+    public func selectAllTabs() {
+        self.multiSelection = Set(self.displayedTabs.map { $0.id })
+    }
+
+    public func clearSelection() {
+        self.multiSelection.removeAll()
+    }
+
+    public func closeSelectedTabs(udsClient: OpaquePointer?) {
+        let idsToClose: [Int]
+        // TODO: Re-enable
+        // if event.modifierFlags.contains(.shift) && !tm.multiSelection.isEmpty {
+        //     // Close all but selected
+        //     idsToClose = tm.tabs.filter { !tm.multiSelection.contains($0.id) }.map {
+        //         $0.id
+        //     }
+        // } else {
+        // Normal Close
+        if !self.multiSelection.isEmpty {
+            idsToClose = Array(self.multiSelection)
+        } else if let sel = self.selection {
+            idsToClose = [sel]
+        } else {
+            idsToClose = []
+        }
+        // }
+
+        if !idsToClose.isEmpty {
+            // Use C client to send close_tabs
+            if let client = udsClient {
+                let cIds = idsToClose.map { Int32($0) }
+                cIds.withUnsafeBufferPointer { buffer in
+                    lotab_client_send_close_tabs(
+                        client, buffer.baseAddress, Int(buffer.count))
+                }
+            }
+            self.multiSelection = []
+        }
+
     }
 }
 

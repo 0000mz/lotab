@@ -140,8 +140,8 @@ describe('Lotab Extension Integration', function () {
 
     it('should return all tabs when requested', async function () {
         const response = await ctx.sendMessageAndWait(
-            { event: 'request_tab_info' },
-            (data) => data.event === 'tabs.onAllTabs'
+            { event: 'Daemon::WS::AllTabsInfoRequest' },
+            (data) => data.event === 'Extension::WS::AllTabsInfoResponse'
         );
 
         expect(response).to.have.property('data').that.is.an('array');

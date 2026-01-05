@@ -13,6 +13,10 @@ struct ContentView: View {
                 labelMultiSelectionView
             } else if lotab.tabs.isEmpty {
                 emptyStateView
+            } else if lotab.isAssociatingTask {
+                taskAssociationView
+            } else if lotab.isCreatingTask {
+                taskCreationView
             } else {
                 tabListView
             }
@@ -64,13 +68,13 @@ struct ContentView: View {
             }
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
-            .onChange(of: lotab.tabs) { _, newTabs in
+            .onChange(of: lotab.tabs) { newTabs in
                 if lotab.selection == nil || !newTabs.contains(where: { $0.id == lotab.selection })
                 {
                     lotab.selection = newTabs.first(where: { $0.active })?.id ?? newTabs.first?.id
                 }
             }
-            .onChange(of: lotab.selection) { _, newSel in
+            .onChange(of: lotab.selection) { newSel in
                 if let id = newSel {
                     proxy.scrollTo(id, anchor: .center)
                 }
@@ -108,7 +112,7 @@ struct ContentView: View {
             }
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
-            .onChange(of: lotab.labelListSelection) { _, newSel in
+            .onChange(of: lotab.labelListSelection) { newSel in
                 proxy.scrollTo(newSel, anchor: .center)
             }
         }
@@ -202,7 +206,7 @@ struct ContentView: View {
             }
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
-            .onChange(of: lotab.labelSelectionCursor) { _, newSel in
+            .onChange(of: lotab.labelSelectionCursor) { newSel in
                 proxy.scrollTo(newSel, anchor: .center)
             }
         }
@@ -230,6 +234,20 @@ struct ContentView: View {
                     .padding(.vertical, 2)
                     .background(Color.generate(from: label).opacity(0.8))
                     .foregroundColor(.white)
+                    .cornerRadius(4)
+            }
+            if tab.taskId >= 0 {
+                let task = lotab.tasks.first(where: { $0.id == tab.taskId })
+                let taskName = task?.name ?? "Task \(tab.taskId)"
+                let colorName = task?.color ?? "blue"
+
+                Text(taskName)
+                    .font(.caption2)
+                    .fontWeight(.bold)
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(Color.fromName(colorName))
                     .cornerRadius(4)
             }
             if tab.active {
@@ -282,6 +300,13 @@ struct ContentView: View {
             items.append(FooterItem(components: [.key("space")], description: "to toggle"))
             items.append(FooterItem(components: [.key("return")], description: "to confirm"))
             items.append(FooterItem(components: [.key("esc")], description: "to cancel"))
+        } else if lotab.isAssociatingTask {
+            items.append(FooterItem(components: [.key("↓"), .key("↑"), .text("or"), .key("j"), .key("k")], description: "to navigate"))
+            items.append(FooterItem(components: [.key("return")], description: "select"))
+            items.append(FooterItem(components: [.key("esc")], description: "cancel"))
+        } else if lotab.isCreatingTask {
+            items.append(FooterItem(components: [.key("return")], description: "create"))
+            items.append(FooterItem(components: [.key("esc")], description: "back"))
         } else if lotab.isMarking {
             items.append(FooterItem(components: [.key("return")], description: "to select"))
             items.append(FooterItem(components: [.key("esc")], description: "to cancel"))
@@ -316,7 +341,7 @@ struct ContentView: View {
             }
 
             items.append(
-                FooterItem(components: [.key("shift"), .key("a")], description: "to select all"))
+                FooterItem(components: [.key("cmd"), .key("a")], description: "to select all"))
             items.append(FooterItem(components: [.key("s")], description: "to select"))
 
             if !lotab.multiSelection.isEmpty {
@@ -367,6 +392,97 @@ struct ContentView: View {
         .padding(.horizontal, 16)
         .background(Color.black.opacity(0.3))
     }
+    private var taskAssociationView: some View {
+        ScrollViewReader { proxy in
+            List {
+                Section(header: Text("Select Task").font(.caption).foregroundColor(.secondary)) {
+                    // Create New Task Option (index 0)
+                    HStack {
+                        Text("Create New Task...")
+                            .italic()
+                        Spacer()
+                    }
+                    .padding(.vertical, 4)
+                    .padding(.horizontal, 8)
+                    .background(
+                        RoundedRectangle(cornerRadius: 6)
+                            .fill(
+                                lotab.taskAssociationSelection == 0
+                                    ? Color.accentColor : Color.clear
+                            )
+                    )
+                    .contentShape(Rectangle())
+                    .foregroundColor(
+                        lotab.taskAssociationSelection == 0 ? .white : .primary
+                    )
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
+                    .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
+                    .id(0)
+
+                    // Existing Tasks
+                    ForEach(Array(lotab.tasks.enumerated()), id: \.element.id) { index, task in
+                        HStack {
+                            Text(task.name)
+                            Spacer()
+                            RoundedRectangle(cornerRadius: 2)
+                                .fill(Color.fromName(task.color))
+                                .frame(width: 12, height: 12)
+                        }
+                        .padding(.vertical, 4)
+                        .padding(.horizontal, 8)
+                        .background(
+                            RoundedRectangle(cornerRadius: 6)
+                                .fill(
+                                    lotab.taskAssociationSelection == index + 1
+                                        ? Color.accentColor : Color.clear
+                                )
+                        )
+                        .contentShape(Rectangle())
+                        .foregroundColor(
+                            lotab.taskAssociationSelection == index + 1 ? .white : .primary
+                        )
+                        .listRowSeparator(.hidden)
+                        .listRowBackground(Color.clear)
+                        .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
+                        .id(index + 1)
+                    }
+                }
+            }
+            .listStyle(.plain)
+            .scrollContentBackground(.hidden)
+            .onChange(of: lotab.taskAssociationSelection) { newSel in
+                proxy.scrollTo(newSel, anchor: .center)
+            }
+            .onAppear {
+                proxy.scrollTo(lotab.taskAssociationSelection, anchor: .center)
+            }
+        }
+    }
+
+    private var taskCreationView: some View {
+        VStack {
+            Spacer()
+            VStack(alignment: .leading, spacing: 12) {
+                Text("New Task Name")
+                    .font(.headline)
+
+                HStack {
+                    Text(lotab.taskCreationInput + "█")
+                        .font(.body)
+                    Spacer()
+                }
+                .padding(8)
+                .background(Color.black.opacity(0.2))
+                .cornerRadius(6)
+            }
+            .padding(16)
+            .background(VisualEffectView(material: .popover, blendingMode: .withinWindow))
+            .cornerRadius(12)
+            .padding(.horizontal, 32)
+            Spacer()
+        }
+    }
 }
 
 struct VisualEffectView: NSViewRepresentable {
@@ -404,6 +520,21 @@ struct KeyView: View {
 }
 
 extension Color {
+    static func fromName(_ name: String) -> Color {
+        switch name.lowercased() {
+        case "grey", "gray": return Color(white: 0.3)
+        case "blue": return Color.blue.opacity(0.6)
+        case "red": return Color.red.opacity(0.6)
+        case "yellow": return Color.yellow.opacity(0.3)
+        case "green": return Color.green.opacity(0.6)
+        case "pink": return Color.pink.opacity(0.6)
+        case "purple": return Color.purple.opacity(0.6)
+        case "cyan": return Color.cyan.opacity(0.6)
+        case "orange": return Color.orange.opacity(0.6)
+        default: return Color.blue.opacity(0.6)
+        }
+    }
+
     static func generate(from string: String) -> Color {
         var h: Int = 0
         for char in string.utf8 {

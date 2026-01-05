@@ -2,3 +2,5 @@ BasedOnStyle: Chromium
 IndentWidth: 2
 ColumnLimit: 120
 AllowShortFunctionsOnASingleLine: None
+DeriveLineEnding: false
+UseTab: Never

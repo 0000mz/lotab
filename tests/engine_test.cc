@@ -116,7 +116,7 @@ TEST_F(WebsockedAndUdsStreamTest, ConnectsToCustomUDS_And_WS) {
   TestWebSocketClient ws_client;
   ws_client.Connect(GetPort());
   ASSERT_TRUE(ws_client.IsConnected()) << "Failed to connect WebSocket";
-  ASSERT_TRUE(ws_client.WaitForEvent("request_tab_info", 2000));
+  ASSERT_TRUE(ws_client.WaitForEvent("Daemon::WS::AllTabsInfoRequest", 2000));
 
   // 3. Test UDS -> Daemon -> WS Flow
   // Simulate App (via UDS) sending a 'tab_selected' event
@@ -129,25 +129,27 @@ TEST_F(WebsockedAndUdsStreamTest, ConnectsToCustomUDS_And_WS) {
   */
 
   const char* uds_evt = R"pb({
-                               "event": "tab_selected",
+                               "event": "GUI::UDS::TabSelected",
                                "data": { "tabId": 999 }
                              })pb";
   ASSERT_TRUE(server_->Send(uds_evt));
-  ASSERT_TRUE(ws_client.WaitForEvent("activate_tab", 2000)) << "Daemon did not forward UDS tab_selected event to WS";
+  ASSERT_TRUE(ws_client.WaitForEvent("Daemon::WS::ActivateTabRequest", 2000))
+      << "Daemon did not forward UDS tab_selected event to WS";
 
   // 4. Test WS -> Daemon -> UDS Flow
   // Simulate Extension (via WS) sending 'tabs.onCreated'
   // Daemon should forward this to UDS as 'tabs_update' (as per engine_handle_event)
   const char* ws_evt = R"pb({
-                              "event": "tabs.onCreated",
+                              "event": "Extension::WS::TabCreated",
                               "data": { "id": 888, "title": "New Tab via WS", "active": true }
                             })pb";
   ws_client.Send(ws_evt);
 
-  // Verify UDS Server receives 'tabs_update'
-  // engine.c: send_tabs_update_to_uds sends {"event":"tabs_update", ...}
+  // Verify UDS Server receives 'Daemon::UDS::TabsUpdate'
+  // engine.c: send_tabs_update_to_uds sends {"event":"Daemon::UDS::TabsUpdate", ...}
   std::string received_msg;
-  ASSERT_TRUE(server_->WaitForEvent("tabs_update", 2000, &received_msg)) << "Daemon did not send tabs_update to UDS";
+  ASSERT_TRUE(server_->WaitForEvent("Daemon::UDS::TabsUpdate", 2000, &received_msg))
+      << "Daemon did not send tabs_update to UDS";
   EXPECT_NE(received_msg.find("New Tab via WS"), std::string::npos);
 }
 
@@ -161,15 +163,19 @@ TEST_F(EngineTest, EngineInit) {
   client.Connect(GetPort());
   printf("client connected: %s\n", client.IsConnected() ? "true" : "false");
   ASSERT_TRUE(client.IsConnected());
-  ASSERT_TRUE(client.WaitForEvent("request_tab_info", 2000)) << "Did not receive request_tab_info message from daemon";
-  printf("[test] Received request_tab_info request\n");
+  ASSERT_TRUE(client.WaitForEvent("Daemon::WS::AllTabsInfoRequest", 2000))
+      << "Did not receive Daemon::WS::AllTabsInfoRequest message from daemon";
+  printf("[test] Received Daemon::WS::AllTabsInfoRequest request\n");
 
   // Simulate extension response
   const char* mock_response = R"pb({
-                                     "event": "tabs.onAllTabs",
-                                     "data":
-                                     [ { "id": 101, "title": "Mock Tab 1", "url": "http://example.com" }
-                                       , { "id": 102, "title": "Mock Tab 2", "url": "http://google.com" }],
+                                     "event": "Extension::WS::AllTabsInfoResponse",
+                                     "data": {
+                                       "tabs":
+                                       [ { "id": 101, "title": "Mock Tab 1", "url": "http://example.com" }
+                                         , { "id": 102, "title": "Mock Tab 2", "url": "http://google.com" }],
+                                       "groups": []
+                                     },
                                      "activeTabIds": [ 101 ]
                                    })pb";
   client.Send(mock_response);
@@ -191,14 +197,17 @@ TEST_F(EngineTest, TabRemoved) {
   TestWebSocketClient client;
   client.Connect(GetPort());
   ASSERT_TRUE(client.IsConnected());
-  ASSERT_TRUE(client.WaitForEvent("request_tab_info", 2000));
+  ASSERT_TRUE(client.WaitForEvent("Daemon::WS::AllTabsInfoRequest", 2000));
 
   // 1. Send Initial State
   const char* init_response = R"pb({
-                                     "event": "tabs.onAllTabs",
-                                     "data":
-                                     [ { "id": 201, "title": "Tab To Remove", "url": "http://example.com/1" }
-                                       , { "id": 202, "title": "Tab To Keep", "url": "http://example.com/2" }],
+                                     "event": "Extension::WS::AllTabsInfoResponse",
+                                     "data": {
+                                       "tabs":
+                                       [ { "id": 201, "title": "Tab To Remove", "url": "http://example.com/1" }
+                                         , { "id": 202, "title": "Tab To Keep", "url": "http://example.com/2" }],
+                                       "groups": []
+                                     },
                                      "activeTabIds": [ 201 ]
                                    })pb";
   client.Send(init_response);
@@ -209,7 +218,7 @@ TEST_F(EngineTest, TabRemoved) {
 
   // 2. Send Removal Event
   const char* remove_event = R"pb({
-                                    "event": "tabs.onRemoved",
+                                    "event": "Extension::WS::TabRemoved",
                                     "data": {
                                       "tabId": 201,
                                       "removeInfo": { "windowId": 1, "isWindowClosing": false }
@@ -231,13 +240,19 @@ TEST_F(EngineTest, TabCreated) {
   TestWebSocketClient client;
   client.Connect(GetPort());
   ASSERT_TRUE(client.IsConnected());
-  ASSERT_TRUE(client.WaitForEvent("request_tab_info", 2000));
+  ASSERT_TRUE(client.WaitForEvent("Daemon::WS::AllTabsInfoRequest", 2000));
 
   // Send Created Event
   const char* create_event =
       R"pb({
-             "event": "tabs.onCreated",
-             "data": { "id": 301, "title": "New Created Tab", "url": "http://example.com/new", "active": true }
+             "event": "Extension::WS::TabCreated",
+             "data": {
+               "id": 301,
+               "title": "New Created Tab",
+               "url": "http://example.com/new",
+               "active": true,
+               "groupId": -1
+             }
            })pb";
   client.Send(create_event);
   sleep(1);
@@ -256,11 +271,11 @@ TEST_F(EngineTest, TabUpdated) {
   TestWebSocketClient client;
   client.Connect(GetPort());
   ASSERT_TRUE(client.IsConnected());
-  ASSERT_TRUE(client.WaitForEvent("request_tab_info", 2000));
+  ASSERT_TRUE(client.WaitForEvent("Daemon::WS::AllTabsInfoRequest", 2000));
 
   // 1. Send Initial State
   const char* init_response = R"pb({
-                                     "event": "tabs.onAllTabs",
+                                     "event": "Extension::WS::AllTabsInfoResponse",
                                      "data":
                                      [ { "id": 401, "title": "Old Title", "url": "http://example.com" }],
                                      "activeTabIds": [ 401 ]
@@ -276,7 +291,7 @@ TEST_F(EngineTest, TabUpdated) {
   // 2. Send Update Event
   const char* update_event =
       R"pb({
-             "event": "tabs.onUpdated",
+             "event": "Extension::WS::TabUpdated",
              "data": {
                "tabId": 401,
                "changeInfo": { "title": "New Title" },
@@ -290,6 +305,42 @@ TEST_F(EngineTest, TabUpdated) {
   EXPECT_EQ(ectx_->tab_state->nb_tabs, 1);
   tab = ectx_->tab_state->tabs;
   EXPECT_STREQ(tab->title, "New Title");
+}
+
+TEST_F(EngineTest, TabGroupSync) {
+  ASSERT_TRUE(ectx_ != nullptr);
+
+  TestWebSocketClient client;
+  client.Connect(GetPort());
+  ASSERT_TRUE(client.IsConnected());
+  ASSERT_TRUE(client.WaitForEvent("Daemon::WS::AllTabsInfoRequest", 2000));
+
+  // Simulate extension response with groups
+  const char* mock_response = R"pb({
+                                     "event": "Extension::WS::AllTabsInfoResponse",
+                                     "data": {
+                                       "tabs":
+                                       [ { "id": 501, "title": "Grouped Tab", "url": "http://a.com", "groupId": 10 }],
+                                       "groups":
+                                       [ { "id": 10, "title": "Work Group", "color": "blue", "collapsed": false }]
+                                     },
+                                     "activeTabIds": [ 501 ]
+                                   })pb";
+  client.Send(mock_response);
+  sleep(1);
+
+  // 1. Verify Task was created for the group
+  ASSERT_NE(ectx_->task_state, nullptr);
+  TaskInfo* task = task_state_find_by_external_id(ectx_->task_state, 10);
+  ASSERT_NE(task, nullptr);
+  EXPECT_STREQ(task->task_name, "Work Group");
+  EXPECT_EQ(task->external_id, 10);
+
+  // 2. Verify Tab is associated with the correct task_id
+  ASSERT_NE(ectx_->tab_state, nullptr);
+  TabInfo* tab = tab_state_find_tab(ectx_->tab_state, 501);
+  ASSERT_NE(tab, nullptr);
+  EXPECT_EQ(tab->task_id, (int64_t)task->task_id);
 }
 
 TEST_F(EngineTest, ConfigCreated) {
