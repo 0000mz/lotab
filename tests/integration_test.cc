@@ -34,7 +34,8 @@ struct CallbackData {
 
   // Tasks Update
   int tasks_count = -1;
-  char* last_task_name = nullptr;
+
+  std::vector<std::string> task_names;
 
   // UI Toggle
   bool ui_toggled = false;
@@ -76,10 +77,13 @@ class TestableClientDriver {
       auto* driver = static_cast<TestableClientDriver*>(user_data);
       std::lock_guard<std::mutex> lock(driver->mutex_);
       driver->data_.tasks_count = (int)tasks->count;
-      if (driver->data_.last_task_name)
-        free(driver->data_.last_task_name);
-      driver->data_.last_task_name =
-          (tasks->count > 0 && tasks->tasks[0].name) ? strdup(tasks->tasks[0].name) : nullptr;
+
+      driver->data_.task_names.clear();
+      for (size_t i = 0; i < tasks->count; ++i) {
+        if (tasks->tasks[i].name) {
+          driver->data_.task_names.push_back(tasks->tasks[i].name);
+        }
+      }
       driver->cv_.notify_all();
     };
 
@@ -100,8 +104,6 @@ class TestableClientDriver {
       free(data_.last_tab_title);
     if (data_.active_tab_title)
       free(data_.active_tab_title);
-    if (data_.last_task_name)
-      free(data_.last_task_name);
   }
 
   void Start() {
@@ -157,8 +159,14 @@ class TestableClientDriver {
     std::unique_lock<std::mutex> lock(mutex_);
     return cv_.wait_for(lock, std::chrono::milliseconds(timeout_ms), [&]() {
       bool name_match = true;
-      if (expected_count > 0) {
-        name_match = (data_.last_task_name && expected_name == data_.last_task_name);
+      if (expected_count > 0 && !expected_name.empty()) {
+        name_match = false;
+        for (const auto& name : data_.task_names) {
+          if (name == expected_name) {
+            name_match = true;
+            break;
+          }
+        }
       }
       return data_.tasks_count == expected_count && name_match;
     });
@@ -293,15 +301,14 @@ TEST_F(IntegrationTest, TabGroupsPropagateToClient) {
   engine_handle_event(ec_, EVENT_WS_MESSAGE_RECEIVED, (void*)ws_msg);
 
   // 1. Verify Task was created
-  // Engine starts with 1 placeholder task, so now we should have 2.
-  ASSERT_TRUE(client_driver_->WaitForTasksUpdate(2, "My Group"));
+  // Engine DOES NOT start with a placeholder task when initialized via engine_init.
+  // So we should have 1 task total ("My Group").
+  ASSERT_TRUE(client_driver_->WaitForTasksUpdate(1, "My Group"));
 
   // 2. Verify Tab has the correct task_id
-  // The first task created will have task_id 1 (since 0 is the placeholder).
-  // Wait, in engine.c: task_state_add uses ts->nb_tasks++
-  // Engine starts with "Placeholder Task" at task_id 0.
-  // So "My Group" will be task_id 1.
-  ASSERT_TRUE(client_driver_->WaitForTabs({MakeTab(100, "Grouped Tab", 1)}));
+  // The first task created will have task_id 0 (since it's the first one).
+  // So "My Group" will be task_id 0.
+  ASSERT_TRUE(client_driver_->WaitForTabs({MakeTab(100, "Grouped Tab", 0)}));
 }
 
 TEST_F(IntegrationTest, ExtensionsTabActivatedPropagatesToClient) {

@@ -194,6 +194,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         case LM_MODETS_START_ASSOCIATION:
             tm.isAssociatingTask = true
             tm.isCreatingTask = false
+            tm.taskAssociationSelection = Int(lm_get_task_association_selection(self.modeContext))
             return nil
 
         case LM_MODETS_CANCEL_ASSOCIATION:
