@@ -3,6 +3,54 @@ const DAEMON_URL = 'ws://localhost:9001';
 let reconnect_interval_ms = 1000;
 let event_queue = [];
 
+// Helper to safely close tabs (handling active tab switch)
+async function handleSafeClose(idsToClose) {
+    const idsSet = new Set(idsToClose);
+
+    const activeTabs = await new Promise(resolve => chrome.tabs.query({ active: true }, resolve));
+    const activeTabsToClose = activeTabs.filter(t => idsSet.has(t.id));
+
+    for (const tab of activeTabsToClose) {
+        // Find other tabs in the same window
+        const windowTabs = await new Promise(resolve => chrome.tabs.query({ windowId: tab.windowId }, resolve));
+        const candidates = windowTabs.filter(t => !idsSet.has(t.id));
+
+        if (candidates.length > 0) {
+            // Find nearest adjacent tab
+            // Prioritize: explicit next, then explicit prev
+            // Given candidates are sorted by index usually, or we sort them.
+            candidates.sort((a, b) => a.index - b.index);
+
+            let best = null;
+            // Try to find one immediately after
+            best = candidates.find(t => t.index > tab.index);
+
+            // If none after, find one immediately before (last one before)
+            if (!best) {
+                const before = candidates.filter(t => t.index < tab.index);
+                if (before.length > 0) {
+                    best = before[before.length - 1];
+                }
+            }
+
+            // Fallback (should be covered above unless list empty)
+            if (!best && candidates.length > 0) {
+                best = candidates[0];
+            }
+
+            if (best) {
+                console.log(`Swapping active tab from ${tab.id} to ${best.id} before close`);
+                await new Promise(resolve => chrome.tabs.update(best.id, { active: true }, resolve));
+            }
+        }
+    }
+
+    // Now safe to remove
+    chrome.tabs.remove(idsToClose, () => {
+        sendAllTabs();
+    });
+}
+
 // Helper to send all tabs
 function sendAllTabs() {
     chrome.tabs.query({}, (tabs) => {
@@ -67,9 +115,7 @@ function connectToDaemon() {
                         // Convert to integers just in case and filter
                         const ids = tabIds.map(id => parseInt(id)).filter(id => Number.isInteger(id));
                         if (ids.length > 0) {
-                            chrome.tabs.remove(ids, () => {
-                                sendAllTabs();
-                            });
+                            handleSafeClose(ids);
                         }
                     }
                     break;
