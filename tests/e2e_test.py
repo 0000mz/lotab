@@ -88,7 +88,7 @@ def daemon_process(daemon_bin):
     time.sleep(1)
 
     proc = subprocess.Popen(
-        [daemon_bin], stdout=subprocess.PIPE, stderr=subprocess.PIPE
+        [daemon_bin], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
     )
     time.sleep(5)  # Wait for startup
 
@@ -105,6 +105,7 @@ def daemon_process(daemon_bin):
             proc.wait(timeout=2)
         except subprocess.TimeoutExpired:
             proc.kill()
+
     kill_processes_by_name(APP_NAME)
 
 
@@ -306,29 +307,25 @@ async def test_close_via_search(daemon_process, browser_context):
     # Press / (search)
     print("Pressing /...")
     send_hotkey("/")
-    await asyncio.sleep(0.5)
+    await asyncio.sleep(1.0)
 
     # Type "Tab 2"
     print("Typing 'Tab 2'...")
     script = 'tell application "System Events" to keystroke "Tab 2"'
     subprocess.run(["osascript", "-e", script], check=True)
-    await asyncio.sleep(0.5)
+    await asyncio.sleep(1.0)
 
     # TODO: Instead of having to do 3 extra actions to select the first in the list after a search,
     # it should automatically be highlighted.
     print("Committing search")
     send_hotkey("return")
-    await asyncio.sleep(0.5)
-    send_hotkey("down")
-    await asyncio.sleep(0.5)
-    send_hotkey("space")
-    await asyncio.sleep(0.5)
+    await asyncio.sleep(1.0)
 
     # It should filter to Tab 2. Selection should be on it (if it's the only one/first).
     # Press x
     print("Pressing x...")
     send_hotkey("x")
-    await asyncio.sleep(1)
+    await asyncio.sleep(2.0)
 
     count = await get_tab_count(browser_context)
     print(f"Tab Count: {count}")

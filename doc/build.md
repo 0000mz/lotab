@@ -159,6 +159,8 @@ To run the full test suite via Meson:
 
 ```bash
 meson test -C build
+# Running a specific e2e pytest
+meson test -C build/debug -v e2e_test --test-args="-k test_close_via_search"
 ```
 
 or for verbose output:
