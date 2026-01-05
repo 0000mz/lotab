@@ -13,6 +13,10 @@ struct ContentView: View {
                 labelMultiSelectionView
             } else if lotab.tabs.isEmpty {
                 emptyStateView
+            } else if lotab.isAssociatingTask {
+                taskAssociationView
+            } else if lotab.isCreatingTask {
+                taskCreationView
             } else {
                 tabListView
             }
@@ -296,6 +300,13 @@ struct ContentView: View {
             items.append(FooterItem(components: [.key("space")], description: "to toggle"))
             items.append(FooterItem(components: [.key("return")], description: "to confirm"))
             items.append(FooterItem(components: [.key("esc")], description: "to cancel"))
+        } else if lotab.isAssociatingTask {
+            items.append(FooterItem(components: [.key("↑↓")], description: "navigate"))
+            items.append(FooterItem(components: [.key("return")], description: "select"))
+            items.append(FooterItem(components: [.key("esc")], description: "cancel"))
+        } else if lotab.isCreatingTask {
+            items.append(FooterItem(components: [.key("return")], description: "create"))
+            items.append(FooterItem(components: [.key("esc")], description: "back"))
         } else if lotab.isMarking {
             items.append(FooterItem(components: [.key("return")], description: "to select"))
             items.append(FooterItem(components: [.key("esc")], description: "to cancel"))
@@ -380,6 +391,78 @@ struct ContentView: View {
         .padding(.vertical, 8)
         .padding(.horizontal, 16)
         .background(Color.black.opacity(0.3))
+    }
+    private var taskAssociationView: some View {
+        ScrollViewReader { proxy in
+            List {
+                Section(header: Text("Select Task").font(.caption).foregroundColor(.secondary)) {
+                    // Create New Task Option (index 0)
+                    HStack {
+                        Image(systemName: "plus.circle")
+                        Text("Create New Task")
+                        Spacer()
+                    }
+                    .padding(.vertical, 4)
+                    .listRowBackground(
+                        lotab.taskAssociationSelection == 0 ? Color.accentColor : Color.clear
+                    )
+                    .foregroundColor(
+                        lotab.taskAssociationSelection == 0 ? .white : .primary
+                    )
+                    .id(0)
+
+                    // Existing Tasks
+                    ForEach(Array(lotab.tasks.enumerated()), id: \.element.id) { index, task in
+                        HStack {
+                            Circle().fill(Color.fromName(task.color)).frame(width: 8, height: 8)
+                            Text(task.name)
+                            Spacer()
+                        }
+                        .padding(.vertical, 4)
+                        .listRowBackground(
+                            lotab.taskAssociationSelection == index + 1
+                                ? Color.accentColor : Color.clear
+                        )
+                        .foregroundColor(
+                            lotab.taskAssociationSelection == index + 1 ? .white : .primary
+                        )
+                        .id(index + 1)
+                    }
+                }
+            }
+            .listStyle(.plain)
+            .scrollContentBackground(.hidden)
+            .onChange(of: lotab.taskAssociationSelection) { newSel in
+                proxy.scrollTo(newSel, anchor: .center)
+            }
+            .onAppear {
+                proxy.scrollTo(lotab.taskAssociationSelection, anchor: .center)
+            }
+        }
+    }
+
+    private var taskCreationView: some View {
+        VStack {
+            Spacer()
+            VStack(alignment: .leading, spacing: 12) {
+                Text("New Task Name")
+                    .font(.headline)
+
+                HStack {
+                    Text(lotab.taskCreationInput + "█")
+                        .font(.body)
+                    Spacer()
+                }
+                .padding(8)
+                .background(Color.black.opacity(0.2))
+                .cornerRadius(6)
+            }
+            .padding(16)
+            .background(VisualEffectView(material: .popover, blendingMode: .withinWindow))
+            .cornerRadius(12)
+            .padding(.horizontal, 32)
+            Spacer()
+        }
     }
 }
 

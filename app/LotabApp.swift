@@ -149,6 +149,21 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 }
                 return nil
             }
+            if newMode == LM_MODE_TASK_ASSOCIATION {
+                tm.isAssociatingTask = true
+                tm.isCreatingTask = false
+                tm.taskAssociationSelection = Int(
+                    lm_get_task_association_selection(self.modeContext))
+                return nil
+            }
+            if newMode == LM_MODE_TASK_CREATION {
+                tm.isCreatingTask = true
+                tm.isAssociatingTask = false
+                if let cStr = lm_get_task_creation_input(self.modeContext) {
+                    tm.taskCreationInput = String(cString: cStr)
+                }
+                return nil
+            }
             break
 
         case LM_MODETS_COMMIT_LIST_FILTER:
@@ -163,6 +178,56 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 tm.filterText = ""
             }
             vlog_s(.trace, LotabApp.appClass, "updated filter text: \(tm.filterText)")
+
+        case LM_MODETS_START_ASSOCIATION:
+            tm.isAssociatingTask = true
+            tm.isCreatingTask = false
+            return nil
+
+        case LM_MODETS_CANCEL_ASSOCIATION:
+            tm.isAssociatingTask = false
+            tm.isCreatingTask = false
+            return nil
+
+        case LM_MODETS_ASSOCIATE_TASK:
+            let selection = tm.taskAssociationSelection
+            // Index 0 is "Create New", so index 1 corresponds to task 0
+            if selection > 0 && selection - 1 < tm.tasks.count {
+                let taskId = tm.tasks[selection - 1].id
+                let idsToAssoc = Array(tm.multiSelection)
+                if !idsToAssoc.isEmpty, let client = self.udsClient {
+                    let cIds = idsToAssoc.map { Int32($0) }
+                    cIds.withUnsafeBufferPointer { buffer in
+                        lotab_client_send_associate_tabs(
+                            client, buffer.baseAddress, Int(buffer.count), Int32(taskId))
+                    }
+                }
+            }
+            tm.isAssociatingTask = false
+            tm.isCreatingTask = false
+            tm.clearSelection()
+            return nil
+
+        case LM_MODETS_CREATE_TASK:
+            let name = tm.taskCreationInput
+            let idsToAssoc = Array(tm.multiSelection)
+            if !name.isEmpty, let client = self.udsClient {
+                name.withCString { taskNamePtr in
+                    if !idsToAssoc.isEmpty {
+                        let cIds = idsToAssoc.map { Int32($0) }
+                        cIds.withUnsafeBufferPointer { buffer in
+                            lotab_client_send_create_task_and_associate(
+                                client, taskNamePtr, buffer.baseAddress, Int(buffer.count))
+                        }
+                    } else {
+                        lotab_client_send_create_task_and_associate(client, taskNamePtr, nil, 0)
+                    }
+                }
+            }
+            tm.isAssociatingTask = false
+            tm.isCreatingTask = false
+            tm.clearSelection()
+            return nil
 
         default:
             vlog_s(.warn, LotabApp.appClass, "unknown transition id: \(transition)")
@@ -362,6 +427,12 @@ class Lotab: ObservableObject {
     @Published var isSelectingByLabel: Bool = false
     @Published var labelSelectionCursor: Int = 0
     @Published var labelSelectionTemp: Set<String> = []
+
+    // Task Association
+    @Published var isAssociatingTask: Bool = false
+    @Published var isCreatingTask: Bool = false
+    @Published var taskAssociationSelection: Int = 0
+    @Published var taskCreationInput: String = ""
 
     var displayedTabs: [BrowserTab] {
         let filtered =

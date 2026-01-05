@@ -59,6 +59,8 @@ void lotab_client_run_loop(ClientContext* ctx);
 // Send Actions
 void lotab_client_send_close_tabs(ClientContext* ctx, const int* tab_ids, size_t count);
 void lotab_client_send_tab_selected(ClientContext* ctx, int tab_id);
+void lotab_client_send_associate_tabs(ClientContext* ctx, const int* tab_ids, size_t count, int task_id);
+void lotab_client_send_create_task_and_associate(ClientContext* ctx, const char* name, const int* tab_ids, size_t count);
 
 // Exposed for testing purposes
 void lotab_client_process_message(ClientContext* ctx, const char* json_str);
@@ -75,6 +77,8 @@ typedef enum LmMode {
   // User is viewing a list with filters applied.
   LM_MODE_LIST_FILTER_COMMITTED,
   LM_MODE_LIST_MULTISELECT,
+  LM_MODE_TASK_ASSOCIATION,
+  LM_MODE_TASK_CREATION,
 } LmMode;
 
 // This communicates how the GUI should respond to events.
@@ -97,6 +101,10 @@ typedef enum LmModeTransition {
   // LM_MODETS_ADHERE_TO_MODE describes a transition that requires the
   // UI to adhere to the current application mode.
   LM_MODETS_ADHERE_TO_MODE,
+  LM_MODETS_START_ASSOCIATION,
+  LM_MODETS_ASSOCIATE_TASK,
+  LM_MODETS_CREATE_TASK,
+  LM_MODETS_CANCEL_ASSOCIATION,
 } LmModeTransition;
 
 // Opaque context
@@ -125,6 +133,8 @@ void lm_on_list_len_update(ModeContext* mctx,
                            LmMode* out_new_mode);
 
 char* lm_get_filter_text(ModeContext* mctx);
+char* lm_get_task_creation_input(ModeContext* mctx);
+int lm_get_task_association_selection(ModeContext* mctx);
 
 #ifdef __cplusplus
 }

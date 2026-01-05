@@ -66,6 +66,8 @@ static struct EngClass SERVER_CONTEXT_CLASS = {
 void task_state_add(TaskState* ts, const char* task_name, const char* color, int64_t external_id);
 void tab_state_update_active(TabState* ts, const cJSON* json_data);
 static void send_tasks_update_to_uds(EngineContext* ectx);
+static void send_tabs_update_to_uds(EngineContext* ectx);
+static void send_tabs_update_to_uds(EngineContext* ectx);
 
 static void tab_state_free(TabState* ts) {
   if (!ts)
@@ -164,6 +166,52 @@ static void handle_gui_msg(ServerContext* sc, const char* msg) {
 
           lws_cancel_service(sc->lws_ctx);
         }
+      }
+
+    } else if (strcmp(event->valuestring, "GUI::UDS::AssociateTabs") == 0) {
+      cJSON* data = cJSON_GetObjectItem(json, "data");
+      cJSON* task_id_json = cJSON_GetObjectItem(data, "taskId");
+      cJSON* tab_ids = cJSON_GetObjectItem(data, "tabIds");
+      if (cJSON_IsNumber(task_id_json) && cJSON_IsArray(tab_ids)) {
+        int64_t task_id = (int64_t)task_id_json->valuedouble;
+        EngineContext* ec = (EngineContext*)lws_context_user(sc->lws_ctx);
+        if (ec && ec->tab_state) {
+             cJSON* id_item = NULL;
+             cJSON_ArrayForEach(id_item, tab_ids) {
+                if (cJSON_IsNumber(id_item)) {
+                    TabInfo* tab = tab_state_find_tab(ec->tab_state, (uint64_t)id_item->valuedouble);
+                    if (tab) {
+                        tab->task_id = task_id;
+                    }
+                }
+             }
+             send_tabs_update_to_uds(ec);
+        }
+      }
+    } else if (strcmp(event->valuestring, "GUI::UDS::CreateTask") == 0) {
+      cJSON* data = cJSON_GetObjectItem(json, "data");
+      cJSON* name_json = cJSON_GetObjectItem(data, "name");
+      cJSON* associate_tab_ids = cJSON_GetObjectItem(data, "associateTabIds");
+
+      if (cJSON_IsString(name_json) && name_json->valuestring) {
+        EngineContext* ec = (EngineContext*)lws_context_user(sc->lws_ctx);
+        task_state_add(ec->task_state, name_json->valuestring, "grey", 0);
+
+        // New task is head
+        TaskInfo* new_task = ec->task_state->tasks;
+        if (new_task && cJSON_IsArray(associate_tab_ids)) {
+             cJSON* id_item = NULL;
+             cJSON_ArrayForEach(id_item, associate_tab_ids) {
+                if (cJSON_IsNumber(id_item)) {
+                    TabInfo* tab = tab_state_find_tab(ec->tab_state, (uint64_t)id_item->valuedouble);
+                    if (tab) {
+                        tab->task_id = new_task->task_id;
+                    }
+                }
+             }
+        }
+        send_tasks_update_to_uds(ec);
+        send_tabs_update_to_uds(ec);
       }
     } else {
       vlog(LOG_LEVEL_INFO, sc, "Received GUI Event: %s\n", event->valuestring);

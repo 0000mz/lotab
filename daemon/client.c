@@ -408,6 +408,7 @@ int is_special_alnum(const uint8_t c) {
 #define MACOS_X_KEY_CODE 7
 #define MACOS_ENTER_KEY_CODE 36
 #define MACOS_BACKSPACE_KEY_CODE 51
+#define MACOS_M_KEY_CODE 46
 
 #define MODIFIER_FLAG_CMD 1 << 0
 #define MODIFIER_FLAG_SHIFT 1 << 1
@@ -445,6 +446,26 @@ void lm_mode_multiselect__process_key(void* data,
                                       LmModeTransition* out_transition,
                                       LmMode* out_new_mode);
 
+void lm_mode_task_association__init(void* data);
+void lm_mode_task_association__init_from(void* data, LmMode old_mode, void* old_data);
+void lm_mode_task_association__deinit(void* data);
+void lm_mode_task_association__process_key(void* data,
+                                           uint16_t key_code,
+                                           const uint8_t ascii_code,
+                                           const uint32_t mod_flags,
+                                           LmModeTransition* out_transition,
+                                           LmMode* out_new_mode);
+
+void lm_mode_task_creation__init(void* data);
+void lm_mode_task_creation__init_from(void* data, LmMode old_mode, void* old_data);
+void lm_mode_task_creation__deinit(void* data);
+void lm_mode_task_creation__process_key(void* data,
+                                        uint16_t key_code,
+                                        const uint8_t ascii_code,
+                                        const uint32_t mod_flags,
+                                        LmModeTransition* out_transition,
+                                        LmMode* out_new_mode);
+
 struct LmState {
   LmMode mode;
   uint32_t state_data_size;
@@ -475,6 +496,15 @@ typedef struct LmModeMultiselectState {
     int filter_text_len;
 } LmModeMultiselectState;
 
+typedef struct LmModeTaskAssociationState {
+    int selection_index;
+} LmModeTaskAssociationState;
+
+typedef struct LmModeTaskCreationState {
+    char buffer[1024];
+    int buffer_len;
+} LmModeTaskCreationState;
+
 static struct LmState STATE_MACHINE[] = {
     {
         .mode = LM_MODE_LIST_NORMAL,
@@ -499,6 +529,22 @@ static struct LmState STATE_MACHINE[] = {
         .init_from = lm_mode_multiselect__init_from,
         .deinit = lm_mode_multiselect__deinit,
         .process_key = lm_mode_multiselect__process_key,
+    },
+    {
+        .mode = LM_MODE_TASK_ASSOCIATION,
+        .state_data_size = sizeof(LmModeTaskAssociationState),
+        .init = lm_mode_task_association__init,
+        .init_from = lm_mode_task_association__init_from,
+        .deinit = lm_mode_task_association__deinit,
+        .process_key = lm_mode_task_association__process_key,
+    },
+    {
+        .mode = LM_MODE_TASK_CREATION,
+        .state_data_size = sizeof(LmModeTaskCreationState),
+        .init = lm_mode_task_creation__init,
+        .init_from = lm_mode_task_creation__init_from,
+        .deinit = lm_mode_task_creation__deinit,
+        .process_key = lm_mode_task_creation__process_key,
     },
 };
 
@@ -703,6 +749,10 @@ void lm_mode_multiselect__process_key(void* data,
     case MACOS_X_KEY_CODE:
       *out_transition = LM_MODETS_CLOSE_SELECTED_TABS;
       break;
+    case MACOS_M_KEY_CODE:
+      *out_transition = LM_MODETS_START_ASSOCIATION;
+      *out_new_mode = LM_MODE_TASK_ASSOCIATION;
+      break;
   }
 }
 
@@ -844,4 +894,150 @@ char* lm_get_filter_text(ModeContext* mctx) {
   }
   
   return NULL;
+}
+
+char* lm_get_task_creation_input(ModeContext* mctx) {
+    if (!mctx->state_priv || mctx->mode != LM_MODE_TASK_CREATION) return NULL;
+    LmModeTaskCreationState* s = (LmModeTaskCreationState*)mctx->state_priv;
+    return s->buffer;
+}
+
+int lm_get_task_association_selection(ModeContext* mctx) {
+    if (!mctx->state_priv || mctx->mode != LM_MODE_TASK_ASSOCIATION) return 0;
+    LmModeTaskAssociationState* s = (LmModeTaskAssociationState*)mctx->state_priv;
+    return s->selection_index;
+}
+
+// --- TASK ASSOCIATION ---
+void lm_mode_task_association__init(void* data) {
+    LmModeTaskAssociationState* s = (LmModeTaskAssociationState*)data;
+    s->selection_index = 0;
+}
+
+void lm_mode_task_association__init_from(void* data, LmMode old_mode, void* old_data) {
+    LmModeTaskAssociationState* s = (LmModeTaskAssociationState*)data;
+    s->selection_index = 0;
+    (void)old_mode;
+    (void)old_data;
+}
+
+void lm_mode_task_association__deinit(void* data) {
+    (void)data;
+}
+
+void lm_mode_task_association__process_key(void* data,
+                                           uint16_t key_code,
+                                           const uint8_t ascii_code,
+                                           const uint32_t mod_flags,
+                                           LmModeTransition* out_transition,
+                                           LmMode* out_new_mode) {
+    LmModeTaskAssociationState* s = (LmModeTaskAssociationState*)data;
+    *out_transition = LM_MODETS_UNKNOWN;
+    *out_new_mode = LM_MODE_TASK_ASSOCIATION;
+
+    switch (key_code) {
+        case MACOS_ESC_CODE:
+            *out_transition = LM_MODETS_CANCEL_ASSOCIATION;
+            *out_new_mode = LM_MODE_LIST_MULTISELECT;
+            break;
+        case MACOS_DOWN_ARROW_KEY_CODE:
+        case MACOS_J_KEY_CODE:
+            s->selection_index++;
+            *out_transition = LM_MODETS_ADHERE_TO_MODE;
+            break;
+        case MACOS_UP_ARROW_KEY_CODE:
+        case MACOS_K_KEY_CODE:
+            if (s->selection_index > 0) s->selection_index--;
+            *out_transition = LM_MODETS_ADHERE_TO_MODE;
+            break;
+        case MACOS_ENTER_KEY_CODE:
+            if (s->selection_index == 0) {
+                *out_new_mode = LM_MODE_TASK_CREATION;
+                *out_transition = LM_MODETS_ADHERE_TO_MODE;
+            } else {
+                *out_transition = LM_MODETS_ASSOCIATE_TASK;
+                *out_new_mode = LM_MODE_LIST_NORMAL;
+            }
+            break;
+    }
+}
+
+// --- TASK CREATION ---
+void lm_mode_task_creation__init(void* data) {
+    LmModeTaskCreationState* s = (LmModeTaskCreationState*)data;
+    buffer_clear(s->buffer, &s->buffer_len);
+}
+
+void lm_mode_task_creation__init_from(void* data, LmMode old_mode, void* old_data) {
+    LmModeTaskCreationState* s = (LmModeTaskCreationState*)data;
+    buffer_clear(s->buffer, &s->buffer_len);
+    (void)old_mode;
+    (void)old_data;
+}
+
+void lm_mode_task_creation__deinit(void* data) {
+    (void)data;
+}
+
+void lm_mode_task_creation__process_key(void* data,
+                                        uint16_t key_code,
+                                        const uint8_t ascii_code,
+                                        const uint32_t mod_flags,
+                                        LmModeTransition* out_transition,
+                                        LmMode* out_new_mode) {
+    LmModeTaskCreationState* s = (LmModeTaskCreationState*)data;
+    *out_transition = LM_MODETS_UNKNOWN;
+    *out_new_mode = LM_MODE_TASK_CREATION;
+
+    if (key_code == MACOS_ESC_CODE) {
+        *out_new_mode = LM_MODE_TASK_ASSOCIATION;
+        *out_transition = LM_MODETS_ADHERE_TO_MODE;
+    } else if (key_code == MACOS_ENTER_KEY_CODE) {
+        if (s->buffer_len > 0) {
+            *out_transition = LM_MODETS_CREATE_TASK;
+            *out_new_mode = LM_MODE_LIST_NORMAL;
+        }
+    } else if (key_code == MACOS_BACKSPACE_KEY_CODE) {
+        buffer_remove_char(s->buffer, &s->buffer_len);
+        *out_transition = LM_MODETS_ADHERE_TO_MODE;
+    } else if (is_special_alnum(ascii_code)) {
+        buffer_add_char(s->buffer, &s->buffer_len, sizeof(s->buffer), (char)ascii_code);
+        *out_transition = LM_MODETS_ADHERE_TO_MODE;
+    }
+}
+
+void lotab_client_send_associate_tabs(ClientContext* ctx, const int* tab_ids, size_t count, int task_id) {
+    if (!ctx || count == 0) return;
+    cJSON* root = cJSON_CreateObject();
+    cJSON_AddStringToObject(root, "event", "GUI::UDS::AssociateTabs");
+    cJSON* data = cJSON_CreateObject();
+    cJSON_AddItemToObject(root, "data", data);
+    cJSON_AddNumberToObject(data, "taskId", task_id);
+    cJSON_AddNumberToObject(data, "count", count); 
+    cJSON* ids = cJSON_CreateArray();
+    cJSON_AddItemToObject(data, "tabIds", ids);
+    for (size_t i = 0; i < count; i++) {
+        cJSON_AddItemToArray(ids, cJSON_CreateNumber(tab_ids[i]));
+    }
+    send_json_message(ctx, root);
+    cJSON_Delete(root);
+}
+
+void lotab_client_send_create_task_and_associate(ClientContext* ctx, const char* name, const int* tab_ids, size_t count) {
+    if (!ctx || !name) return;
+    cJSON* root = cJSON_CreateObject();
+    cJSON_AddStringToObject(root, "event", "GUI::UDS::CreateTask");
+    cJSON* data = cJSON_CreateObject();
+    cJSON_AddItemToObject(root, "data", data);
+    cJSON_AddStringToObject(data, "name", name);
+    cJSON_AddNumberToObject(data, "count", count);
+    if (count > 0 && tab_ids) {
+        cJSON* ids = cJSON_CreateArray();
+        cJSON_AddItemToObject(data, "associateTabIds", ids);
+        for (size_t i = 0; i < count; i++) {
+            cJSON_AddItemToArray(ids, cJSON_CreateNumber(tab_ids[i]));
+        }
+    }
+    send_json_message(ctx, root);
+    cJSON_Delete(root);
 }
