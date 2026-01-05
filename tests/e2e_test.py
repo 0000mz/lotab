@@ -190,6 +190,40 @@ async def get_tab_titles(browser_context):
     """)
 
 
+async def get_tab_groups(browser_context):
+    bg = await wait_for_background_page(browser_context)
+    if not bg:
+        return []
+
+    return await bg.evaluate("""
+        () => new Promise(resolve => {
+            chrome.tabGroups.query({}, (groups) => {
+                const result = [];
+                let processed = 0;
+                if (groups.length === 0) {
+                    resolve([]);
+                    return;
+                }
+
+                groups.forEach(g => {
+                    chrome.tabs.query({groupId: g.id}, (tabs) => {
+                        result.push({
+                            title: g.title,
+                            color: g.color,
+                            id: g.id,
+                            tabCount: tabs.length
+                        });
+                        processed++;
+                        if (processed === groups.length) {
+                             resolve(result);
+                        }
+                    });
+                });
+            });
+        })
+    """)
+
+
 async def setup_tabs(browser_context):
     page1 = browser_context.pages[0]
     await page1.goto("http://example.com")
@@ -375,3 +409,85 @@ async def test_close_via_select_space(daemon_process, browser_context):
 
     if count == 1:
         print("Closed multiple tabs via selection!")
+
+
+@pytest.mark.asyncio
+async def test_create_tab_group(daemon_process, browser_context):
+    """
+    E2E Test: Create Tab Group
+    Steps:
+    1. Open 3 tabs.
+    2. Toggle GUI.
+    3. Move down 1, Select (Space).
+    4. Move down 1, Select (Space).
+    5. Press 'm' (mark/task).
+    6. Press 'return' (create new).
+    7. Type 'test-group'.
+    8. Press 'return' (commit).
+    9. Verify 1 tab group with 2 tabs.
+    """
+    await setup_tabs(browser_context)
+
+    # Ensure no groups initially
+    groups = await get_tab_groups(browser_context)
+    assert len(groups) == 0, "Expected 0 tab groups initially"
+
+    await toggle_gui()
+
+    # Navigate Down (to Tab 2)
+    print("Navigating Down (Tab 2)...")
+    send_hotkey("down")
+    await asyncio.sleep(0.5)
+
+    # Select Tab 2
+    print("Pressing Space (Select Tab 2)...")
+    send_hotkey("space")
+    await asyncio.sleep(0.5)
+
+    # Navigate Down (to Tab 3)
+    print("Navigating Down (Tab 3)...")
+    send_hotkey("down")
+    await asyncio.sleep(0.5)
+
+    # Select Tab 3
+    print("Pressing Space (Select Tab 3)...")
+    send_hotkey("space")
+    await asyncio.sleep(0.5)
+
+    # Press 'm' to enter Mark/Group mode
+    print("Pressing 'm'...")
+    send_hotkey("m")
+    await asyncio.sleep(1.0)
+
+    # Press 'return' to choose "Create New Task/Group" (usually the first option or default action if list empty?)
+    # Assuming 'm' opens a list where "Create New" is available or typing starts filtering.
+    # Based on user description: "Press enter to create new. type test-group, press enter to commit."
+    # If 'm' opens a mode where we can type immediately:
+
+    # Wait, user said: "Press enter to create new". This implies a menu selection.
+    print("Pressing Return (Create New)...")
+    send_hotkey("return")
+    await asyncio.sleep(1.0)
+
+    # Type "test-group"
+    print("Typing 'test-group'...")
+    script = 'tell application "System Events" to keystroke "test-group"'
+    subprocess.run(["osascript", "-e", script], check=True)
+    await asyncio.sleep(0.5)
+
+    # Commit
+    print("Pressing Return (Commit)...")
+    send_hotkey("return")
+    await asyncio.sleep(2.0)  # Wait for extension to process
+
+    # Verify
+    groups = await get_tab_groups(browser_context)
+    print(f"Tab Groups Found: {groups}")
+
+    assert len(groups) == 1, f"Expected 1 tab group, found {len(groups)}"
+    assert groups[0]["title"] == "test-group", (
+        f"Expected group title 'test-group', got '{groups[0]['title']}'"
+    )
+    assert groups[0]["tabCount"] == 2, (
+        f"Expected 2 tabs in group, got {groups[0]['tabCount']}"
+    )
