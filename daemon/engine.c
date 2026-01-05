@@ -602,8 +602,6 @@ int engine_init(EngineContext** ectx, EngineCreationInfo cinfo) {
   ec->tab_state->cls = &TAB_STATE_CLASS;
   ec->task_state = calloc(1, sizeof(TaskState));
   ec->task_state->cls = &TASK_STATE_CLASS;
-  // TODO: Placeholder task, remove once task creation flow is implemented.
-  task_state_add(ec->task_state, "Placeholder Task", -1);
   ec->init_statusline = cinfo.enable_statusbar != 0;
 
   if (setup_app_config_dir(&cinfo, &ec->ui_toggle_keybind) == 0) {
