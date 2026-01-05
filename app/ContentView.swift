@@ -301,7 +301,7 @@ struct ContentView: View {
             items.append(FooterItem(components: [.key("return")], description: "to confirm"))
             items.append(FooterItem(components: [.key("esc")], description: "to cancel"))
         } else if lotab.isAssociatingTask {
-            items.append(FooterItem(components: [.key("↑↓")], description: "navigate"))
+            items.append(FooterItem(components: [.key("↓"), .key("↑"), .text("or"), .key("j"), .key("k")], description: "to navigate"))
             items.append(FooterItem(components: [.key("return")], description: "select"))
             items.append(FooterItem(components: [.key("esc")], description: "cancel"))
         } else if lotab.isCreatingTask {
@@ -398,34 +398,53 @@ struct ContentView: View {
                 Section(header: Text("Select Task").font(.caption).foregroundColor(.secondary)) {
                     // Create New Task Option (index 0)
                     HStack {
-                        Image(systemName: "plus.circle")
-                        Text("Create New Task")
+                        Text("Create New Task...")
+                            .italic()
                         Spacer()
                     }
                     .padding(.vertical, 4)
-                    .listRowBackground(
-                        lotab.taskAssociationSelection == 0 ? Color.accentColor : Color.clear
+                    .padding(.horizontal, 8)
+                    .background(
+                        RoundedRectangle(cornerRadius: 6)
+                            .fill(
+                                lotab.taskAssociationSelection == 0
+                                    ? Color.accentColor : Color.clear
+                            )
                     )
+                    .contentShape(Rectangle())
                     .foregroundColor(
                         lotab.taskAssociationSelection == 0 ? .white : .primary
                     )
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
+                    .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
                     .id(0)
 
                     // Existing Tasks
                     ForEach(Array(lotab.tasks.enumerated()), id: \.element.id) { index, task in
                         HStack {
-                            Circle().fill(Color.fromName(task.color)).frame(width: 8, height: 8)
                             Text(task.name)
                             Spacer()
+                            RoundedRectangle(cornerRadius: 2)
+                                .fill(Color.fromName(task.color))
+                                .frame(width: 12, height: 12)
                         }
                         .padding(.vertical, 4)
-                        .listRowBackground(
-                            lotab.taskAssociationSelection == index + 1
-                                ? Color.accentColor : Color.clear
+                        .padding(.horizontal, 8)
+                        .background(
+                            RoundedRectangle(cornerRadius: 6)
+                                .fill(
+                                    lotab.taskAssociationSelection == index + 1
+                                        ? Color.accentColor : Color.clear
+                                )
                         )
+                        .contentShape(Rectangle())
                         .foregroundColor(
                             lotab.taskAssociationSelection == index + 1 ? .white : .primary
                         )
+                        .listRowSeparator(.hidden)
+                        .listRowBackground(Color.clear)
+                        .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
                         .id(index + 1)
                     }
                 }

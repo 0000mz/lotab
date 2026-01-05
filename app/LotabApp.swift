@@ -42,6 +42,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Setup Key monitors
         NSEvent.addLocalMonitorForEvents(matching: .keyDown) { (event: NSEvent) -> NSEvent? in
 
+            // Sync List Length for modes that require bounds checking
+            // This is critical for cyclic navigation in client.c
+            if Lotab.shared.isAssociatingTask {
+                let count = Lotab.shared.tasks.count + 1  // +1 for "Create New"
+                var transition: LmModeTransition = LM_MODETS_UNKNOWN
+                var old_mode: LmMode = LM_MODE_UNKNOWN
+                var new_mode: LmMode = LM_MODE_UNKNOWN
+                if let mctx = self.modeContext {
+                    lm_on_list_len_update(mctx, Int32(count), &transition, &old_mode, &new_mode)
+                }
+            }
+
             let charValue = event.characters?.first?.asciiValue ?? 0
 
             var transition: LmModeTransition = LM_MODETS_UNKNOWN
@@ -355,7 +367,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
             DispatchQueue.main.async {
                 Lotab.shared.tasks = newTasks
-                vlog_s(.info, LotabApp.appClass, "Updated tasks: \(newTasks.count)")
+                vlog_s(.trace, LotabApp.appClass, "Updated tasks: \(newTasks.count)")
                 for t in newTasks {
                     vlog_s(.trace, LotabApp.appClass, "Task[\(t.id)]: \(t.name)")
                 }

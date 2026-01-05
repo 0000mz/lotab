@@ -498,10 +498,11 @@ typedef struct LmModeMultiselectState {
 
 typedef struct LmModeTaskAssociationState {
     int selection_index;
+    int list_len;
 } LmModeTaskAssociationState;
 
 typedef struct LmModeTaskCreationState {
-    char buffer[1024];
+    char buffer[256];
     int buffer_len;
 } LmModeTaskCreationState;
 
@@ -873,6 +874,10 @@ void lm_on_list_len_update(ModeContext* mctx,
         transition_state_ctx(mctx, LM_MODE_LIST_NORMAL);
         *out_transition = LM_MODETS_ADHERE_TO_MODE;
         *out_new_mode = LM_MODE_LIST_NORMAL;
+    } else if (mctx->mode == LM_MODE_TASK_ASSOCIATION) {
+        // Store list length for navigation bounds
+        LmModeTaskAssociationState* s = (LmModeTaskAssociationState*)mctx->state_priv;
+        s->list_len = list_len;
     }
 }
 
@@ -942,12 +947,16 @@ void lm_mode_task_association__process_key(void* data,
             break;
         case MACOS_DOWN_ARROW_KEY_CODE:
         case MACOS_J_KEY_CODE:
-            s->selection_index++;
+            if (s->list_len > 0) {
+                s->selection_index = (s->selection_index + 1) % s->list_len;
+            }
             *out_transition = LM_MODETS_ADHERE_TO_MODE;
             break;
         case MACOS_UP_ARROW_KEY_CODE:
         case MACOS_K_KEY_CODE:
-            if (s->selection_index > 0) s->selection_index--;
+            if (s->list_len > 0) {
+                s->selection_index = (s->selection_index - 1 + s->list_len) % s->list_len;
+            }
             *out_transition = LM_MODETS_ADHERE_TO_MODE;
             break;
         case MACOS_ENTER_KEY_CODE:
