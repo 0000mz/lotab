@@ -254,7 +254,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
             DispatchQueue.main.async {
                 Lotab.shared.tabs = newTabs
-                vlog_s(.info, LotabApp.appClass, "Updated tabs: \(newTabs.count)")
+                vlog_s(.trace, LotabApp.appClass, "Updated tabs: \(newTabs.count)")
 
                 // --- Notify State Machine of List Update (Auto-Exit Multiselect) ---
                 if let appDelegate = AppDelegate.shared, let mctx = appDelegate.modeContext {
@@ -274,7 +274,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         let onTasksUpdate: lotab_on_tasks_update_cb = { userData, tasksList in
-            vlog_s(.info, LotabApp.appClass, "onTasksUpdate callback entered")
+            vlog_s(.trace, LotabApp.appClass, "onTasksUpdate callback entered")
             guard let tasksList = tasksList else { return }
             var newTasks: [Task] = []
             let count = Int(tasksList.pointee.count)

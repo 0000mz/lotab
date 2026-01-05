@@ -65,6 +65,7 @@ static struct EngClass SERVER_CONTEXT_CLASS = {
 
 void task_state_add(TaskState* ts, const char* task_name, const char* color, int64_t external_id);
 void tab_state_update_active(TabState* ts, const cJSON* json_data);
+static void send_tasks_update_to_uds(EngineContext* ectx);
 
 static void tab_state_free(TabState* ts) {
   if (!ts)
@@ -867,6 +868,16 @@ void task_state_add(TaskState* ts, const char* task_name, const char* color, int
   }
 }
 
+void task_state_update(TaskState* ts, int64_t external_id, const char* name, const char* color) {
+    TaskInfo* task = task_state_find_by_external_id(ts, external_id);
+    if (task) {
+        if (task->task_name) free(task->task_name);
+        task->task_name = strdup(name ? name : "Unknown Task");
+        if (task->color) free(task->color);
+        task->color = strdup(color ? color : "grey");
+    }
+}
+
 void tab_event__handle_all_tabs(EngineContext* ec, const cJSON* json_data) {
   TabState* ts = ec->tab_state;
   TaskState* tks = ec->task_state;
@@ -1080,6 +1091,35 @@ void tab_event__handle_updated(EngineContext* ec, const cJSON* json_data) {
   tab_state_update_active(ts, json_data);
 }
 
+void tab_event__handle_group_updated(EngineContext* ec, const cJSON* json_data) {
+    // {"event": "...", "data": {"id": 123, "title": "...", "color": "..."}}
+    TaskState* ts = ec->task_state;
+    cJSON* data = cJSON_GetObjectItem(json_data, "data");
+    if (!data) return;
+
+    cJSON* id_json = cJSON_GetObjectItem(data, "id");
+    cJSON* title_json = cJSON_GetObjectItem(data, "title");
+    cJSON* color_json = cJSON_GetObjectItem(data, "color");
+
+    if (cJSON_IsNumber(id_json)) {
+        int64_t external_id = (int64_t)id_json->valuedouble;
+        const char* title = "Browser Group";
+        if (cJSON_IsString(title_json) && title_json->valuestring) {
+            title = title_json->valuestring;
+        }
+        const char* color = "grey";
+        if (cJSON_IsString(color_json) && color_json->valuestring) {
+            color = color_json->valuestring;
+        }
+
+        if (task_state_find_by_external_id(ts, external_id)) {
+            task_state_update(ts, external_id, title, color);
+            vlog(LOG_LEVEL_INFO, ec->tab_state, "Task Updated: %lld, Title: %s, Color: %s\n", external_id, title, color);
+            send_tasks_update_to_uds(ec);
+        }
+    }
+}
+
 struct TabEventMapEntry {
   const char* event_name;
   TabEventType type;
@@ -1093,6 +1133,7 @@ static const struct TabEventMapEntry TAB_EVENT_MAP[] = {
     {"Extension::WS::TabZoomChanged", TAB_EVENT_ZOOM_CHANGE},
     {"Extension::WS::AllTabsInfoResponse", TAB_EVENT_ALL_TABS},
     {"Extension::WS::TabRemoved", TAB_EVENT_TAB_REMOVED},
+    {"Extension::WS::TabGroupUpdated", TAB_EVENT_GROUP_UPDATED},
     {NULL, TAB_EVENT_UNKNOWN},
 };
 
@@ -1105,6 +1146,7 @@ static struct {
     {TAB_EVENT_ACTIVATED, tab_event__handle_activated},
     {TAB_EVENT_CREATED, tab_event__handle_created},
     {TAB_EVENT_UPDATED, tab_event__handle_updated},
+    {TAB_EVENT_GROUP_UPDATED, tab_event__handle_group_updated},
     {TAB_EVENT_HIGHLIGHTED, tab_event__do_nothing},
     {TAB_EVENT_ZOOM_CHANGE, tab_event__do_nothing},
     {TAB_EVENT_UNKNOWN, NULL},

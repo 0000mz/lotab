@@ -218,7 +218,7 @@ if (chrome.tabGroups) {
     });
 
     chrome.tabGroups.onUpdated.addListener((group) => {
-        logEvent('tabGroups.onUpdated', group);
+        logEvent('Extension::WS::TabGroupUpdated', group);
     });
 
     chrome.tabGroups.onRemoved.addListener((group) => {

@@ -25,6 +25,7 @@ typedef enum {
   TAB_EVENT_ZOOM_CHANGE,
   TAB_EVENT_ALL_TABS,
   TAB_EVENT_TAB_REMOVED,
+  TAB_EVENT_GROUP_UPDATED,
   TAB_EVENT_UNKNOWN
 } TabEventType;
 
@@ -90,6 +91,7 @@ void engine_handle_event(EngineContext* ectx, DaemonEvent event, void* data);
 // State helpers (exposed for testing)
 TabInfo* tab_state_find_tab(TabState* ts, const uint64_t id);
 TaskInfo* task_state_find_by_external_id(TaskState* ts, int64_t external_id);
+void task_state_update(TaskState* ts, int64_t external_id, const char* name, const char* color);
 
 #ifdef __cplusplus
 }
