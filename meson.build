@@ -151,6 +151,12 @@ foreach s, suffix : sanitizers
                         dependencies : [gtest_dep, engine_dep_var, client_dep_var],
                         override_options : ['b_sanitize=' + s])
     test('integration_test' + suffix, i_test_var)
+
+    cm_test_var = executable('client_mode_test' + suffix,
+                        ['tests/client_mode_test.cc'],
+                        dependencies : [gtest_dep, client_dep_var],
+                        override_options : ['b_sanitize=' + s])
+    test('client_mode_test' + suffix, cm_test_var)
   endif
 endforeach
 
@@ -170,6 +176,13 @@ if gtest_dep.found()
                       ['tests/integration_test.cc'],
                       dependencies : [gtest_dep, engine_dep, client_dep])
   test('integration_test', i_test)
+
+  # Client Mode State Machine Test
+  # Client Mode State Machine Test
+  cm_test = executable('client_mode_test',
+                       ['tests/client_mode_test.cc'],
+                       dependencies : [gtest_dep, client_dep])
+  test('client_mode_test', cm_test)
 else
   message('gtest not found, skipping unit tests')
 endif
