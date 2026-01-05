@@ -156,7 +156,10 @@ class TestableClientDriver {
   bool WaitForTasksUpdate(int expected_count, std::string expected_name, int timeout_ms = 1000) {
     std::unique_lock<std::mutex> lock(mutex_);
     return cv_.wait_for(lock, std::chrono::milliseconds(timeout_ms), [&]() {
-      bool name_match = (data_.last_task_name && expected_name == data_.last_task_name);
+      bool name_match = true;
+      if (expected_count > 0) {
+        name_match = (data_.last_task_name && expected_name == data_.last_task_name);
+      }
       return data_.tasks_count == expected_count && name_match;
     });
   }
@@ -343,4 +346,57 @@ TEST_F(IntegrationTest, ExtensionsTabRemovedPropagatesToClient) {
 
   // Should be empty list
   ASSERT_TRUE(client_driver_->WaitForTabs({}));
+}
+
+TEST_F(IntegrationTest, ExtensionsTabGroupCreatedPropagatesToClient) {
+  const char* ws_msg = R"json({
+          "event": "Extension::WS::TabGroupCreated",
+          "data": {
+              "id": 101,
+              "title": "New Group",
+              "color": "blue"
+          }
+      })json";
+
+  engine_handle_event(ec_, EVENT_WS_MESSAGE_RECEIVED, (void*)ws_msg);
+  // Engine starts with 0 tasks (in test env), so now we have 1.
+  ASSERT_TRUE(client_driver_->WaitForTasksUpdate(1, "New Group"));
+}
+
+TEST_F(IntegrationTest, ExtensionsTabGroupUpdatedPropagatesToClient) {
+  // Setup: Create group first
+  const char* create_msg = R"json({
+          "event": "Extension::WS::TabGroupCreated",
+          "data": { "id": 102, "title": "Old Title", "color": "red" }
+      })json";
+  engine_handle_event(ec_, EVENT_WS_MESSAGE_RECEIVED, (void*)create_msg);
+  ASSERT_TRUE(client_driver_->WaitForTasksUpdate(1, "Old Title"));
+
+  // Update it
+  const char* update_msg = R"json({
+          "event": "Extension::WS::TabGroupUpdated",
+          "data": { "id": 102, "title": "New Title", "color": "green" }
+      })json";
+  engine_handle_event(ec_, EVENT_WS_MESSAGE_RECEIVED, (void*)update_msg);
+  ASSERT_TRUE(client_driver_->WaitForTasksUpdate(1, "New Title"));
+}
+
+TEST_F(IntegrationTest, ExtensionsTabGroupRemovedPropagatesToClient) {
+  // Setup: Create group
+  const char* create_msg = R"json({
+          "event": "Extension::WS::TabGroupCreated",
+          "data": { "id": 103, "title": "To Delete", "color": "yellow" }
+      })json";
+  engine_handle_event(ec_, EVENT_WS_MESSAGE_RECEIVED, (void*)create_msg);
+  ASSERT_TRUE(client_driver_->WaitForTasksUpdate(1, "To Delete"));
+
+  // Remove it
+  const char* remove_msg = R"json({
+          "event": "Extension::WS::TabGroupRemoved",
+          "data": { "id": 103 }
+      })json";
+  engine_handle_event(ec_, EVENT_WS_MESSAGE_RECEIVED, (void*)remove_msg);
+
+  // Back to 0 tasks
+  ASSERT_TRUE(client_driver_->WaitForTasksUpdate(0, ""));
 }

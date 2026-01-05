@@ -1090,6 +1090,8 @@ void tab_event__handle_all_tabs(EngineContext* ec, const cJSON* json_data) {
         task_state_update(tks, external_id, group_title, group_color);
       }
     }
+    // Always send task update after processing groups in AllTabs
+    send_tasks_update_to_uds(ec);
   }
 
   if (tabs_json && cJSON_IsArray(tabs_json)) {

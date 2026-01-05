@@ -174,7 +174,8 @@ void lotab_client_process_message(ClientContext* ctx, const char* json_str) {
 
         list.tasks[i].id = cJSON_IsNumber(id) ? (int)id->valuedouble : 0;
         list.tasks[i].name = (cJSON_IsString(name) && name->valuestring) ? strdup(name->valuestring) : strdup("");
-        list.tasks[i].color = (cJSON_IsString(color) && color->valuestring) ? strdup(color->valuestring) : strdup("grey");
+        list.tasks[i].color =
+            (cJSON_IsString(color) && color->valuestring) ? strdup(color->valuestring) : strdup("grey");
       }
 
       if (ctx->callbacks.on_tasks_update) {
@@ -492,18 +493,20 @@ typedef struct LmModeFilterInflightState {
 } LmModeFilterInflightState;
 
 typedef struct LmModeMultiselectState {
-    char filter_text[1024];
-    int filter_text_len;
+  char filter_text[1024];
+  int filter_text_len;
 } LmModeMultiselectState;
 
 typedef struct LmModeTaskAssociationState {
-    int selection_index;
-    int list_len;
+  int selection_index;
+  int list_len;
+  char filter_text[1024];
+  int filter_text_len;
 } LmModeTaskAssociationState;
 
 typedef struct LmModeTaskCreationState {
-    char buffer[256];
-    int buffer_len;
+  char buffer[256];
+  int buffer_len;
 } LmModeTaskCreationState;
 
 static struct LmState STATE_MACHINE[] = {
@@ -588,13 +591,17 @@ void lm_mode_list_normal__init_from(void* data, LmMode old_mode, void* old_data)
   buffer_clear(s->filter_text, &s->filter_text_len);
 
   if (old_mode == LM_MODE_LIST_FILTER_INFLIGHT && old_data) {
-      LmModeFilterInflightState* old_s = (LmModeFilterInflightState*)old_data;
-      memcpy(s->filter_text, old_s->buffer, sizeof(s->filter_text));
-      s->filter_text_len = old_s->buffer_len;
+    LmModeFilterInflightState* old_s = (LmModeFilterInflightState*)old_data;
+    memcpy(s->filter_text, old_s->buffer, sizeof(s->filter_text));
+    s->filter_text_len = old_s->buffer_len;
   } else if (old_mode == LM_MODE_LIST_MULTISELECT && old_data) {
-      LmModeMultiselectState* old_s = (LmModeMultiselectState*)old_data;
-      memcpy(s->filter_text, old_s->filter_text, sizeof(s->filter_text));
-      s->filter_text_len = old_s->filter_text_len;
+    LmModeMultiselectState* old_s = (LmModeMultiselectState*)old_data;
+    memcpy(s->filter_text, old_s->filter_text, sizeof(s->filter_text));
+    s->filter_text_len = old_s->filter_text_len;
+  } else if (old_mode == LM_MODE_TASK_ASSOCIATION && old_data) {
+    LmModeTaskAssociationState* old_s = (LmModeTaskAssociationState*)old_data;
+    memcpy(s->filter_text, old_s->filter_text, sizeof(s->filter_text));
+    s->filter_text_len = old_s->filter_text_len;
   }
 }
 
@@ -661,7 +668,7 @@ void lm_mode_filter_inflight__init(void* data) {
 void lm_mode_filter_inflight__init_from(void* data, LmMode old_mode, void* old_data) {
   LmModeFilterInflightState* s = (LmModeFilterInflightState*)data;
   buffer_clear(s->buffer, &s->buffer_len);
-  
+
   // User request: New search should clear old filter.
   // So we do NOT copy old_s->filter_text here.
   (void)old_mode;
@@ -699,22 +706,22 @@ void lm_mode_filter_inflight__process_key(void* data,
 
 // --- MULTISELECT ---
 void lm_mode_multiselect__init(void* data) {
-    LmModeMultiselectState* s = (LmModeMultiselectState*)data;
-    buffer_clear(s->filter_text, &s->filter_text_len);
+  LmModeMultiselectState* s = (LmModeMultiselectState*)data;
+  buffer_clear(s->filter_text, &s->filter_text_len);
 }
 
 void lm_mode_multiselect__init_from(void* data, LmMode old_mode, void* old_data) {
-    LmModeMultiselectState* s = (LmModeMultiselectState*)data;
-    buffer_clear(s->filter_text, &s->filter_text_len);
+  LmModeMultiselectState* s = (LmModeMultiselectState*)data;
+  buffer_clear(s->filter_text, &s->filter_text_len);
 
-    if (old_mode == LM_MODE_LIST_NORMAL && old_data) {
-        LmModeListNormalState* old_s = (LmModeListNormalState*)old_data;
-        memcpy(s->filter_text, old_s->filter_text, sizeof(s->filter_text));
-        s->filter_text_len = old_s->filter_text_len;
-    }
+  if (old_mode == LM_MODE_LIST_NORMAL && old_data) {
+    LmModeListNormalState* old_s = (LmModeListNormalState*)old_data;
+    memcpy(s->filter_text, old_s->filter_text, sizeof(s->filter_text));
+    s->filter_text_len = old_s->filter_text_len;
+  }
 }
 void lm_mode_multiselect__deinit(void* data) {
-    (void)data;
+  (void)data;
 }
 
 void lm_mode_multiselect__process_key(void* data,
@@ -858,76 +865,91 @@ void lm_destroy(ModeContext* mctx) {
   free(mctx);
 }
 
-
-
 void lm_on_list_len_update(ModeContext* mctx,
                            int list_len,
                            LmModeTransition* out_transition,
                            LmMode* out_old_mode,
                            LmMode* out_new_mode) {
-    *out_transition = LM_MODETS_UNKNOWN;
-    *out_old_mode = mctx->mode;
-    *out_new_mode = mctx->mode;
+  *out_transition = LM_MODETS_UNKNOWN;
+  *out_old_mode = mctx->mode;
+  *out_new_mode = mctx->mode;
 
-    if (mctx->mode == LM_MODE_LIST_MULTISELECT && list_len == 0) {
-        // Auto-exit multiselect if list becomes empty (e.g. all filtered items closed)
-        transition_state_ctx(mctx, LM_MODE_LIST_NORMAL);
-        *out_transition = LM_MODETS_ADHERE_TO_MODE;
-        *out_new_mode = LM_MODE_LIST_NORMAL;
-    } else if (mctx->mode == LM_MODE_TASK_ASSOCIATION) {
-        // Store list length for navigation bounds
-        LmModeTaskAssociationState* s = (LmModeTaskAssociationState*)mctx->state_priv;
-        s->list_len = list_len;
-    }
+  if (mctx->mode == LM_MODE_LIST_MULTISELECT && list_len == 0) {
+    // Auto-exit multiselect if list becomes empty (e.g. all filtered items closed)
+    transition_state_ctx(mctx, LM_MODE_LIST_NORMAL);
+    *out_transition = LM_MODETS_ADHERE_TO_MODE;
+    *out_new_mode = LM_MODE_LIST_NORMAL;
+  } else if (mctx->mode == LM_MODE_TASK_ASSOCIATION) {
+    // Store list length for navigation bounds
+    LmModeTaskAssociationState* s = (LmModeTaskAssociationState*)mctx->state_priv;
+    s->list_len = list_len;
+  }
 }
 
 char* lm_get_filter_text(ModeContext* mctx) {
-  if (!mctx->state_priv) return NULL;
+  if (!mctx->state_priv)
+    return NULL;
 
   if (mctx->mode == LM_MODE_LIST_NORMAL) {
-      LmModeListNormalState* s = (LmModeListNormalState*)mctx->state_priv;
-      if (s->filter_text_len == 0) return NULL;
-      return s->filter_text;
+    LmModeListNormalState* s = (LmModeListNormalState*)mctx->state_priv;
+    if (s->filter_text_len == 0)
+      return NULL;
+    return s->filter_text;
   } else if (mctx->mode == LM_MODE_LIST_FILTER_INFLIGHT) {
-      LmModeFilterInflightState* s = (LmModeFilterInflightState*)mctx->state_priv;
-      if (s->buffer_len == 0) return NULL;
-      return s->buffer;
+    LmModeFilterInflightState* s = (LmModeFilterInflightState*)mctx->state_priv;
+    if (s->buffer_len == 0)
+      return NULL;
+    return s->buffer;
   } else if (mctx->mode == LM_MODE_LIST_MULTISELECT) {
-      LmModeMultiselectState* s = (LmModeMultiselectState*)mctx->state_priv;
-      if (s->filter_text_len == 0) return NULL;
-      return s->filter_text;
+    LmModeMultiselectState* s = (LmModeMultiselectState*)mctx->state_priv;
+    if (s->filter_text_len == 0)
+      return NULL;
+    return s->filter_text;
+  } else if (mctx->mode == LM_MODE_TASK_ASSOCIATION) {
+    LmModeTaskAssociationState* s = (LmModeTaskAssociationState*)mctx->state_priv;
+    if (s->filter_text_len == 0)
+      return NULL;
+    return s->filter_text;
   }
-  
+
   return NULL;
 }
 
 char* lm_get_task_creation_input(ModeContext* mctx) {
-    if (!mctx->state_priv || mctx->mode != LM_MODE_TASK_CREATION) return NULL;
-    LmModeTaskCreationState* s = (LmModeTaskCreationState*)mctx->state_priv;
-    return s->buffer;
+  if (!mctx->state_priv || mctx->mode != LM_MODE_TASK_CREATION)
+    return NULL;
+  LmModeTaskCreationState* s = (LmModeTaskCreationState*)mctx->state_priv;
+  return s->buffer;
 }
 
 int lm_get_task_association_selection(ModeContext* mctx) {
-    if (!mctx->state_priv || mctx->mode != LM_MODE_TASK_ASSOCIATION) return 0;
-    LmModeTaskAssociationState* s = (LmModeTaskAssociationState*)mctx->state_priv;
-    return s->selection_index;
+  if (!mctx->state_priv || mctx->mode != LM_MODE_TASK_ASSOCIATION)
+    return 0;
+  LmModeTaskAssociationState* s = (LmModeTaskAssociationState*)mctx->state_priv;
+  return s->selection_index;
 }
 
 // --- TASK ASSOCIATION ---
 void lm_mode_task_association__init(void* data) {
-    LmModeTaskAssociationState* s = (LmModeTaskAssociationState*)data;
-    s->selection_index = 0;
+  LmModeTaskAssociationState* s = (LmModeTaskAssociationState*)data;
+  s->selection_index = 0;
+  buffer_clear(s->filter_text, &s->filter_text_len);
 }
 
 void lm_mode_task_association__init_from(void* data, LmMode old_mode, void* old_data) {
-    LmModeTaskAssociationState* s = (LmModeTaskAssociationState*)data;
-    s->selection_index = 0;
-    (void)old_mode;
-    (void)old_data;
+  LmModeTaskAssociationState* s = (LmModeTaskAssociationState*)data;
+  s->selection_index = 0;
+  buffer_clear(s->filter_text, &s->filter_text_len);
+
+  if (old_mode == LM_MODE_LIST_MULTISELECT && old_data) {
+    LmModeMultiselectState* old_s = (LmModeMultiselectState*)old_data;
+    memcpy(s->filter_text, old_s->filter_text, sizeof(s->filter_text));
+    s->filter_text_len = old_s->filter_text_len;
+  }
 }
 
 void lm_mode_task_association__deinit(void* data) {
-    (void)data;
+  (void)data;
 }
 
 void lm_mode_task_association__process_key(void* data,
@@ -936,56 +958,56 @@ void lm_mode_task_association__process_key(void* data,
                                            const uint32_t mod_flags,
                                            LmModeTransition* out_transition,
                                            LmMode* out_new_mode) {
-    LmModeTaskAssociationState* s = (LmModeTaskAssociationState*)data;
-    *out_transition = LM_MODETS_UNKNOWN;
-    *out_new_mode = LM_MODE_TASK_ASSOCIATION;
+  LmModeTaskAssociationState* s = (LmModeTaskAssociationState*)data;
+  *out_transition = LM_MODETS_UNKNOWN;
+  *out_new_mode = LM_MODE_TASK_ASSOCIATION;
 
-    switch (key_code) {
-        case MACOS_ESC_CODE:
-            *out_transition = LM_MODETS_CANCEL_ASSOCIATION;
-            *out_new_mode = LM_MODE_LIST_MULTISELECT;
-            break;
-        case MACOS_DOWN_ARROW_KEY_CODE:
-        case MACOS_J_KEY_CODE:
-            if (s->list_len > 0) {
-                s->selection_index = (s->selection_index + 1) % s->list_len;
-            }
-            *out_transition = LM_MODETS_ADHERE_TO_MODE;
-            break;
-        case MACOS_UP_ARROW_KEY_CODE:
-        case MACOS_K_KEY_CODE:
-            if (s->list_len > 0) {
-                s->selection_index = (s->selection_index - 1 + s->list_len) % s->list_len;
-            }
-            *out_transition = LM_MODETS_ADHERE_TO_MODE;
-            break;
-        case MACOS_ENTER_KEY_CODE:
-            if (s->selection_index == 0) {
-                *out_new_mode = LM_MODE_TASK_CREATION;
-                *out_transition = LM_MODETS_ADHERE_TO_MODE;
-            } else {
-                *out_transition = LM_MODETS_ASSOCIATE_TASK;
-                *out_new_mode = LM_MODE_LIST_NORMAL;
-            }
-            break;
-    }
+  switch (key_code) {
+    case MACOS_ESC_CODE:
+      *out_transition = LM_MODETS_CANCEL_ASSOCIATION;
+      *out_new_mode = LM_MODE_LIST_MULTISELECT;
+      break;
+    case MACOS_DOWN_ARROW_KEY_CODE:
+    case MACOS_J_KEY_CODE:
+      if (s->list_len > 0) {
+        s->selection_index = (s->selection_index + 1) % s->list_len;
+      }
+      *out_transition = LM_MODETS_ADHERE_TO_MODE;
+      break;
+    case MACOS_UP_ARROW_KEY_CODE:
+    case MACOS_K_KEY_CODE:
+      if (s->list_len > 0) {
+        s->selection_index = (s->selection_index - 1 + s->list_len) % s->list_len;
+      }
+      *out_transition = LM_MODETS_ADHERE_TO_MODE;
+      break;
+    case MACOS_ENTER_KEY_CODE:
+      if (s->selection_index == 0) {
+        *out_new_mode = LM_MODE_TASK_CREATION;
+        *out_transition = LM_MODETS_ADHERE_TO_MODE;
+      } else {
+        *out_transition = LM_MODETS_ASSOCIATE_TASK;
+        *out_new_mode = LM_MODE_LIST_NORMAL;
+      }
+      break;
+  }
 }
 
 // --- TASK CREATION ---
 void lm_mode_task_creation__init(void* data) {
-    LmModeTaskCreationState* s = (LmModeTaskCreationState*)data;
-    buffer_clear(s->buffer, &s->buffer_len);
+  LmModeTaskCreationState* s = (LmModeTaskCreationState*)data;
+  buffer_clear(s->buffer, &s->buffer_len);
 }
 
 void lm_mode_task_creation__init_from(void* data, LmMode old_mode, void* old_data) {
-    LmModeTaskCreationState* s = (LmModeTaskCreationState*)data;
-    buffer_clear(s->buffer, &s->buffer_len);
-    (void)old_mode;
-    (void)old_data;
+  LmModeTaskCreationState* s = (LmModeTaskCreationState*)data;
+  buffer_clear(s->buffer, &s->buffer_len);
+  (void)old_mode;
+  (void)old_data;
 }
 
 void lm_mode_task_creation__deinit(void* data) {
-    (void)data;
+  (void)data;
 }
 
 void lm_mode_task_creation__process_key(void* data,
@@ -994,59 +1016,64 @@ void lm_mode_task_creation__process_key(void* data,
                                         const uint32_t mod_flags,
                                         LmModeTransition* out_transition,
                                         LmMode* out_new_mode) {
-    LmModeTaskCreationState* s = (LmModeTaskCreationState*)data;
-    *out_transition = LM_MODETS_UNKNOWN;
-    *out_new_mode = LM_MODE_TASK_CREATION;
+  LmModeTaskCreationState* s = (LmModeTaskCreationState*)data;
+  *out_transition = LM_MODETS_UNKNOWN;
+  *out_new_mode = LM_MODE_TASK_CREATION;
 
-    if (key_code == MACOS_ESC_CODE) {
-        *out_new_mode = LM_MODE_TASK_ASSOCIATION;
-        *out_transition = LM_MODETS_ADHERE_TO_MODE;
-    } else if (key_code == MACOS_ENTER_KEY_CODE) {
-        if (s->buffer_len > 0) {
-            *out_transition = LM_MODETS_CREATE_TASK;
-            *out_new_mode = LM_MODE_LIST_NORMAL;
-        }
-    } else if (key_code == MACOS_BACKSPACE_KEY_CODE) {
-        buffer_remove_char(s->buffer, &s->buffer_len);
-        *out_transition = LM_MODETS_ADHERE_TO_MODE;
-    } else if (is_special_alnum(ascii_code)) {
-        buffer_add_char(s->buffer, &s->buffer_len, sizeof(s->buffer), (char)ascii_code);
-        *out_transition = LM_MODETS_ADHERE_TO_MODE;
+  if (key_code == MACOS_ESC_CODE) {
+    *out_new_mode = LM_MODE_TASK_ASSOCIATION;
+    *out_transition = LM_MODETS_ADHERE_TO_MODE;
+  } else if (key_code == MACOS_ENTER_KEY_CODE) {
+    if (s->buffer_len > 0) {
+      *out_transition = LM_MODETS_CREATE_TASK;
+      *out_new_mode = LM_MODE_LIST_NORMAL;
     }
+  } else if (key_code == MACOS_BACKSPACE_KEY_CODE) {
+    buffer_remove_char(s->buffer, &s->buffer_len);
+    *out_transition = LM_MODETS_ADHERE_TO_MODE;
+  } else if (is_special_alnum(ascii_code)) {
+    buffer_add_char(s->buffer, &s->buffer_len, sizeof(s->buffer), (char)ascii_code);
+    *out_transition = LM_MODETS_ADHERE_TO_MODE;
+  }
 }
 
 void lotab_client_send_associate_tabs(ClientContext* ctx, const int* tab_ids, size_t count, int task_id) {
-    if (!ctx || count == 0) return;
-    cJSON* root = cJSON_CreateObject();
-    cJSON_AddStringToObject(root, "event", "GUI::UDS::AssociateTabs");
-    cJSON* data = cJSON_CreateObject();
-    cJSON_AddItemToObject(root, "data", data);
-    cJSON_AddNumberToObject(data, "taskId", task_id);
-    cJSON_AddNumberToObject(data, "count", count); 
-    cJSON* ids = cJSON_CreateArray();
-    cJSON_AddItemToObject(data, "tabIds", ids);
-    for (size_t i = 0; i < count; i++) {
-        cJSON_AddItemToArray(ids, cJSON_CreateNumber(tab_ids[i]));
-    }
-    send_json_message(ctx, root);
-    cJSON_Delete(root);
+  if (!ctx || count == 0)
+    return;
+  cJSON* root = cJSON_CreateObject();
+  cJSON_AddStringToObject(root, "event", "GUI::UDS::AssociateTabs");
+  cJSON* data = cJSON_CreateObject();
+  cJSON_AddItemToObject(root, "data", data);
+  cJSON_AddNumberToObject(data, "taskId", task_id);
+  cJSON_AddNumberToObject(data, "count", count);
+  cJSON* ids = cJSON_CreateArray();
+  cJSON_AddItemToObject(data, "tabIds", ids);
+  for (size_t i = 0; i < count; i++) {
+    cJSON_AddItemToArray(ids, cJSON_CreateNumber(tab_ids[i]));
+  }
+  send_json_message(ctx, root);
+  cJSON_Delete(root);
 }
 
-void lotab_client_send_create_task_and_associate(ClientContext* ctx, const char* name, const int* tab_ids, size_t count) {
-    if (!ctx || !name) return;
-    cJSON* root = cJSON_CreateObject();
-    cJSON_AddStringToObject(root, "event", "GUI::UDS::CreateTask");
-    cJSON* data = cJSON_CreateObject();
-    cJSON_AddItemToObject(root, "data", data);
-    cJSON_AddStringToObject(data, "name", name);
-    cJSON_AddNumberToObject(data, "count", count);
-    if (count > 0 && tab_ids) {
-        cJSON* ids = cJSON_CreateArray();
-        cJSON_AddItemToObject(data, "associateTabIds", ids);
-        for (size_t i = 0; i < count; i++) {
-            cJSON_AddItemToArray(ids, cJSON_CreateNumber(tab_ids[i]));
-        }
+void lotab_client_send_create_task_and_associate(ClientContext* ctx,
+                                                 const char* name,
+                                                 const int* tab_ids,
+                                                 size_t count) {
+  if (!ctx || !name)
+    return;
+  cJSON* root = cJSON_CreateObject();
+  cJSON_AddStringToObject(root, "event", "GUI::UDS::CreateTask");
+  cJSON* data = cJSON_CreateObject();
+  cJSON_AddItemToObject(root, "data", data);
+  cJSON_AddStringToObject(data, "name", name);
+  cJSON_AddNumberToObject(data, "count", count);
+  if (count > 0 && tab_ids) {
+    cJSON* ids = cJSON_CreateArray();
+    cJSON_AddItemToObject(data, "associateTabIds", ids);
+    for (size_t i = 0; i < count; i++) {
+      cJSON_AddItemToArray(ids, cJSON_CreateNumber(tab_ids[i]));
     }
-    send_json_message(ctx, root);
-    cJSON_Delete(root);
+  }
+  send_json_message(ctx, root);
+  cJSON_Delete(root);
 }
