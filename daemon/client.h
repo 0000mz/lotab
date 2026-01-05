@@ -23,6 +23,7 @@ typedef struct LotabTab {
 typedef struct LotabTask {
   int id;
   char* name;
+  char* color;
 } LotabTask;
 
 typedef struct LotabTabList {

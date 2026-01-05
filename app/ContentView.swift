@@ -232,6 +232,20 @@ struct ContentView: View {
                     .foregroundColor(.white)
                     .cornerRadius(4)
             }
+            if tab.taskId >= 0 {
+                let task = lotab.tasks.first(where: { $0.id == tab.taskId })
+                let taskName = task?.name ?? "Task \(tab.taskId)"
+                let colorName = task?.color ?? "blue"
+
+                Text(taskName)
+                    .font(.caption2)
+                    .fontWeight(.bold)
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(Color.fromName(colorName))
+                    .cornerRadius(4)
+            }
             if tab.active {
                 Text("Active")
                     .font(.caption2)
@@ -404,6 +418,21 @@ struct KeyView: View {
 }
 
 extension Color {
+    static func fromName(_ name: String) -> Color {
+        switch name.lowercased() {
+        case "grey", "gray": return .gray
+        case "blue": return .blue
+        case "red": return .red
+        case "yellow": return .yellow
+        case "green": return .green
+        case "pink": return .pink
+        case "purple": return .purple
+        case "cyan": return .cyan
+        case "orange": return .orange
+        default: return .blue
+        }
+    }
+
     static func generate(from string: String) -> Color {
         var h: Int = 0
         for char in string.utf8 {

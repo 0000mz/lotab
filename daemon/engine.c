@@ -63,7 +63,7 @@ static struct EngClass SERVER_CONTEXT_CLASS = {
     .name = "server",
 };
 
-void task_state_add(TaskState* ts, const char* task_name, int64_t external_id);
+void task_state_add(TaskState* ts, const char* task_name, const char* color, int64_t external_id);
 void tab_state_update_active(TabState* ts, const cJSON* json_data);
 
 static void tab_state_free(TabState* ts) {
@@ -88,6 +88,8 @@ static void task_state_free(TaskState* ts) {
     TaskInfo* next = current->next;
     if (current->task_name)
       free(current->task_name);
+    if (current->color)
+      free(current->color);
     free(current);
     current = next;
   }
@@ -853,11 +855,12 @@ TaskInfo* task_state_find_by_external_id(TaskState* ts, int64_t external_id) {
   return NULL;
 }
 
-void task_state_add(TaskState* ts, const char* task_name, int64_t external_id) {
+void task_state_add(TaskState* ts, const char* task_name, const char* color, int64_t external_id) {
   TaskInfo* new_task = malloc(sizeof(TaskInfo));
   if (new_task) {
     new_task->task_id = ts->nb_tasks++;
     new_task->task_name = strdup(task_name ? task_name : "Unknown Task");
+    new_task->color = strdup(color ? color : "grey");
     new_task->external_id = external_id;
     new_task->next = ts->tasks;
     ts->tasks = new_task;
@@ -900,8 +903,14 @@ void tab_event__handle_all_tabs(EngineContext* ec, const cJSON* json_data) {
         group_title = gtitle_json->valuestring;
       }
 
+      cJSON* gcolor_json = cJSON_GetObjectItemCaseSensitive(g, "color");
+      char* group_color = "grey";
+      if (cJSON_IsString(gcolor_json) && gcolor_json->valuestring) {
+        group_color = gcolor_json->valuestring;
+      }
+
       if (task_state_find_by_external_id(tks, external_id) == NULL) {
-        task_state_add(tks, group_title, external_id);
+        task_state_add(tks, group_title, group_color, external_id);
       }
     }
   }
@@ -1187,6 +1196,7 @@ static void send_tasks_update_to_uds(EngineContext* ectx) {
       cJSON* task_obj = cJSON_CreateObject();
       cJSON_AddNumberToObject(task_obj, "id", (double)current->task_id);
       cJSON_AddStringToObject(task_obj, "name", current->task_name ? current->task_name : "Unknown");
+      cJSON_AddStringToObject(task_obj, "color", current->color ? current->color : "grey");
       cJSON_AddItemToArray(tasks_array, task_obj);
       current = current->next;
     }

@@ -47,6 +47,7 @@ typedef struct TabState {
 typedef struct TaskInfo {
   uint64_t task_id;
   char* task_name;
+  char* color;
   int64_t external_id;  // ID from external source (e.g. browser group id)
   struct TaskInfo* next;
 } TaskInfo;

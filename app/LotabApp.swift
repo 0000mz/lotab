@@ -283,7 +283,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 for i in 0..<count {
                     let cTask = buffer[i]
                     let name = String(cString: cTask.name)
-                    newTasks.append(Task(id: Int(cTask.id), name: name))
+                    let color = String(cString: cTask.color)
+                    newTasks.append(Task(id: Int(cTask.id), name: name, color: color))
                 }
             }
 
@@ -338,6 +339,7 @@ struct BrowserTab: Identifiable, Hashable {
 struct Task: Identifiable, Hashable {
     let id: Int
     let name: String
+    let color: String
 }
 
 class Lotab: ObservableObject {

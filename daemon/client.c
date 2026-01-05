@@ -102,6 +102,8 @@ static void free_task_list(LotabTaskList* list) {
   for (size_t i = 0; i < list->count; i++) {
     if (list->tasks[i].name)
       free(list->tasks[i].name);
+    if (list->tasks[i].color)
+      free(list->tasks[i].color);
   }
   free(list->tasks);
 }
@@ -168,9 +170,11 @@ void lotab_client_process_message(ClientContext* ctx, const char* json_str) {
         cJSON* item = cJSON_GetArrayItem(tasks_json, i);
         cJSON* id = cJSON_GetObjectItem(item, "id");
         cJSON* name = cJSON_GetObjectItem(item, "name");
+        cJSON* color = cJSON_GetObjectItem(item, "color");
 
         list.tasks[i].id = cJSON_IsNumber(id) ? (int)id->valuedouble : 0;
         list.tasks[i].name = (cJSON_IsString(name) && name->valuestring) ? strdup(name->valuestring) : strdup("");
+        list.tasks[i].color = (cJSON_IsString(color) && color->valuestring) ? strdup(color->valuestring) : strdup("grey");
       }
 
       if (ctx->callbacks.on_tasks_update) {
