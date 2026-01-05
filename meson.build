@@ -202,6 +202,12 @@ if uv_prog.found()
        args : ['run', '--with', 'playwright', '--with', 'pytest-asyncio', '--with', 'websockets', 'pytest', meson.current_source_dir() / 'tests/extension/test_integration.py'],
        is_parallel : false,
        timeout : 60)
+
+  test('e2e_test', uv_prog,
+       args : ['run', '--with', 'playwright', '--with', 'pytest-asyncio', '--with', 'psutil', 'pytest', meson.current_source_dir() / 'tests/e2e_test.py'],
+       env : ['DAEMON_BIN=' + daemon_exe.full_path()],
+       is_parallel : false,
+       timeout : 120)
 else
   message('uv not found, skipping python UI tests')
 endif
