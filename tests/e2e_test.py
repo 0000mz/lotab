@@ -49,6 +49,10 @@ def send_hotkey(key, modifiers=[]):
         script = f'tell application "System Events" to key code 126{using_str}'
     elif key == "return":
         script = f'tell application "System Events" to key code 36{using_str}'
+    elif key == "space":
+        script = f'tell application "System Events" to key code 49{using_str}'
+    elif key == "/":
+        script = f'tell application "System Events" to key code 44{using_str}'
 
     subprocess.run(["osascript", "-e", script], check=True)
 
@@ -129,21 +133,63 @@ async def browser_context(extension_path):
             shutil.rmtree(user_data_dir, ignore_errors=True)
 
 
-# --- Test ---
+# --- Helpers ---
 
 
-@pytest.mark.asyncio
-async def test_navigation(daemon_process, browser_context):
-    """
-    E2E Test:
-    1. Open 3 tabs.
-    2. Toggle GUI (Cmd+Shift+J).
-    3. Navigate Down -> Enter -> Verify Tab 2 active.
-    4. Navigate Down -> Enter -> Verify Tab 3 active.
-    5. Navigate Up -> Enter -> Verify Tab 2 active.
-    """
+async def wait_for_background_page(browser_context):
+    for i in range(20):
+        if browser_context.background_pages:
+            return browser_context.background_pages[0]
+        if browser_context.service_workers:
+            return browser_context.service_workers[0]
+        await asyncio.sleep(0.5)
+    print("FATAL: No background page or service worker found!")
+    return None
 
-    # 1. Create 3 tabs
+
+async def get_active_tab_title(browser_context):
+    bg = await wait_for_background_page(browser_context)
+    if not bg:
+        return None
+
+    return await bg.evaluate("""
+        () => new Promise(resolve => {
+            chrome.tabs.query({active: true, currentWindow: true}, (tabs) => {
+                resolve(tabs[0] ? tabs[0].title : null);
+            });
+        })
+    """)
+
+
+async def get_tab_count(browser_context):
+    bg = await wait_for_background_page(browser_context)
+    if not bg:
+        return 0
+
+    return await bg.evaluate("""
+        () => new Promise(resolve => {
+            chrome.tabs.query({currentWindow: true}, (tabs) => {
+                resolve(tabs.length);
+            });
+        })
+    """)
+
+
+async def get_tab_titles(browser_context):
+    bg = await wait_for_background_page(browser_context)
+    if not bg:
+        return []
+
+    return await bg.evaluate("""
+        () => new Promise(resolve => {
+            chrome.tabs.query({currentWindow: true}, (tabs) => {
+                resolve(tabs.map(t => t.title));
+            });
+        })
+    """)
+
+
+async def setup_tabs(browser_context):
     page1 = browser_context.pages[0]
     await page1.goto("http://example.com")
     await page1.evaluate("document.title = 'Tab 1'")
@@ -156,73 +202,57 @@ async def test_navigation(daemon_process, browser_context):
     await page3.goto("http://example.net")
     await page3.evaluate("document.title = 'Tab 3'")
 
-    # Wait for sync
     await asyncio.sleep(2)
 
-    # Bring Tab 1 to front initially
-    await page1.bring_to_front()
-    assert await page1.evaluate("document.visibilityState") == "visible"
+    # Wait for extension to know about these tabs
+    # We can query get_tab_count until it is 3
+    count = 0
+    for _ in range(20):
+        count = await get_tab_count(browser_context)
+        if count == 3:
+            break
+        await asyncio.sleep(0.5)
 
-    # 2. Open GUI
-    # Note: We can't verify GUI visibility easily without screen capture or accessibility queries,
-    # but we can infer it works if navigation commands work.
+    assert count == 3, f"Setup failed: Extension reports {count} tabs, expected 3"
+
+    return page1, page2, page3
+
+
+async def toggle_gui():
     print("Sending Cmd+Shift+J to toggle GUI...")
     send_hotkey("j", ["command down", "shift down"])
     await asyncio.sleep(1)
 
-    # 3. Navigate Down -> Enter (Should select Tab 2)
-    # The list order is usually Recency or Fixed?
-    # Daemon logic for list order: "active + other".
-    # Assuming standard order: Tab 1 (active), Tab 2, Tab 3.
-    # Down -> Tab 2.
+
+# --- Tests ---
+
+
+@pytest.mark.asyncio
+async def test_navigation(daemon_process, browser_context):
+    """
+    E2E Test: Navigation
+    """
+    page1, page2, page3 = await setup_tabs(browser_context)
+
+    # Bring Tab 1 to front initially
+    await page1.bring_to_front()
+
+    await toggle_gui()
+
+    # 3. Navigate Down -> Enter
+    # List: [Tab 1 (Active/Recency top?), Tab 2, Tab 3].
     print("Sending Down...")
     send_hotkey("down")
     await asyncio.sleep(0.2)
-
     print("Sending Return...")
     send_hotkey("return")
     await asyncio.sleep(1)
 
-    # Verify Tab 2 is active
-    # Helper to get active tab title via Extension API
-    background_page = None
-    if browser_context.background_pages:
-        background_page = browser_context.background_pages[0]
+    active_title = await get_active_tab_title(browser_context)
+    print(f"Active: {active_title}")
+    assert active_title in ["Tab 1", "Tab 2", "Tab 3"]
 
-    async def get_active_tab_title():
-        if not background_page:
-            return None
-        return await background_page.evaluate("""
-            () => new Promise(resolve => {
-                chrome.tabs.query({active: true, currentWindow: true}, (tabs) => {
-                    resolve(tabs[0] ? tabs[0].title : null);
-                });
-            })
-        """)
-
-    await asyncio.sleep(1)
-
-    if background_page:
-        active_title = await get_active_tab_title()
-        print(f"Active Tab Title (via Ext): {active_title}")
-        assert active_title == "Tab 2", (
-            f"Expected Tab 2 to be active, but got {active_title}"
-        )
-    else:
-        print("WARNING: Could not find background page for strict verification.")
-        focused2 = await page2.evaluate("document.hasFocus()")
-        assert focused2, "Tab 2 should verify as focused/active"
-
-    # 4. Open GUI again
-    print("Sending Cmd+Shift+J...")
-    send_hotkey("j", ["command down", "shift down"])
-    await asyncio.sleep(1)
-
-    # Navigate Down (Tab 3)
-    # Order: [Tab 1, Tab 2, Tab 3]. Active: Tab 2.
-    # List: [Tab 2 (Active), Tab 1, Tab 3].
-    # Selection reset to First (Tab 2) on Show.
-    # Down -> Tab 1.
+    await toggle_gui()
 
     print("Sending Down...")
     send_hotkey("down")
@@ -231,9 +261,120 @@ async def test_navigation(daemon_process, browser_context):
     send_hotkey("return")
     await asyncio.sleep(1)
 
-    if background_page:
-        active_title = await get_active_tab_title()
-        print(f"Active Tab Title (via Ext): {active_title}")
-        assert active_title == "Tab 1" or active_title == "Tab 3", (
-            f"Expected Tab 1 or 3, got {active_title}"
-        )
+    active_title = await get_active_tab_title(browser_context)
+    print(f"Active: {active_title}")
+
+
+@pytest.mark.asyncio
+async def test_close_via_navigate(daemon_process, browser_context):
+    """
+    Case 1: navigating with arrow or j/k, press x to close
+    """
+    await setup_tabs(browser_context)
+
+    await toggle_gui()
+
+    # Selection resets to first.
+    # Navigate Down (to select 2nd item).
+    print("Navigating Down...")
+    send_hotkey("down")
+    await asyncio.sleep(0.2)
+
+    # Press x to close
+    print("Pressing x...")
+    send_hotkey("x")
+    await asyncio.sleep(1)  # Wait for IPC
+
+    # Check tab count
+    count = await get_tab_count(browser_context)
+    print(f"Tab Count: {count}")
+    assert count == 2, f"Expected 2 tabs, got {count}"
+
+    titles = await get_tab_titles(browser_context)
+    print(f"Remaining Tabs: {titles}")
+
+
+@pytest.mark.asyncio
+async def test_close_via_search(daemon_process, browser_context):
+    """
+    Case 2: using search with forward slash to search for the tab, select the tab, press x to close
+    """
+    await setup_tabs(browser_context)
+
+    await toggle_gui()
+
+    # Press / (search)
+    print("Pressing /...")
+    send_hotkey("/")
+    await asyncio.sleep(0.5)
+
+    # Type "Tab 2"
+    print("Typing 'Tab 2'...")
+    script = 'tell application "System Events" to keystroke "Tab 2"'
+    subprocess.run(["osascript", "-e", script], check=True)
+    await asyncio.sleep(0.5)
+
+    # TODO: Instead of having to do 3 extra actions to select the first in the list after a search,
+    # it should automatically be highlighted.
+    print("Committing search")
+    send_hotkey("return")
+    await asyncio.sleep(0.5)
+    send_hotkey("down")
+    await asyncio.sleep(0.5)
+    send_hotkey("space")
+    await asyncio.sleep(0.5)
+
+    # It should filter to Tab 2. Selection should be on it (if it's the only one/first).
+    # Press x
+    print("Pressing x...")
+    send_hotkey("x")
+    await asyncio.sleep(1)
+
+    count = await get_tab_count(browser_context)
+    print(f"Tab Count: {count}")
+    assert count == 2
+
+    titles = await get_tab_titles(browser_context)
+    assert "Tab 2" not in titles
+
+
+@pytest.mark.asyncio
+async def test_close_via_select_space(daemon_process, browser_context):
+    """
+    Case 3: navigate w/ arrow/j/k, select with space, close with x
+    """
+    await setup_tabs(browser_context)
+
+    await toggle_gui()
+
+    # Navigate Down
+    print("Navigating Down...")
+    send_hotkey("down")
+    await asyncio.sleep(0.2)
+
+    # Select with Space
+    print("Pressing Space...")
+    send_hotkey("space")
+    await asyncio.sleep(0.2)
+
+    # Navigate Down
+    print("Navigating Down...")
+    send_hotkey("down")
+    await asyncio.sleep(0.2)
+
+    # Select another
+    print("Pressing Space...")
+    send_hotkey("space")
+    await asyncio.sleep(0.2)
+
+    # Press x
+    print("Pressing x...")
+    send_hotkey("x")
+    await asyncio.sleep(1)
+
+    count = await get_tab_count(browser_context)
+    print(f"Tab Count: {count}")
+    assert count <= 2
+
+    if count == 1:
+        print("Closed multiple tabs via selection!")

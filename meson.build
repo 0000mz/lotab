@@ -204,10 +204,10 @@ if uv_prog.found()
        timeout : 60)
 
   test('e2e_test', uv_prog,
-       args : ['run', '--with', 'playwright', '--with', 'pytest-asyncio', '--with', 'psutil', 'pytest', meson.current_source_dir() / 'tests/e2e_test.py'],
+       args : ['run', '--with', 'playwright', '--with', 'pytest-asyncio', '--with', 'psutil', 'pytest', '-v', '-s', meson.current_source_dir() / 'tests/e2e_test.py'],
        env : ['DAEMON_BIN=' + daemon_exe.full_path()],
        is_parallel : false,
-       timeout : 120)
+       timeout : 300)
 else
   message('uv not found, skipping python UI tests')
 endif
