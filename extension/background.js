@@ -183,7 +183,7 @@ chrome.tabs.onRemoved.addListener((tabId, removeInfo) => {
 });
 
 chrome.tabs.onMoved.addListener((tabId, moveInfo) => {
-    logEvent('tabs.onMoved', { tabId, moveInfo });
+    logEvent('Extension::WS::TabMoved', { tabId, moveInfo });
 });
 
 chrome.tabs.onActivated.addListener((activeInfo) => {
@@ -195,15 +195,15 @@ chrome.tabs.onHighlighted.addListener((highlightInfo) => {
 });
 
 chrome.tabs.onDetached.addListener((tabId, detachInfo) => {
-    logEvent('tabs.onDetached', { tabId, detachInfo });
+    logEvent('Extension::WS::TabDetached', { tabId, detachInfo });
 });
 
 chrome.tabs.onAttached.addListener((tabId, attachInfo) => {
-    logEvent('tabs.onAttached', { tabId, attachInfo });
+    logEvent('Extension::WS::TabAttached', { tabId, attachInfo });
 });
 
 chrome.tabs.onReplaced.addListener((addedTabId, removedTabId) => {
-    logEvent('tabs.onReplaced', { addedTabId, removedTabId });
+    logEvent('Extension::WS::TabReplaced', { addedTabId, removedTabId });
 });
 
 chrome.tabs.onZoomChange.addListener((zoomChangeInfo) => {
@@ -214,7 +214,7 @@ chrome.tabs.onZoomChange.addListener((zoomChangeInfo) => {
 
 if (chrome.tabGroups) {
     chrome.tabGroups.onCreated.addListener((group) => {
-        logEvent('tabGroups.onCreated', group);
+        logEvent('Extension::WS::TabGroupCreated', group);
     });
 
     chrome.tabGroups.onUpdated.addListener((group) => {
@@ -222,11 +222,11 @@ if (chrome.tabGroups) {
     });
 
     chrome.tabGroups.onRemoved.addListener((group) => {
-        logEvent('tabGroups.onRemoved', group);
+        logEvent('Extension::WS::TabGroupRemoved', group);
     });
 
     chrome.tabGroups.onMoved.addListener((group) => {
-        logEvent('tabGroups.onMoved', group);
+        logEvent('Extension::WS::TabGroupMoved', group);
     });
 } else {
     console.log('chrome.tabGroups API not available');
