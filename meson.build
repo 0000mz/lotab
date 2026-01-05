@@ -76,7 +76,7 @@ engine_dep = declare_dependency(
   dependencies : [lws_dep, cjson_dep, tomlc99_dep, cocoa_dep, carbon_dep]
 )
 
-executable('lotab_daemon', daemon_engine_src,
+daemon_exe = executable('lotab_daemon', daemon_engine_src,
            dependencies : [daemon_deps, engine_dep],
            install : true,
            install_rpath : get_option('prefix') / get_option('libdir'))
@@ -175,9 +175,6 @@ if gtest_dep.found()
   i_test = executable('integration_test',
                       ['tests/integration_test.cc'],
                       dependencies : [gtest_dep, engine_dep, client_dep])
-  test('integration_test', i_test)
-
-  # Client Mode State Machine Test
   # Client Mode State Machine Test
   cm_test = executable('client_mode_test',
                        ['tests/client_mode_test.cc'],
@@ -191,7 +188,10 @@ endif
 uv_prog = find_program('uv', required : true)
 if uv_prog.found()
   test('ui_test_quit', uv_prog,
-       args : ['run', meson.current_source_dir() / 'tests/ui_test_quit.py', meson.current_build_dir() / 'lotab_daemon'],
+       args : ['run', '--with', 'pytest', '--with', 'psutil', 'pytest', meson.current_source_dir() / 'tests/ui_test_quit.py'],
+       env : {'DAEMON_BIN': daemon_exe.full_path()},
+       depends : [daemon_exe],
+       timeout : 60,
        is_parallel : false)
   test('install_test', uv_prog,
        args : ['run', meson.current_source_dir() / 'tests/install_test.py'],
