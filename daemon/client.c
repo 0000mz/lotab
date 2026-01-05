@@ -802,6 +802,25 @@ void lm_destroy(ModeContext* mctx) {
   free(mctx);
 }
 
+
+
+void lm_on_list_len_update(ModeContext* mctx,
+                           int list_len,
+                           LmModeTransition* out_transition,
+                           LmMode* out_old_mode,
+                           LmMode* out_new_mode) {
+    *out_transition = LM_MODETS_UNKNOWN;
+    *out_old_mode = mctx->mode;
+    *out_new_mode = mctx->mode;
+
+    if (mctx->mode == LM_MODE_LIST_MULTISELECT && list_len == 0) {
+        // Auto-exit multiselect if list becomes empty (e.g. all filtered items closed)
+        transition_state_ctx(mctx, LM_MODE_LIST_NORMAL);
+        *out_transition = LM_MODETS_ADHERE_TO_MODE;
+        *out_new_mode = LM_MODE_LIST_NORMAL;
+    }
+}
+
 char* lm_get_filter_text(ModeContext* mctx) {
   if (!mctx->state_priv) return NULL;
 

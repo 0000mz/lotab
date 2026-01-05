@@ -145,3 +145,35 @@ TEST_F(ClientModeTest, NewSearchClearsOld) {
     ASSERT_NE(f, nullptr);
     EXPECT_STREQ(f, "d"); // Should be "d", NOT "abcd"
 }
+
+TEST_F(ClientModeTest, MultiselectAutoExitOnEmpty) {
+    LmModeTransition tx;
+    LmMode old_mode, new_mode;
+    char* f;
+
+    // 1. Set filter "a" -> LIST_NORMAL
+    lm_process_key_event(ctx, 44, '/', 0, 0, &tx, &old_mode, &new_mode);
+    lm_process_key_event(ctx, 0, 'a', 0, 0, &tx, &old_mode, &new_mode);
+    lm_process_key_event(ctx, 36, 0, 0, 0, &tx, &old_mode, &new_mode);
+
+    // 2. To Multiselect (Cmd+A)
+    lm_process_key_event(ctx, 0, 0, 1 /*cmd*/, 0, &tx, &old_mode, &new_mode);
+    EXPECT_EQ(new_mode, LM_MODE_LIST_MULTISELECT);
+    
+    // 3. Simulate list passing 0 length (all items deleted)
+    lm_on_list_len_update(ctx, 0, &tx, &old_mode, &new_mode);
+    
+    // Should transition to LIST_NORMAL
+    EXPECT_EQ(new_mode, LM_MODE_LIST_NORMAL);
+    EXPECT_EQ(tx, LM_MODETS_ADHERE_TO_MODE);
+
+    // 4. Verify filter is still present
+    f = lm_get_filter_text(ctx);
+    ASSERT_NE(f, nullptr);
+    EXPECT_STREQ(f, "a");
+
+    // 5. Escape -> Clear Filter
+    lm_process_key_event(ctx, 53, 0, 0, 0, &tx, &old_mode, &new_mode);
+    f = lm_get_filter_text(ctx);
+    EXPECT_EQ(f, nullptr);
+}

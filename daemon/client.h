@@ -117,6 +117,12 @@ void lm_process_key_event(ModeContext* mctx,                 //
                           LmMode* out_old_mode,              //
                           LmMode* out_new_mode);
 
+void lm_on_list_len_update(ModeContext* mctx,
+                           int list_len,
+                           LmModeTransition* out_transition,
+                           LmMode* out_old_mode,
+                           LmMode* out_new_mode);
+
 char* lm_get_filter_text(ModeContext* mctx);
 
 #ifdef __cplusplus
