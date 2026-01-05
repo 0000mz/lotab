@@ -126,9 +126,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 tm.filterText = ""
                 return nil
             }
-            if (oldMode == LM_MODE_LIST_FILTER_INFLIGHT
-                || oldMode == LM_MODE_LIST_FILTER_COMMITTED) && newMode == LM_MODE_LIST_NORMAL
-            {
+            // Ensure we disable filtering if returning to Normal from anything except Multiselect
+            if newMode == LM_MODE_LIST_NORMAL && oldMode != LM_MODE_LIST_MULTISELECT {
                 tm.isFiltering = false
                 tm.filterText = ""
                 return nil
