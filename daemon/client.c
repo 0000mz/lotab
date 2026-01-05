@@ -718,6 +718,10 @@ void lm_mode_multiselect__init_from(void* data, LmMode old_mode, void* old_data)
     LmModeListNormalState* old_s = (LmModeListNormalState*)old_data;
     memcpy(s->filter_text, old_s->filter_text, sizeof(s->filter_text));
     s->filter_text_len = old_s->filter_text_len;
+  } else if (old_mode == LM_MODE_TASK_ASSOCIATION && old_data) {
+    LmModeTaskAssociationState* old_s = (LmModeTaskAssociationState*)old_data;
+    memcpy(s->filter_text, old_s->filter_text, sizeof(s->filter_text));
+    s->filter_text_len = old_s->filter_text_len;
   }
 }
 void lm_mode_multiselect__deinit(void* data) {

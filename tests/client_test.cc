@@ -100,3 +100,70 @@ TEST_F(ClientTest, ParseInvalidJson) {
   // Should not crash
   EXPECT_EQ(data.tabs_count, 0);
 }
+
+TEST(ModeLogicTest, FilterPersistsThroughTaskAssociation) {
+  ModeContext* mctx = lm_alloc();
+  ASSERT_NE(mctx, nullptr);
+
+  LmModeTransition tx;
+  LmMode old_mode, new_mode;
+  char* f;
+
+  // 1. Start Filtering (/)
+  lm_process_key_event(mctx, 44, '/', 0, 0, &tx, &old_mode, &new_mode);
+  EXPECT_EQ(new_mode, LM_MODE_LIST_FILTER_INFLIGHT);
+
+  // 2. Type "foo"
+  lm_process_key_event(mctx, 0, 'f', 0, 0, &tx, &old_mode, &new_mode);
+  lm_process_key_event(mctx, 0, 'o', 0, 0, &tx, &old_mode, &new_mode);
+  lm_process_key_event(mctx, 0, 'o', 0, 0, &tx, &old_mode, &new_mode);
+
+  // 3. Commit (Enter) -> LIST_NORMAL
+  lm_process_key_event(mctx, 36, '\r', 0, 0, &tx, &old_mode, &new_mode);
+  EXPECT_EQ(new_mode, LM_MODE_LIST_NORMAL);
+  f = lm_get_filter_text(mctx);
+  ASSERT_NE(f, nullptr);
+  EXPECT_STREQ(f, "foo");
+
+  // 4. SPACE -> Multiselect
+  lm_process_key_event(mctx, 49, ' ', 0, 0, &tx, &old_mode, &new_mode);
+  EXPECT_EQ(new_mode, LM_MODE_LIST_MULTISELECT);
+  f = lm_get_filter_text(mctx);
+  ASSERT_NE(f, nullptr);
+  EXPECT_STREQ(f, "foo");
+
+  // 5. 'M' -> Task Association
+  lm_process_key_event(mctx, 46, 'm', 0, 0, &tx, &old_mode, &new_mode);
+  EXPECT_EQ(new_mode, LM_MODE_TASK_ASSOCIATION);
+
+  // Verify filter is available in Association mode
+  f = lm_get_filter_text(mctx);
+  ASSERT_NE(f, nullptr);
+  EXPECT_STREQ(f, "foo");
+
+  // 6. ESC -> Back to Multiselect
+  lm_process_key_event(mctx, 53, 0, 0, 0, &tx, &old_mode, &new_mode);
+  EXPECT_EQ(new_mode, LM_MODE_LIST_MULTISELECT);
+  f = lm_get_filter_text(mctx);
+  ASSERT_NE(f, nullptr);
+  EXPECT_STREQ(f, "foo");
+
+  // 7. ESC -> LIST_NORMAL
+  lm_process_key_event(mctx, 53, 0, 0, 0, &tx, &old_mode, &new_mode);
+  EXPECT_EQ(new_mode, LM_MODE_LIST_NORMAL);
+  f = lm_get_filter_text(mctx);
+  ASSERT_NE(f, nullptr);
+  EXPECT_STREQ(f, "foo");
+
+  // 8. ESC -> Clear Filter (Critical Check)
+  lm_process_key_event(mctx, 53, 0, 0, 0, &tx, &old_mode, &new_mode);
+  EXPECT_EQ(tx, LM_MODETS_UPDATE_LIST_FILTER);
+  f = lm_get_filter_text(mctx);
+  EXPECT_EQ(f, nullptr);
+
+  // 9. ESC -> Hide UI
+  lm_process_key_event(mctx, 53, 0, 0, 0, &tx, &old_mode, &new_mode);
+  EXPECT_EQ(tx, LM_MODETS_HIDE_UI);
+
+  lm_destroy(mctx);
+}
