@@ -420,16 +420,16 @@ struct KeyView: View {
 extension Color {
     static func fromName(_ name: String) -> Color {
         switch name.lowercased() {
-        case "grey", "gray": return .gray
-        case "blue": return .blue
-        case "red": return .red
-        case "yellow": return .yellow
-        case "green": return .green
-        case "pink": return .pink
-        case "purple": return .purple
-        case "cyan": return .cyan
-        case "orange": return .orange
-        default: return .blue
+        case "grey", "gray": return Color(white: 0.3)
+        case "blue": return Color.blue.opacity(0.6)
+        case "red": return Color.red.opacity(0.6)
+        case "yellow": return Color.yellow.opacity(0.3)
+        case "green": return Color.green.opacity(0.6)
+        case "pink": return Color.pink.opacity(0.6)
+        case "purple": return Color.purple.opacity(0.6)
+        case "cyan": return Color.cyan.opacity(0.6)
+        case "orange": return Color.orange.opacity(0.6)
+        default: return Color.blue.opacity(0.6)
         }
     }
 
