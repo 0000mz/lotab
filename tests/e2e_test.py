@@ -491,3 +491,72 @@ async def test_create_tab_group(daemon_process, browser_context):
     assert groups[0]["tabCount"] == 2, (
         f"Expected 2 tabs in group, got {groups[0]['tabCount']}"
     )
+
+
+@pytest.mark.asyncio
+async def test_assign_all_tabs_to_existing_group(daemon_process, browser_context):
+    """
+    E2E Test: Assign All Tabs to Existing Group
+    Steps:
+    1. Open 3 tabs.
+    2. Create a tab group 'tab group 1' containing Tab 1 programmatically mostly to ensure it exists.
+    3. Toggle GUI.
+    4. Select All (Cmd+A).
+    5. Press 'm' (mark/task).
+    6. Navigate Down (to 'tab group 1').
+    7. Press 'return' (associate).
+    8. Verify all 3 tabs are in 'tab group 1'.
+    """
+    page1, page2, page3 = await setup_tabs(browser_context)
+
+    # 2. Programmatically create 'tab group 1' with the first tab
+    bg = await wait_for_background_page(browser_context)
+    await bg.evaluate("""
+        () => new Promise(resolve => {
+            chrome.tabs.query({title: 'Tab 1'}, (tabs) => {
+                const tabId = tabs[0].id;
+                chrome.tabs.group({tabIds: tabId}, (groupId) => {
+                    chrome.tabGroups.update(groupId, {title: 'tab group 1', color: 'blue'}, () => {
+                        resolve();
+                    });
+                });
+            });
+        })
+    """)
+
+    # Wait for extension to process the new group
+    await asyncio.sleep(1.0)
+
+    await toggle_gui()
+
+    # 4. Select All (Cmd+A)
+    print("Sending Cmd+A (Select All)...")
+    send_hotkey("a", ["command down"])
+    await asyncio.sleep(0.5)
+
+    # 5. Press 'm'
+    print("Pressing 'm'...")
+    send_hotkey("m")
+    await asyncio.sleep(1.0)
+
+    # 6. Navigate Down
+    # List should be: [Create New Task, tab group 1]
+    # Default selection is 0 (Create New). We need to go down to select 'tab group 1'.
+    print("Navigating Down (to select tab group 1)...")
+    send_hotkey("down")
+    await asyncio.sleep(0.5)
+
+    # 7. Press Return
+    print("Pressing Return (Associate)...")
+    send_hotkey("return")
+    await asyncio.sleep(2.0)
+
+    # 8. Verify
+    groups = await get_tab_groups(browser_context)
+    print(f"Tab Groups Found: {groups}")
+
+    assert len(groups) == 1, f"Expected 1 tab group, found {len(groups)}"
+    assert groups[0]["title"] == "tab group 1"
+    assert groups[0]["tabCount"] == 3, (
+        f"Expected 3 tabs in group, got {groups[0]['tabCount']}"
+    )
