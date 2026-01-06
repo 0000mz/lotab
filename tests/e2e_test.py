@@ -364,8 +364,8 @@ async def test_incremental_group_assignment(daemon_bin, browser_context):
                     f"[Test] GUI Manifest Content: {json.dumps(daemon.gui_manifest, indent=2)}"
                 )
                 assert (
-                    len(daemon.gui_manifest.get("tasks", [])) == 2
-                )  # Based on previous run, 2 tasks expected
+                    len(daemon.gui_manifest.get("tasks", [])) == 1
+                )  # Correct behavior: 1 task
                 # Check for 'new-group'
                 names = [t["name"] for t in daemon.gui_manifest["tasks"]]
                 assert "new-group" in names

@@ -1074,6 +1074,49 @@ void task_state_update(TaskState* ts, int64_t external_id, const char* name, con
   }
 }
 
+void task_state_incorporate_external_group(TaskState* ts, int64_t external_id, const char* title, const char* color) {
+  if (task_state_find_by_external_id(ts, external_id)) {
+    task_state_update(ts, external_id, title, color);
+    return;
+  }
+
+  // Check for unconfirmed task (external_id == -1) with same name
+  TaskInfo* curr = ts->tasks;
+  while (curr) {
+    if (curr->external_id == -1) {
+      // Allow matching if both are empty or strings match
+      const char* tname = curr->task_name ? curr->task_name : "";
+      const char* target = title ? title : "";
+
+      if (strcmp(tname, target) == 0) {
+        // Claim it
+        vlog(LOG_LEVEL_INFO, NULL, "MATCH FOUND! Claiming task %d for external %lld\n", curr->task_id, external_id);
+        curr->external_id = external_id;
+        // Update metadata
+        if (curr->task_name)
+          free(curr->task_name);
+        curr->task_name = strdup(target);
+        if (curr->color)
+          free(curr->color);
+        curr->color = strdup(color);
+        return;
+      }
+    }
+    curr = curr->next;
+  }
+
+  // Not found.
+  // If title is empty, it might be a newly created group that hasn't received its title update yet.
+  // We ignore it to avoid creating a duplicate "empty" task that won't match the local "named" task.
+  if (!title || strlen(title) == 0) {
+    vlog(LOG_LEVEL_INFO, NULL, "External group %lld has empty title. Deferring creation.\n", external_id);
+    return;
+  }
+
+  vlog(LOG_LEVEL_INFO, NULL, "No match found. Creating new task for external %lld '%s'.\n", external_id, title);
+  task_state_add(ts, title, color, external_id);
+}
+
 void task_state_remove(TaskState* ts, int64_t external_id) {
   TaskInfo* current = ts->tasks;
   TaskInfo* prev = NULL;
@@ -1139,36 +1182,7 @@ void tab_event__handle_all_tabs(EngineContext* ec, const cJSON* json_data) {
         group_color = gcolor_json->valuestring;
       }
 
-      if (task_state_find_by_external_id(tks, external_id) == NULL) {
-        // Check for unconfirmed task (external_id == -1) with same name
-        int claimed = 0;
-        TaskInfo* curr = tks->tasks;
-        while (curr) {
-          if (curr->external_id == -1 && curr->task_name && strcmp(curr->task_name, group_title) == 0) {
-            // Claim it
-            curr->external_id = external_id;
-            // Update color/name if changed (name matches but case might differ? trust browser?)
-            // Actually keep browser title as truth
-            if (curr->task_name)
-              free(curr->task_name);
-            curr->task_name = strdup(group_title);
-            if (curr->color)
-              free(curr->color);
-            curr->color = strdup(group_color);
-
-            claimed = 1;
-            break;
-          }
-          curr = curr->next;
-        }
-
-        if (!claimed) {
-          task_state_add(tks, group_title, group_color, external_id);
-        }
-      } else {
-        // Update existing task
-        task_state_update(tks, external_id, group_title, group_color);
-      }
+      task_state_incorporate_external_group(tks, external_id, group_title, group_color);
     }
     // Always send task update after processing groups in AllTabs
     send_tasks_update_to_uds(ec);
@@ -1390,11 +1404,10 @@ void tab_event__handle_group_created(EngineContext* ec, const cJSON* json_data) 
       color = color_json->valuestring;
     }
 
-    if (task_state_find_by_external_id(ts, external_id) == NULL) {
-      task_state_add(ts, title, color, external_id);
-      vlog(LOG_LEVEL_INFO, ec->tab_state, "Task Created: %lld, Title: %s, Color: %s\n", external_id, title, color);
-      send_tasks_update_to_uds(ec);
-    }
+    task_state_incorporate_external_group(ts, external_id, title, color);
+    vlog(LOG_LEVEL_INFO, ec->tab_state, "Task Incorporated (Created): %lld, Title: %s, Color: %s\n", external_id, title,
+         color);
+    send_tasks_update_to_uds(ec);
   }
 }
 
