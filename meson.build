@@ -83,6 +83,7 @@ daemon_exe = executable('lotab_daemon', daemon_engine_src,
 
 # --- Unit Tests Dependency ---
 gtest_dep = dependency('gtest', main : true, required : false)
+gmock_dep = dependency('gmock', required : false)
 
 # --- Sanitizer Variants ---
 sanitizers = {
@@ -148,7 +149,7 @@ foreach s, suffix : sanitizers
 
     i_test_var = executable('integration_test' + suffix,
                         ['tests/integration_test.cc'],
-                        dependencies : [gtest_dep, engine_dep_var, client_dep_var],
+                        dependencies : [gtest_dep, gmock_dep, engine_dep_var, client_dep_var],
                         override_options : ['b_sanitize=' + s])
     test('integration_test' + suffix, i_test_var)
 
@@ -174,7 +175,7 @@ if gtest_dep.found()
 
   i_test = executable('integration_test',
                       ['tests/integration_test.cc'],
-                      dependencies : [gtest_dep, engine_dep, client_dep])
+                      dependencies : [gtest_dep, gmock_dep, engine_dep, client_dep])
   # Client Mode State Machine Test
   cm_test = executable('client_mode_test',
                        ['tests/client_mode_test.cc'],
