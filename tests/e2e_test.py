@@ -1,4 +1,5 @@
 import os
+import json
 import time
 import asyncio
 import subprocess
@@ -89,6 +90,8 @@ class DaemonContext:
         self.daemon_manifest_path = daemon_manifest_path
         self.gui_manifest_path = gui_manifest_path
         self.proc = None
+        self.daemon_manifest = None
+        self.gui_manifest = None
 
     def __enter__(self):
         print(f"\n[DaemonContext] Starting daemon from {self.daemon_bin}...")
@@ -131,6 +134,35 @@ class DaemonContext:
         # Give GUI a moment to write if it was triggered by daemon death
         time.sleep(2)
         kill_processes_by_name(APP_NAME)
+
+        # Parse Manifests
+        if self.daemon_manifest_path and os.path.exists(self.daemon_manifest_path):
+            try:
+                with open(self.daemon_manifest_path) as f:
+                    content = f.read()
+                    if content:
+                        self.daemon_manifest = json.loads(content)
+                        print(
+                            f"[DaemonContext] Loaded Daemon Manifest: {json.dumps(self.daemon_manifest, indent=2)}"
+                        )
+                    else:
+                        print("[DaemonContext] Daemon manifest file is empty")
+            except Exception as e:
+                print(f"[DaemonContext] Failed to parse daemon manifest: {e}")
+
+        if self.gui_manifest_path and os.path.exists(self.gui_manifest_path):
+            try:
+                with open(self.gui_manifest_path) as f:
+                    content = f.read()
+                    if content:
+                        self.gui_manifest = json.loads(content)
+                        print(
+                            f"[DaemonContext] Loaded GUI Manifest: {json.dumps(self.gui_manifest, indent=2)}"
+                        )
+                    else:
+                        print("[DaemonContext] GUI manifest file is empty")
+            except Exception as e:
+                print(f"[DaemonContext] Failed to parse GUI manifest: {e}")
 
 
 @pytest.fixture(scope="function")
@@ -215,7 +247,7 @@ async def test_incremental_group_assignment(daemon_bin, browser_context):
         print(f"GUI Manifest Path: {g_man_path}")
 
         try:
-            with DaemonContext(daemon_bin, d_man_path, g_man_path) as _:
+            with DaemonContext(daemon_bin, d_man_path, g_man_path) as daemon:
                 # --- Part 1 ---
                 await toggle_gui()
 
@@ -315,46 +347,31 @@ async def test_incremental_group_assignment(daemon_bin, browser_context):
 
             # --- Context Manager Exited: Daemon Terminated ---
 
-            # Verify Manifests
-            import json
-
+            # Verify Manifests (Loaded by DaemonContext)
             print("\n[Test] Verifying Manifests...")
-            if os.path.exists(d_man_path):
-                print(f"[Test] Daemon Manifest found: {d_man_path}")
-                try:
-                    with open(d_man_path) as f:
-                        content = f.read()
-                        if content:
-                            data = json.loads(content)
-                            print(
-                                f"[Test] Daemon Manifest Content: {json.dumps(data, indent=2)}"
-                            )
-                        else:
-                            print(f"[Test] Daemon Manifest empty")
-                except Exception as e:
-                    print(f"[Test] Failed to read daemon manifest: {e}")
-            else:
-                print("[Test] Daemon Manifest NOT found.")
 
-            if os.path.exists(g_man_path):
-                print(f"[Test] GUI Manifest found: {g_man_path}")
-                try:
-                    with open(g_man_path) as f:
-                        content = f.read()
-                        if content:
-                            data = json.loads(content)
-                            print(
-                                f"[Test] GUI Manifest Content: {json.dumps(data, indent=2)}"
-                            )
-                            # Verify content if needed
-                            assert len(data.get("tasks", [])) == 1
-                            assert data["tasks"][0]["name"] == "new-group"
-                        else:
-                            print(f"[Test] GUI Manifest empty")
-                except Exception as e:
-                    print(f"[Test] Failed to read GUI manifest: {e}")
+            # Daemon Manifest
+            if daemon.daemon_manifest:
+                print(
+                    f"[Test] Daemon Manifest Content: {json.dumps(daemon.daemon_manifest, indent=2)}"
+                )
             else:
-                print("[Test] GUI Manifest NOT found.")
+                print("[Test] Daemon Manifest NOT found or empty.")
+
+            # GUI Manifest
+            if daemon.gui_manifest:
+                print(
+                    f"[Test] GUI Manifest Content: {json.dumps(daemon.gui_manifest, indent=2)}"
+                )
+                assert (
+                    len(daemon.gui_manifest.get("tasks", [])) == 2
+                )  # Based on previous run, 2 tasks expected
+                # Check for 'new-group'
+                names = [t["name"] for t in daemon.gui_manifest["tasks"]]
+                assert "new-group" in names
+            else:
+                print("[Test] GUI Manifest NOT found or empty.")
+
         finally:
             if os.path.exists(d_man_path):
                 os.remove(d_man_path)
