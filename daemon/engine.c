@@ -745,8 +745,11 @@ int engine_init(EngineContext** ectx, EngineCreationInfo cinfo) {
 
   lws_set_log_level(LLL_USER | LLL_ERR | LLL_WARN | LLL_NOTICE | LLL_INFO, lws_log_emit_cb);
 
-  if (cinfo.manifest_dir) {
-    ec->manifest_dir = strdup(cinfo.manifest_dir);
+  if (cinfo.daemon_manifest_path) {
+    ec->daemon_manifest_path = strdup(cinfo.daemon_manifest_path);
+  }
+  if (cinfo.gui_manifest_path) {
+    ec->gui_manifest_path = strdup(cinfo.gui_manifest_path);
   }
 
   if (cinfo.uds_path && strlen(cinfo.uds_path) > 0) {
@@ -788,9 +791,9 @@ int engine_init(EngineContext** ectx, EngineCreationInfo cinfo) {
 
   char* spawn_args[6] = {(char*)target_app_path, "--log-level", log_level_arg, NULL, NULL, NULL};
   int arg_idx = 3;
-  if (ec->manifest_dir) {
-    spawn_args[arg_idx++] = "--manifest-dir";
-    spawn_args[arg_idx++] = ec->manifest_dir;
+  if (ec->gui_manifest_path) {
+    spawn_args[arg_idx++] = "--gui-manifest-path";
+    spawn_args[arg_idx++] = ec->gui_manifest_path;
   }
   spawn_args[arg_idx] = NULL;
 
@@ -860,7 +863,7 @@ void engine_run(EngineContext* ectx) {
 }
 
 static void engine_dump_manifest(EngineContext* ectx) {
-  if (!ectx || !ectx->manifest_dir)
+  if (!ectx || !ectx->daemon_manifest_path)
     return;
 
   cJSON* root = cJSON_CreateObject();
@@ -899,16 +902,13 @@ static void engine_dump_manifest(EngineContext* ectx) {
 
   char* json_str = cJSON_Print(root);
 
-  char path[1024];
-  snprintf(path, sizeof(path), "%s/daemon_manifest.json", ectx->manifest_dir);
-
-  FILE* f = fopen(path, "w");
+  FILE* f = fopen(ectx->daemon_manifest_path, "w");
   if (f) {
     fputs(json_str, f);
     fclose(f);
-    vlog(LOG_LEVEL_INFO, ectx, "Dumped manifest to %s\n", path);
+    vlog(LOG_LEVEL_INFO, ectx, "Dumped manifest to %s\n", ectx->daemon_manifest_path);
   } else {
-    vlog(LOG_LEVEL_ERROR, ectx, "Failed to write manifest to %s\n", path);
+    vlog(LOG_LEVEL_ERROR, ectx, "Failed to write manifest to %s\n", ectx->daemon_manifest_path);
   }
 
   free(json_str);
@@ -970,9 +970,13 @@ void engine_destroy(EngineContext* ectx) {
     free(ectx->ui_toggle_keybind);
     ectx->ui_toggle_keybind = NULL;
   }
-  if (ectx->manifest_dir) {
-    free(ectx->manifest_dir);
-    ectx->manifest_dir = NULL;
+  if (ectx->daemon_manifest_path) {
+    free(ectx->daemon_manifest_path);
+    ectx->daemon_manifest_path = NULL;
+  }
+  if (ectx->gui_manifest_path) {
+    free(ectx->gui_manifest_path);
+    ectx->gui_manifest_path = NULL;
   }
   ectx->destroyed = 1;
 }

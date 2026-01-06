@@ -71,7 +71,8 @@ typedef struct EngineContext {
   int destroyed;
   int init_statusline;
   char* ui_toggle_keybind;
-  char* manifest_dir;
+  char* daemon_manifest_path;
+  char* gui_manifest_path;
 } EngineContext;
 
 typedef struct EngineCreationInfo {
@@ -80,7 +81,8 @@ typedef struct EngineCreationInfo {
   const char* app_path;
   const char* uds_path;
   const char* config_path;
-  const char* manifest_dir;
+  const char* daemon_manifest_path;
+  const char* gui_manifest_path;
 } EngineCreationInfo;
 
 // Initializes the daemon engine.

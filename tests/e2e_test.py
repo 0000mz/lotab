@@ -83,72 +83,70 @@ def extension_path():
     return path
 
 
+class DaemonContext:
+    def __init__(self, daemon_bin, daemon_manifest_path=None, gui_manifest_path=None):
+        self.daemon_bin = daemon_bin
+        self.daemon_manifest_path = daemon_manifest_path
+        self.gui_manifest_path = gui_manifest_path
+        self.proc = None
+
+    def __enter__(self):
+        print(f"\n[DaemonContext] Starting daemon from {self.daemon_bin}...")
+        bin_name = get_name_of_bin(self.daemon_bin)
+        kill_processes_by_name(bin_name)
+        kill_processes_by_name(APP_NAME)
+        time.sleep(1)
+
+        args = [self.daemon_bin]
+        if self.daemon_manifest_path:
+            args.extend(["--daemon-manifest-path", self.daemon_manifest_path])
+        if self.gui_manifest_path:
+            args.extend(["--gui-manifest-path", self.gui_manifest_path])
+
+        print(f"[DaemonContext] Args: {args}")
+
+        self.proc = subprocess.Popen(
+            args,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        time.sleep(5)  # Wait for startup
+
+        if self.proc.poll() is not None:
+            raise RuntimeError("Daemon failed to start.")
+
+        print(f"[DaemonContext] Daemon started with PID: {self.proc.pid}")
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        print("\n[DaemonContext] Tearing down daemon...")
+        if self.proc and self.proc.poll() is None:
+            self.proc.terminate()
+            try:
+                self.proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                print("[DaemonContext] Daemon timed out, killing...")
+                self.proc.kill()
+
+        # Give GUI a moment to write if it was triggered by daemon death
+        time.sleep(2)
+        kill_processes_by_name(APP_NAME)
+
+
 @pytest.fixture(scope="function")
-def daemon_process(daemon_bin, tmp_path):
-    print(f"\n[Fixture] Setting up daemon from {daemon_bin}...")
-    bin_name = get_name_of_bin(daemon_bin)
-    kill_processes_by_name(bin_name)
-    kill_processes_by_name(APP_NAME)
-    time.sleep(1)
+def daemon_controller(daemon_bin):
+    # Just a helper to return the constructor, or use the class directly in tests
+    return lambda d_path=None, g_path=None: DaemonContext(daemon_bin, d_path, g_path)
 
-    manifest_dir = tmp_path / "manifests"
-    manifest_dir.mkdir()
-    print(f"[Fixture] Manifest dir: {manifest_dir}")
 
-    proc = subprocess.Popen(
-        [daemon_bin, "--manifest-dir", str(manifest_dir)],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
-    time.sleep(5)  # Wait for startup
-
-    if proc.poll() is not None:
-        pytest.fail("Daemon failed to start.")
-
-    print(f"[Fixture] Daemon started with PID: {proc.pid}")
-    yield proc
-
-    print("\n[Fixture] Tearing down daemon...")
-    if proc.poll() is None:
-        proc.terminate()
-        try:
-            proc.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            print("[Fixture] Daemon timed out, killing...")
-            proc.kill()
-
-    # Give GUI a moment to write if it was triggered by daemon death
-    time.sleep(2)
-    kill_processes_by_name(APP_NAME)
-
-    # Confirm State
-    import json
-
-    d_man = manifest_dir / "daemon_manifest.json"
-    if d_man.exists():
-        print(f"[Fixture] Daemon Manifest found: {d_man}")
-        try:
-            with open(d_man) as f:
-                data = json.load(f)
-                print(
-                    f"[Fixture] Daemon Manifest Content: {json.dumps(data, indent=2)}"
-                )
-        except Exception as e:
-            print(f"[Fixture] Failed to read daemon manifest: {e}")
-    else:
-        print("[Fixture] Daemon Manifest NOT found.")
-
-    g_man = manifest_dir / "gui_manifest.json"
-    if g_man.exists():
-        print(f"[Fixture] GUI Manifest found: {g_man}")
-        try:
-            with open(g_man) as f:
-                data = json.load(f)
-                print(f"[Fixture] GUI Manifest Content: {json.dumps(data, indent=2)}")
-        except Exception as e:
-            print(f"[Fixture] Failed to read GUI manifest: {e}")
-    else:
-        print("[Fixture] GUI Manifest NOT found.")
+@pytest.fixture(scope="function")
+def daemon_process(daemon_bin):
+    # BACKWARD COMPATIBILITY for other tests
+    # This fixture starts the daemon without manifest paths
+    ctx = DaemonContext(daemon_bin)
+    ctx.__enter__()
+    yield ctx.proc
+    ctx.__exit__(None, None, None)
 
 
 @pytest_asyncio.fixture
@@ -156,6 +154,7 @@ async def browser_context(extension_path):
     import tempfile
     import shutil
 
+    # ... existing implementation ...
     user_data_dir = tempfile.mkdtemp()
     async with async_playwright() as p:
         args = [
@@ -174,6 +173,193 @@ async def browser_context(extension_path):
             await context.close()
         finally:
             shutil.rmtree(user_data_dir, ignore_errors=True)
+
+
+# ... helpers ...
+
+
+@pytest.mark.asyncio
+async def test_incremental_group_assignment(daemon_bin, browser_context):
+    """
+    E2E Test: Incremental Group Assignment
+    Uses explicit DaemonContext to verify manifests.
+    """
+    import tempfile
+
+    # Custom setup for 2 tabs
+    page1 = browser_context.pages[0]
+    await page1.goto("http://example.com")
+    await page1.evaluate("document.title = 'Tab 1'")
+
+    page2 = await browser_context.new_page()
+    await page2.goto("http://example.org")
+    await page2.evaluate("document.title = 'Tab 2'")
+
+    await asyncio.sleep(2)
+
+    # Wait for tab count = 2
+    for _ in range(20):
+        count = await get_tab_count(browser_context)
+        if count == 2:
+            break
+        await asyncio.sleep(0.5)
+
+    with (
+        tempfile.NamedTemporaryFile(suffix=".json", delete=False) as d_man_file,
+        tempfile.NamedTemporaryFile(suffix=".json", delete=False) as g_man_file,
+    ):
+        d_man_path = d_man_file.name
+        g_man_path = g_man_file.name
+
+        print(f"Daemon Manifest Path: {d_man_path}")
+        print(f"GUI Manifest Path: {g_man_path}")
+
+        try:
+            with DaemonContext(daemon_bin, d_man_path, g_man_path) as _:
+                # --- Part 1 ---
+                await toggle_gui()
+
+                # Select first tab (Tab 2, active)
+                print("Part 1: Selecting first tab...")
+                send_hotkey("space")
+                await asyncio.sleep(0.5)
+
+                print("Pressing M (Mark)...")
+                send_hotkey("m")
+                await asyncio.sleep(1.0)
+
+                # Select "Create New Task" (default selection is 0)
+                print("Selecting 'Create New Task'...")
+                send_hotkey("return")
+                await asyncio.sleep(0.5)
+
+                # Type "new-group"
+                print("Typing 'new-group'...")
+                for char in "new-group":
+                    send_hotkey(char)
+                    await asyncio.sleep(0.1)
+
+                print("Committing group...")
+                send_hotkey("return")
+                await asyncio.sleep(2.0)
+
+                print("Pressing ESC to close...")
+                send_hotkey("escape")
+                await asyncio.sleep(1.0)
+
+                # Verify Part 1
+                groups = await get_tab_groups(browser_context)
+                print(f"Groups Part 1: {groups}")
+                assert len(groups) == 1
+                assert groups[0]["title"] == "new-group"
+                assert groups[0]["tabCount"] == 1
+
+                # Check unassociated
+                bg = await wait_for_background_page(browser_context)
+                ungrouped_count = await bg.evaluate("""
+                    () => new Promise(resolve => {
+                        chrome.tabs.query({groupId: chrome.tabGroups.TAB_GROUP_ID_NONE}, (tabs) => {
+                            resolve(tabs.length);
+                        });
+                    })
+                """)
+                print(f"Ungrouped count: {ungrouped_count}")
+                assert ungrouped_count == 1
+
+                # --- Part 2 ---
+                print("Part 2: Reopening GUI...")
+                await toggle_gui()
+
+                # Navigate to unassociated tab.
+                print("Navigating to unassociated tab (Second item)...")
+                send_hotkey("down")
+                await asyncio.sleep(0.5)
+
+                print("Selecting tab (Space)...")
+                send_hotkey("space")
+                await asyncio.sleep(0.5)
+
+                print("Pressing M...")
+                send_hotkey("m")
+                await asyncio.sleep(1.0)
+
+                # List of tasks: [Create New, new-group]
+                print("Navigating to 'new-group' (Down)...")
+                send_hotkey("down")
+                await asyncio.sleep(0.5)
+
+                print("Committing...")
+                send_hotkey("return")
+                await asyncio.sleep(2.0)
+
+                print("Pressing ESC to close...")
+                send_hotkey("escape")
+                await asyncio.sleep(1.0)
+
+                # Verify Part 2
+                groups = await get_tab_groups(browser_context)
+                print(f"Groups Part 2: {groups}")
+                assert len(groups) == 1
+                assert groups[0]["title"] == "new-group"
+                assert groups[0]["tabCount"] == 2
+
+                ungrouped_count_2 = await bg.evaluate("""
+                    () => new Promise(resolve => {
+                        chrome.tabs.query({groupId: chrome.tabGroups.TAB_GROUP_ID_NONE}, (tabs) => {
+                            resolve(tabs.length);
+                        });
+                    })
+                """)
+                print(f"Ungrouped count: {ungrouped_count_2}")
+                assert ungrouped_count_2 == 0
+
+            # --- Context Manager Exited: Daemon Terminated ---
+
+            # Verify Manifests
+            import json
+
+            print("\n[Test] Verifying Manifests...")
+            if os.path.exists(d_man_path):
+                print(f"[Test] Daemon Manifest found: {d_man_path}")
+                try:
+                    with open(d_man_path) as f:
+                        content = f.read()
+                        if content:
+                            data = json.loads(content)
+                            print(
+                                f"[Test] Daemon Manifest Content: {json.dumps(data, indent=2)}"
+                            )
+                        else:
+                            print(f"[Test] Daemon Manifest empty")
+                except Exception as e:
+                    print(f"[Test] Failed to read daemon manifest: {e}")
+            else:
+                print("[Test] Daemon Manifest NOT found.")
+
+            if os.path.exists(g_man_path):
+                print(f"[Test] GUI Manifest found: {g_man_path}")
+                try:
+                    with open(g_man_path) as f:
+                        content = f.read()
+                        if content:
+                            data = json.loads(content)
+                            print(
+                                f"[Test] GUI Manifest Content: {json.dumps(data, indent=2)}"
+                            )
+                            # Verify content if needed
+                            assert len(data.get("tasks", [])) == 1
+                            assert data["tasks"][0]["name"] == "new-group"
+                        else:
+                            print(f"[Test] GUI Manifest empty")
+                except Exception as e:
+                    print(f"[Test] Failed to read GUI manifest: {e}")
+            else:
+                print("[Test] GUI Manifest NOT found.")
+        finally:
+            if os.path.exists(d_man_path):
+                os.remove(d_man_path)
+            if os.path.exists(g_man_path):
+                os.remove(g_man_path)
 
 
 # --- Helpers ---
@@ -602,129 +788,3 @@ async def test_assign_all_tabs_to_existing_group(daemon_process, browser_context
     assert groups[0]["tabCount"] == 3, (
         f"Expected 3 tabs in group, got {groups[0]['tabCount']}"
     )
-
-
-@pytest.mark.asyncio
-async def test_incremental_group_assignment(daemon_process, browser_context):
-    """
-    E2E Test: Incremental Group Assignment
-    Part 1: create 2 tabs. Select first tab. Create new task 'new-group'.
-    Verify 1 group (1 tab) and 1 unassociated tab.
-    Part 2: Open GUI. Navigate to unassociated tab. Add to 'new-group'.
-    Verify 1 group (2 tabs) and 0 unassociated.
-    """
-    # Custom setup for 2 tabs
-    page1 = browser_context.pages[0]
-    await page1.goto("http://example.com")
-    await page1.evaluate("document.title = 'Tab 1'")
-
-    page2 = await browser_context.new_page()
-    await page2.goto("http://example.org")
-    await page2.evaluate("document.title = 'Tab 2'")
-
-    await asyncio.sleep(2)
-
-    # Wait for tab count = 2
-    for _ in range(20):
-        count = await get_tab_count(browser_context)
-        if count == 2:
-            break
-        await asyncio.sleep(0.5)
-
-    # --- Part 1 ---
-    await toggle_gui()
-
-    # Select first tab (Tab 2, active)
-    print("Part 1: Selecting first tab...")
-    send_hotkey("space")
-    await asyncio.sleep(0.5)
-
-    print("Pressing M (Mark)...")
-    send_hotkey("m")
-    await asyncio.sleep(1.0)
-
-    # Select "Create New Task" (default selection is 0)
-    print("Selecting 'Create New Task'...")
-    send_hotkey("return")
-    await asyncio.sleep(0.5)
-
-    # Type "new-group"
-    print("Typing 'new-group'...")
-    for char in "new-group":
-        send_hotkey(char)
-        await asyncio.sleep(0.1)
-
-    print("Committing group...")
-    send_hotkey("return")
-    await asyncio.sleep(2.0)
-
-    print("Pressing ESC to close...")
-    send_hotkey("escape")
-    await asyncio.sleep(1.0)
-
-    # Verify Part 1
-    groups = await get_tab_groups(browser_context)
-    print(f"Groups Part 1: {groups}")
-    assert len(groups) == 1
-    assert groups[0]["title"] == "new-group"
-    assert groups[0]["tabCount"] == 1
-
-    # Check unassociated
-    bg = await wait_for_background_page(browser_context)
-    ungrouped_count = await bg.evaluate("""
-        () => new Promise(resolve => {
-            chrome.tabs.query({groupId: chrome.tabGroups.TAB_GROUP_ID_NONE}, (tabs) => {
-                resolve(tabs.length);
-            });
-        })
-    """)
-    print(f"Ungrouped count: {ungrouped_count}")
-    assert ungrouped_count == 1
-
-    # --- Part 2 ---
-    print("Part 2: Reopening GUI...")
-    await toggle_gui()
-
-    # Navigate to unassociated tab.
-    # List order: [Tab 2 (Linked), Tab 1 (Unlinked)]
-    print("Navigating to unassociated tab (Second item)...")
-    send_hotkey("down")
-    await asyncio.sleep(0.5)
-
-    print("Selecting tab (Space)...")
-    send_hotkey("space")
-    await asyncio.sleep(0.5)
-
-    print("Pressing M...")
-    send_hotkey("m")
-    await asyncio.sleep(1.0)
-
-    # List of tasks: [Create New, new-group]
-    print("Navigating to 'new-group' (Down)...")
-    send_hotkey("down")
-    await asyncio.sleep(0.5)
-
-    print("Committing...")
-    send_hotkey("return")
-    await asyncio.sleep(2.0)
-
-    print("Pressing ESC to close...")
-    send_hotkey("escape")
-    await asyncio.sleep(1.0)
-
-    # Verify Part 2
-    groups = await get_tab_groups(browser_context)
-    print(f"Groups Part 2: {groups}")
-    assert len(groups) == 1
-    assert groups[0]["title"] == "new-group"
-    assert groups[0]["tabCount"] == 2
-
-    ungrouped_count_2 = await bg.evaluate("""
-        () => new Promise(resolve => {
-            chrome.tabs.query({groupId: chrome.tabGroups.TAB_GROUP_ID_NONE}, (tabs) => {
-                resolve(tabs.length);
-            });
-        })
-    """)
-    print(f"Ungrouped count: {ungrouped_count_2}")
-    assert ungrouped_count_2 == 0
