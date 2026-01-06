@@ -121,7 +121,7 @@ class DaemonContext:
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
-        time.sleep(5)  # Wait for startup
+        time.sleep(1)  # Wait for startup
 
         if self.proc.poll() is not None:
             raise RuntimeError("Daemon failed to start.")
@@ -140,7 +140,7 @@ class DaemonContext:
                 self.proc.kill()
 
         # Give GUI a moment to write if it was triggered by daemon death
-        time.sleep(2)
+        time.sleep(1)
         kill_processes_by_name(APP_NAME)
 
         # Parse Manifests
@@ -354,7 +354,7 @@ async def test_incremental_group_assignment(daemon_bin, extension_path):
         await page2.goto("http://example.org")
         await page2.evaluate("document.title = 'Tab 2'")
 
-        await asyncio.sleep(2)
+        await asyncio.sleep(1)
 
         # Wait for tab count = 2
         for _ in range(20):
@@ -400,7 +400,7 @@ async def test_incremental_group_assignment(daemon_bin, extension_path):
 
                     print("Committing group...")
                     send_hotkey("return")
-                    await asyncio.sleep(2.0)
+                    await asyncio.sleep(1.0)
 
                     print("Pressing ESC to close...")
                     send_hotkey("escape")
@@ -449,7 +449,7 @@ async def test_incremental_group_assignment(daemon_bin, extension_path):
 
                     print("Committing...")
                     send_hotkey("return")
-                    await asyncio.sleep(2.0)
+                    await asyncio.sleep(1.0)
 
                     print("Pressing ESC to close...")
                     send_hotkey("escape")
@@ -522,7 +522,7 @@ async def setup_tabs(browser):
     await page3.goto("http://example.net")
     await page3.evaluate("document.title = 'Tab 3'")
 
-    await asyncio.sleep(2)
+    await asyncio.sleep(1)
 
     # Wait for extension to know about these tabs
     # We can query GetTabCount until it is 3
@@ -644,7 +644,7 @@ async def test_close_via_search(daemon_process, browser_context):
     # Press x
     print("Pressing x...")
     send_hotkey("x")
-    await asyncio.sleep(2.0)
+    await asyncio.sleep(1.0)
 
     count = await browser_context.GetTabCount()
     print(f"Tab Count: {count}")
@@ -763,7 +763,7 @@ async def test_create_tab_group(daemon_process, browser_context):
     # Commit
     print("Pressing Return (Commit)...")
     send_hotkey("return")
-    await asyncio.sleep(2.0)  # Wait for extension to process
+    await asyncio.sleep(1.0)  # Wait for extension to process
 
     # Verify
     groups = await browser_context.GetTabGroups()
@@ -834,7 +834,7 @@ async def test_assign_all_tabs_to_existing_group(daemon_process, browser_context
     # 7. Press Return
     print("Pressing Return (Associate)...")
     send_hotkey("return")
-    await asyncio.sleep(2.0)
+    await asyncio.sleep(1.0)
 
     # 8. Verify
     groups = await browser_context.GetTabGroups()
