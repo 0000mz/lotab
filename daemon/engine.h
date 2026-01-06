@@ -37,7 +37,7 @@ typedef struct TabInfo {
   uint64_t id;
   char* title;
   int active;
-  int64_t task_id;
+  int64_t task_ext_id;
   struct TabInfo* next;
 } TabInfo;
 
@@ -48,10 +48,12 @@ typedef struct TabState {
 } TabState;
 
 typedef struct TaskInfo {
-  uint64_t task_id;
+  // task_id removed. external_id is the source of truth.
+  // We keep external_id as int64_t.
+  // Locally created tasks will have negative IDs.
   char* task_name;
   char* color;
-  int64_t external_id;  // ID from external source (e.g. browser group id)
+  int64_t external_id;
   struct TaskInfo* next;
 } TaskInfo;
 
@@ -71,6 +73,8 @@ typedef struct EngineContext {
   int destroyed;
   int init_statusline;
   char* ui_toggle_keybind;
+  char* daemon_manifest_path;
+  char* gui_manifest_path;
 } EngineContext;
 
 typedef struct EngineCreationInfo {
@@ -79,6 +83,8 @@ typedef struct EngineCreationInfo {
   const char* app_path;
   const char* uds_path;
   const char* config_path;
+  const char* daemon_manifest_path;
+  const char* gui_manifest_path;
 } EngineCreationInfo;
 
 // Initializes the daemon engine.
@@ -94,6 +100,7 @@ void engine_handle_event(EngineContext* ectx, DaemonEvent event, void* data);
 TabInfo* tab_state_find_tab(TabState* ts, const uint64_t id);
 TaskInfo* task_state_find_by_external_id(TaskState* ts, int64_t external_id);
 TaskInfo* task_state_find_by_external_id(TaskState* ts, int64_t external_id);
+int64_t task_state_incorporate_external_group(TaskState* ts, int64_t external_id, const char* title, const char* color);
 void task_state_update(TaskState* ts, int64_t external_id, const char* name, const char* color);
 void task_state_remove(TaskState* ts, int64_t external_id);
 

@@ -182,7 +182,7 @@ static void handle_gui_msg(ServerContext* sc, const char* msg) {
             if (cJSON_IsNumber(id_item)) {
               TabInfo* tab = tab_state_find_tab(ec->tab_state, (uint64_t)id_item->valuedouble);
               if (tab) {
-                tab->task_id = task_id;
+                tab->task_ext_id = task_id;
               }
             }
           }
@@ -194,7 +194,7 @@ static void handle_gui_msg(ServerContext* sc, const char* msg) {
           if (ec->task_state) {
             TaskInfo* curr = ec->task_state->tasks;
             while (curr) {
-              if ((int64_t)curr->task_id == task_id) {
+              if ((int64_t)curr->external_id == task_id) {
                 group_id = curr->external_id;
                 break;
               }
@@ -250,7 +250,7 @@ static void handle_gui_msg(ServerContext* sc, const char* msg) {
             if (cJSON_IsNumber(id_item)) {
               TabInfo* tab = tab_state_find_tab(ec->tab_state, (uint64_t)id_item->valuedouble);
               if (tab) {
-                tab->task_id = new_t->task_id;
+                tab->task_ext_id = new_t->external_id;
               }
             }
           }
@@ -745,6 +745,13 @@ int engine_init(EngineContext** ectx, EngineCreationInfo cinfo) {
 
   lws_set_log_level(LLL_USER | LLL_ERR | LLL_WARN | LLL_NOTICE | LLL_INFO, lws_log_emit_cb);
 
+  if (cinfo.daemon_manifest_path) {
+    ec->daemon_manifest_path = strdup(cinfo.daemon_manifest_path);
+  }
+  if (cinfo.gui_manifest_path) {
+    ec->gui_manifest_path = strdup(cinfo.gui_manifest_path);
+  }
+
   if (cinfo.uds_path && strlen(cinfo.uds_path) > 0) {
     sc->uds_path = strdup(cinfo.uds_path);
   } else {
@@ -781,7 +788,15 @@ int engine_init(EngineContext** ectx, EngineCreationInfo cinfo) {
 
   char log_level_arg[16] = {0};
   snprintf(log_level_arg, sizeof(log_level_arg), "%d", engine_get_log_level());
-  char* spawn_args[] = {(char*)target_app_path, "--log-level", log_level_arg, NULL};
+
+  char* spawn_args[6] = {(char*)target_app_path, "--log-level", log_level_arg, NULL, NULL, NULL};
+  int arg_idx = 3;
+  if (ec->gui_manifest_path) {
+    spawn_args[arg_idx++] = "--gui-manifest-path";
+    spawn_args[arg_idx++] = ec->gui_manifest_path;
+  }
+  spawn_args[arg_idx] = NULL;
+
   int spawn_status = posix_spawn(&ec->app_pid, target_app_path, NULL, NULL, spawn_args, environ);
   if (spawn_status == 0) {
     vlog(LOG_LEVEL_INFO, ec, "Successfully spawned Lotab (PID: %d)\n", ec->app_pid);
@@ -831,6 +846,7 @@ static void sigint_handler(int sig) {
 
 void engine_run(EngineContext* ectx) {
   signal(SIGINT, sigint_handler);
+  signal(SIGTERM, sigint_handler);
   ectx->run_ctx = malloc(sizeof(StatusBarRunContext));
   if (!ectx->run_ctx) {
     vlog(LOG_LEVEL_ERROR, ectx, "Failed to allocate run context.\n");
@@ -846,10 +862,66 @@ void engine_run(EngineContext* ectx) {
   }
 }
 
+static void engine_dump_manifest(EngineContext* ectx) {
+  if (!ectx || !ectx->daemon_manifest_path)
+    return;
+
+  cJSON* root = cJSON_CreateObject();
+
+  // Tabs
+  cJSON* tabs = cJSON_CreateArray();
+  cJSON_AddItemToObject(root, "tabs", tabs);
+  if (ectx->tab_state) {
+    TabInfo* t = ectx->tab_state->tabs;
+    while (t) {
+      cJSON* t_obj = cJSON_CreateObject();
+      cJSON_AddNumberToObject(t_obj, "id", (double)t->id);
+      cJSON_AddStringToObject(t_obj, "title", t->title ? t->title : "");
+      cJSON_AddBoolToObject(t_obj, "active", t->active);
+      cJSON_AddNumberToObject(t_obj, "task_id", (double)t->task_ext_id);
+      cJSON_AddItemToArray(tabs, t_obj);
+      t = t->next;
+    }
+  }
+
+  // Tasks
+  cJSON* tasks = cJSON_CreateArray();
+  cJSON_AddItemToObject(root, "tasks", tasks);
+  if (ectx->task_state) {
+    TaskInfo* t = ectx->task_state->tasks;
+    while (t) {
+      cJSON* t_obj = cJSON_CreateObject();
+      cJSON_AddNumberToObject(t_obj, "task_id", (double)t->external_id);
+      cJSON_AddStringToObject(t_obj, "task_name", t->task_name ? t->task_name : "");
+      cJSON_AddStringToObject(t_obj, "color", t->color ? t->color : "");
+      cJSON_AddNumberToObject(t_obj, "external_id", (double)t->external_id);
+      cJSON_AddItemToArray(tasks, t_obj);
+      t = t->next;
+    }
+  }
+
+  char* json_str = cJSON_Print(root);
+
+  FILE* f = fopen(ectx->daemon_manifest_path, "w");
+  if (f) {
+    fputs(json_str, f);
+    fclose(f);
+    vlog(LOG_LEVEL_INFO, ectx, "Dumped manifest to %s\n", ectx->daemon_manifest_path);
+  } else {
+    vlog(LOG_LEVEL_ERROR, ectx, "Failed to write manifest to %s\n", ectx->daemon_manifest_path);
+  }
+
+  free(json_str);
+  cJSON_Delete(root);
+}
+
 void engine_destroy(EngineContext* ectx) {
   assert(ectx);
   if (__atomic_exchange_n(&ectx->destroyed, 1, __ATOMIC_SEQ_CST))
     return;
+
+  engine_dump_manifest(ectx);
+
   if (ectx->app_pid >= 0) {
     kill_process(ectx->app_pid);
     ectx->app_pid = -1;
@@ -898,6 +970,14 @@ void engine_destroy(EngineContext* ectx) {
     free(ectx->ui_toggle_keybind);
     ectx->ui_toggle_keybind = NULL;
   }
+  if (ectx->daemon_manifest_path) {
+    free(ectx->daemon_manifest_path);
+    ectx->daemon_manifest_path = NULL;
+  }
+  if (ectx->gui_manifest_path) {
+    free(ectx->gui_manifest_path);
+    ectx->gui_manifest_path = NULL;
+  }
   ectx->destroyed = 1;
 }
 
@@ -919,7 +999,7 @@ void tab_state_update_tab(TabState* ts, const char* title, const uint64_t id, in
       free(ti->title);
       ti->title = strdup(title);
     }
-    ti->task_id = task_id;
+    ti->task_ext_id = task_id;
   }
 }
 
@@ -929,7 +1009,7 @@ void tab_state_add_tab(TabState* ts, const char* title, const uint64_t id, int64
     new_tab->id = id;
     new_tab->title = strdup(title);
     new_tab->active = 0;
-    new_tab->task_id = task_id;
+    new_tab->task_ext_id = task_id;
     new_tab->next = ts->tabs;
     ts->tabs = new_tab;
     ts->nb_tabs++;
@@ -971,12 +1051,31 @@ TaskInfo* task_state_find_by_external_id(TaskState* ts, int64_t external_id) {
 }
 
 void task_state_add(TaskState* ts, const char* task_name, const char* color, int64_t external_id) {
+  int64_t final_id = external_id;
+  if (final_id <= 0 && final_id != -1) {
+    // If 0 passed, treat as request for new ID? Or strict?
+    // For now, if caller passes -1 or 0, we might want to generate one.
+    // But the signature allows passing a specific negative ID too.
+    // Let's assume if -1 is passed, we generate a new negative ID.
+    // If a positive ID is passed, we use it.
+  }
+
+  if (external_id == -1) {
+    int64_t min_id = 0;
+    TaskInfo* curr = ts->tasks;
+    while (curr) {
+      if (curr->external_id < min_id)
+        min_id = curr->external_id;
+      curr = curr->next;
+    }
+    final_id = min_id - 1;
+  }
+
   TaskInfo* new_task = malloc(sizeof(TaskInfo));
   if (new_task) {
-    new_task->task_id = ts->nb_tasks++;
     new_task->task_name = strdup(task_name ? task_name : "Unknown Task");
     new_task->color = strdup(color ? color : "grey");
-    new_task->external_id = external_id;
+    new_task->external_id = final_id;
     new_task->next = ts->tasks;
     ts->tasks = new_task;
   }
@@ -985,13 +1084,57 @@ void task_state_add(TaskState* ts, const char* task_name, const char* color, int
 void task_state_update(TaskState* ts, int64_t external_id, const char* name, const char* color) {
   TaskInfo* task = task_state_find_by_external_id(ts, external_id);
   if (task) {
-    if (task->task_name)
-      free(task->task_name);
-    task->task_name = strdup(name ? name : "Unknown Task");
-    if (task->color)
-      free(task->color);
-    task->color = strdup(color ? color : "grey");
+    if (name) {
+      if (task->task_name)
+        free(task->task_name);
+      task->task_name = strdup(name ? name : "Unknown Task");
+    }
+    if (color) {
+      if (task->color)
+        free(task->color);
+      task->color = strdup(color ? color : "grey");
+    }
   }
+}
+
+int64_t task_state_incorporate_external_group(TaskState* ts,
+                                              int64_t ext_group_id,
+                                              const char* title,
+                                              const char* color) {
+  if (task_state_find_by_external_id(ts, ext_group_id)) {
+    task_state_update(ts, ext_group_id, title, color);
+    return 0;
+  }
+
+  // If the group doesn't exist yet and has no name, we ignore it for now.
+  // This allows us to wait for a 'rename' event (or initial state with name)
+  // which lets us match against pending local tasks (which always have names).
+  if (!title || title[0] == '\0') {
+    return 0;
+  }
+
+  // Check for unconfirmed task (external_id <= 0) with same name
+  TaskInfo* curr = ts->tasks;
+  while (curr) {
+    if (curr->external_id <= 0) {
+      // Allow matching if both are empty or strings match
+      const char* tname = curr->task_name ? curr->task_name : "";
+      const char* target = title ? title : "";
+
+      if (strcmp(tname, target) == 0) {
+        vlog(LOG_LEVEL_INFO, NULL, "MATCH FOUND! Claiming task %lld for external %lld\n", curr->external_id,
+             ext_group_id);
+        int64_t old_id = curr->external_id;
+        curr->external_id = ext_group_id;
+        return old_id;
+      }
+    }
+    curr = curr->next;
+  }
+
+  vlog(LOG_LEVEL_INFO, NULL, "No match found. Creating new task for external %lld '%s'.\n", ext_group_id, title);
+  task_state_add(ts, title, color, ext_group_id);
+  return 0;
 }
 
 void task_state_remove(TaskState* ts, int64_t external_id) {
@@ -1059,35 +1202,48 @@ void tab_event__handle_all_tabs(EngineContext* ec, const cJSON* json_data) {
         group_color = gcolor_json->valuestring;
       }
 
-      if (task_state_find_by_external_id(tks, external_id) == NULL) {
-        // Check for unconfirmed task (external_id == -1) with same name
-        int claimed = 0;
-        TaskInfo* curr = tks->tasks;
-        while (curr) {
-          if (curr->external_id == -1 && curr->task_name && strcmp(curr->task_name, group_title) == 0) {
-            // Claim it
-            curr->external_id = external_id;
-            // Update color/name if changed (name matches but case might differ? trust browser?)
-            // Actually keep browser title as truth
-            if (curr->task_name)
-              free(curr->task_name);
-            curr->task_name = strdup(group_title);
-            if (curr->color)
-              free(curr->color);
-            curr->color = strdup(group_color);
+      int64_t claimed_id = task_state_incorporate_external_group(tks, external_id, group_title, group_color);
+      if (claimed_id != 0) {
+        // Update tabs logic if needed here?
+        // Since we are iterating tabs next, we might be fine, but if tabs logic relies on Task ID correctness?
+        // Actually, in `onAllTabs`, we iterate tabs and look up `task_state_find_by_external_id`.
+        // If we claimed the task, `find_by_external_id` will now find it by the new positive ID (external_id).
+        // And tabs coming from browser will have `groupId` = `external_id`.
+        // So lookups will work.
 
-            claimed = 1;
-            break;
+        // However, if there were OTHER tabs locally that are NOT in the payload (unlikely for "AllTabs")
+        // but if we had them, they would need updating.
+        // Since "AllTabs" replaces/syncs state, we rely on the loop below to update tabs.
+        // Check loop below:
+        // cJSON* gid_json = ... "groupId"
+        // int64_t external_id = gid_json...
+        // TaskInfo* task = find(ext_id)...
+        // So, if we claimed it, `find` works. `task->external_id` (Task ID logic) works.
+        // So for "AllTabs", we don't strictly need to do the manual tab loop update because we are about to refresh all
+        // tabs anyway.
+
+        // But let's be safe. If we have tabs that are NOT in the update?
+        // `onAllTabs` doesn't remove tabs unless they are missing?
+        // It iterates json, adds/updates.
+        // It does NOT remove tabs that are not in JSON (unless `tab_state_clear` is called? No.)
+        // Wait, `onAllTabs` logic in existing code:
+        // It iterates JSON. It does NOT clear existing tabs.
+        // This implies "AllTabs" is partial or additive? Or we assume it's complete?
+        // If it's complete, we should probably verify.
+        // But existing logic is: update if exists, add if new.
+        // It doesn't seem to delete?
+
+        // Anyway, for `incorporate`, we updated the Task.
+        // If we have tabs pointing to Old ID, and they are NOT in this specific update batch, they will be orphaned.
+        // So yes, we should update them.
+
+        TabInfo* t = ts->tabs;
+        while (t) {
+          if (t->task_ext_id == claimed_id) {
+            t->task_ext_id = external_id;
           }
-          curr = curr->next;
+          t = t->next;
         }
-
-        if (!claimed) {
-          task_state_add(tks, group_title, group_color, external_id);
-        }
-      } else {
-        // Update existing task
-        task_state_update(tks, external_id, group_title, group_color);
       }
     }
     // Always send task update after processing groups in AllTabs
@@ -1119,7 +1275,7 @@ void tab_event__handle_all_tabs(EngineContext* ec, const cJSON* json_data) {
         int64_t external_id = (int64_t)gid_json->valuedouble;
         TaskInfo* task = task_state_find_by_external_id(tks, external_id);
         if (task) {
-          task_id = task->task_id;
+          task_id = task->external_id;
         }
       }
 
@@ -1272,7 +1428,7 @@ void tab_event__handle_group_updated(EngineContext* ec, const cJSON* json_data) 
 
   if (cJSON_IsNumber(id_json)) {
     int64_t external_id = (int64_t)id_json->valuedouble;
-    const char* title = "Browser Group";
+    const char* title = "unnamed_group";
     if (cJSON_IsString(title_json) && title_json->valuestring) {
       title = title_json->valuestring;
     }
@@ -1281,11 +1437,19 @@ void tab_event__handle_group_updated(EngineContext* ec, const cJSON* json_data) 
       color = color_json->valuestring;
     }
 
-    if (task_state_find_by_external_id(ts, external_id)) {
-      task_state_update(ts, external_id, title, color);
-      vlog(LOG_LEVEL_INFO, ec->tab_state, "Task Updated: %lld, Title: %s, Color: %s\n", external_id, title, color);
-      send_tasks_update_to_uds(ec);
+    int64_t claimed_id = task_state_incorporate_external_group(ts, external_id, title, color);
+    if (claimed_id != 0) {
+      // Update tabs that were on claimed_id
+      TabInfo* t = ec->tab_state->tabs;
+      while (t) {
+        if (t->task_ext_id == claimed_id) {
+          t->task_ext_id = external_id;
+        }
+        t = t->next;
+      }
     }
+    vlog(LOG_LEVEL_INFO, ec->tab_state, "Task Updated: %lld, Title: %s, Color: %s\n", external_id, title, color);
+    send_tasks_update_to_uds(ec);
   }
 }
 
@@ -1310,11 +1474,18 @@ void tab_event__handle_group_created(EngineContext* ec, const cJSON* json_data) 
       color = color_json->valuestring;
     }
 
-    if (task_state_find_by_external_id(ts, external_id) == NULL) {
-      task_state_add(ts, title, color, external_id);
-      vlog(LOG_LEVEL_INFO, ec->tab_state, "Task Created: %lld, Title: %s, Color: %s\n", external_id, title, color);
-      send_tasks_update_to_uds(ec);
+    int64_t claimed_id = task_state_incorporate_external_group(ts, external_id, title, color);
+    if (claimed_id != 0) {
+      // Update tabs that were on claimed_id
+      TabInfo* t = ec->tab_state->tabs;
+      while (t) {
+        if (t->task_ext_id == claimed_id) {
+          t->task_ext_id = external_id;
+        }
+        t = t->next;
+      }
     }
+    send_tasks_update_to_uds(ec);
   }
 }
 
@@ -1427,7 +1598,7 @@ static void send_tabs_update_to_uds(EngineContext* ectx) {
       cJSON_AddNumberToObject(tab_obj, "id", (double)current->id);
       cJSON_AddStringToObject(tab_obj, "title", current->title ? current->title : "Unknown");
       cJSON_AddBoolToObject(tab_obj, "active", current->active);
-      cJSON_AddNumberToObject(tab_obj, "task_id", (double)current->task_id);
+      cJSON_AddNumberToObject(tab_obj, "task_id", (double)current->task_ext_id);
       cJSON_AddItemToArray(tabs_array, tab_obj);
       current = current->next;
     }
@@ -1453,7 +1624,7 @@ static void send_tasks_update_to_uds(EngineContext* ectx) {
     TaskInfo* current = ectx->task_state->tasks;
     while (current) {
       cJSON* task_obj = cJSON_CreateObject();
-      cJSON_AddNumberToObject(task_obj, "id", (double)current->task_id);
+      cJSON_AddNumberToObject(task_obj, "id", (double)current->external_id);
       cJSON_AddStringToObject(task_obj, "name", current->task_name ? current->task_name : "Unknown");
       cJSON_AddStringToObject(task_obj, "color", current->color ? current->color : "grey");
       cJSON_AddItemToArray(tasks_array, task_obj);

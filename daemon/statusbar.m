@@ -108,8 +108,10 @@ OSStatus HotKeyHandler(EventHandlerCallRef nextHandler, EventRef theEvent, void*
 }
 
 - (void)applicationWillTerminate:(NSNotification*)notification {
-  // Optional: Log or finalize hooks
-  // OS cleans up memory/sockets on exit
+  if (self.context && self.context->on_quit) {
+    // This triggers engine_destroy which dumps the manifest
+    self.context->on_quit(self.context->privdata);
+  }
 }
 
 @end

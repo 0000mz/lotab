@@ -2,88 +2,119 @@
 # requires-python = ">=3.12"
 # dependencies = [
 #     "psutil",
+#     "pytest",
 # ]
 # ///
 
-import subprocess
-import time
 import os
-import sys
+import time
+import subprocess
 import psutil
+import pytest
 
-DAEMON_BIN = sys.argv[1] if len(sys.argv) > 1 else "./build/daemon"
 APP_NAME = "Lotab"
+
+
+def get_name_of_bin(path: str) -> str:
+    return os.path.basename(path)
+
 
 def get_pids_by_name(name):
     pids = []
-    for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
+    for proc in psutil.process_iter(["pid", "name", "cmdline"]):
         try:
             # Match if name is in process name OR if it's in the command line (for daemon arg 0)
-            if name in proc.info['name'] or (proc.info['cmdline'] and name in proc.info['cmdline'][0]):
-                pids.append(proc.info['pid'])
+            if name in proc.info["name"] or (
+                proc.info["cmdline"] and name in proc.info["cmdline"][0]
+            ):
+                pids.append(proc.info["pid"])
         except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
             pass
     return pids
 
-def kill_proceses_by_name(name):
-    for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
+
+def kill_processes_by_name(name):
+    for proc in psutil.process_iter(["pid", "name", "cmdline"]):
         try:
-            if name in proc.info['name'] or (proc.info['cmdline'] and name in proc.info['cmdline'][0]):
+            if name in proc.info["name"] or (
+                proc.info["cmdline"] and name in proc.info["cmdline"][0]
+            ):
                 proc.kill()
         except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
             pass
 
-def test_quit_via_menu():
-    print("--- Starting Test: Quit via Menu (uv managed) ---")
+
+@pytest.fixture(scope="function")
+def daemon_bin():
+    # Allow overriding via environment variable, default to debug build
+    path = os.environ.get("DAEMON_BIN", "./build/debug/lotab_daemon_asan")
+    if not os.path.exists(path):
+        pytest.fail(f"Daemon binary not found at {path}. Build the project first.")
+    return path
+
+
+@pytest.fixture(scope="function")
+def daemon_process(daemon_bin):
+    """Fixture to start and manage the daemon process."""
+    print(f"\n[Fixture] Setting up daemon from {daemon_bin}...")
 
     # 1. Cleanup previous instances
-    kill_proceses_by_name("daemon")
-    kill_proceses_by_name("TabManager")
+    bin_name = get_name_of_bin(daemon_bin)
+    kill_processes_by_name(bin_name)
+    kill_processes_by_name(APP_NAME)
     time.sleep(1)
 
-    # 2. Build Check
-    if not os.path.exists(DAEMON_BIN):
-        print(f"Error: {DAEMON_BIN} not found. Run ./build.sh first.")
-        sys.exit(1)
-
-    # 3. Start Daemon
-    print(f"Launching {DAEMON_BIN}...")
-    daemon_proc = subprocess.Popen([DAEMON_BIN], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    # 2. Start Daemon
+    proc = subprocess.Popen(
+        [daemon_bin], stdout=subprocess.PIPE, stderr=subprocess.PIPE
+    )
 
     # Wait for startup
-    # Increased wait time to ensure status item is fully registered
     time.sleep(5)
 
-    if daemon_proc.poll() is not None:
-        print("ERROR: Daemon failed to start or exited immediately.")
-        sys.exit(1)
+    if proc.poll() is not None:
+        pytest.fail("Daemon failed to start or exited immediately.")
 
-    print("Daemon running with PID:", daemon_proc.pid)
+    print(f"[Fixture] Daemon started with PID: {proc.pid}")
 
-    # 4. Verify Child App Spawned
-    # Using psutil we can be more specific, but get_pids_by_name is reused
-    app_pids = get_pids_by_name("TabManager")
+    yield proc
 
-    # Filter out the daemon itself if it got matched (unlikely with "TabManager" vs "daemon", but safe)
-    app_pids = [p for p in app_pids if p != daemon_proc.pid]
+    # Teardown
+    print("\n[Fixture] Tearing down daemon...")
+    if proc.poll() is None:
+        proc.terminate()
+        try:
+            proc.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+
+    # Cleanup child GUI processes
+    kill_processes_by_name(APP_NAME)
+
+
+def test_quit_via_menu(daemon_process, daemon_bin):
+    """Test that the application quits correctly via the menu item."""
+
+    # 1. Verify Child App Spawned
+    # Excluding the daemon process itself from the check
+    app_pids = get_pids_by_name(APP_NAME)
+    app_pids = [p for p in app_pids if p != daemon_process.pid]
 
     if not app_pids:
-        print("ERROR: TabManager GUI did not spawn.")
-        daemon_proc.terminate()
-        sys.exit(1)
+        pytest.fail(f"{APP_NAME} GUI did not spawn.")
 
-    print("TabManager running with PID(s):", app_pids)
+    print(f"{APP_NAME} running with PID(s): {app_pids}")
 
-    # 5. Interact with UI via AppleScript
+    # 2. Interact with UI via AppleScript
     print("Attempting to click Quit menu item via AppleScript...")
-    print("NOTE: This requires Accessibility permissions for the terminal/editor running this script.")
 
-    applescript_cmd = """
+    daemon_name = get_name_of_bin(daemon_bin)
+
+    applescript_cmd = f"""
     tell application "System Events"
         try
-            tell process "daemon"
+            tell process "{daemon_name}"
                 -- Menu bar items behavior varies. Try detecting where it exists.
-                -- Often agent apps are in menu bar 2, but sometimes menu bar 1.
                 if exists (menu bar item 1 of menu bar 1) then
                      set statusItem to first menu bar item of menu bar 1
                 else
@@ -102,47 +133,33 @@ def test_quit_via_menu():
     """
 
     try:
-        res = subprocess.run(["osascript", "-e", applescript_cmd], check=True, capture_output=True, text=True)
+        res = subprocess.run(
+            ["osascript", "-e", applescript_cmd],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
         output = res.stdout.strip()
         if "ERROR:" in output:
-             print(f"AppleScript Error: {output}")
-             raise subprocess.CalledProcessError(1, "osascript", output=output)
+            pytest.fail(f"AppleScript Error: {output}")
 
     except subprocess.CalledProcessError as e:
-        print("ERROR: AppleScript failed to interact with the menu.")
         print("Details:", e.output if e.output else e.stderr)
-        print("Please check System Settings -> Privacy & Security -> Accessibility.")
-
-        daemon_proc.terminate()
-        kill_proceses_by_name("TabManager")
-        sys.exit(1)
+        pytest.fail("AppleScript failed. Check Accessibility permissions.")
 
     print("Clicked Quit. Waiting for termination...")
     time.sleep(3)
 
-    # 6. Verify Termination
-    failure = False
-
+    # 3. Verify Termination
     # Check Daemon
-    if daemon_proc.poll() is None:
-        print("ERROR: Daemon process is still running.")
-        daemon_proc.terminate()
-        failure = True
-    else:
-        print(f"Daemon terminated successfully (Return code: {daemon_proc.returncode}).")
+    if daemon_process.poll() is None:
+        pytest.fail("Daemon process is still running after Quit.")
+
+    print(f"Daemon terminated successfully (Return code: {daemon_process.returncode}).")
 
     # Check GUI App
-    remaining_apps = get_pids_by_name("TabManager")
+    remaining_apps = get_pids_by_name(APP_NAME)
     if remaining_apps:
-        print(f"ERROR: TabManager child process(es) still running: {remaining_apps}")
-        failure = True
-    else:
-        print("TabManager terminated successfully.")
+        pytest.fail(f"{APP_NAME} child process(es) still running: {remaining_apps}")
 
-    if failure:
-        sys.exit(1)
-
-    print("SUCCESS: Quit via menu worked correctly.")
-
-if __name__ == "__main__":
-    test_quit_via_menu()
+    print(f"{APP_NAME} terminated successfully.")

@@ -340,7 +340,7 @@ TEST_F(EngineTest, TabGroupSync) {
   ASSERT_NE(ectx_->tab_state, nullptr);
   TabInfo* tab = tab_state_find_tab(ectx_->tab_state, 501);
   ASSERT_NE(tab, nullptr);
-  EXPECT_EQ(tab->task_id, (int64_t)task->task_id);
+  EXPECT_EQ(tab->task_ext_id, (int64_t)task->external_id);
 }
 
 TEST_F(EngineTest, ConfigCreated) {

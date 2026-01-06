@@ -76,13 +76,14 @@ engine_dep = declare_dependency(
   dependencies : [lws_dep, cjson_dep, tomlc99_dep, cocoa_dep, carbon_dep]
 )
 
-executable('lotab_daemon', daemon_engine_src,
+daemon_exe = executable('lotab_daemon', daemon_engine_src,
            dependencies : [daemon_deps, engine_dep],
            install : true,
            install_rpath : get_option('prefix') / get_option('libdir'))
 
 # --- Unit Tests Dependency ---
 gtest_dep = dependency('gtest', main : true, required : false)
+gmock_dep = dependency('gmock', required : false)
 
 # --- Sanitizer Variants ---
 sanitizers = {
@@ -148,7 +149,7 @@ foreach s, suffix : sanitizers
 
     i_test_var = executable('integration_test' + suffix,
                         ['tests/integration_test.cc'],
-                        dependencies : [gtest_dep, engine_dep_var, client_dep_var],
+                        dependencies : [gtest_dep, gmock_dep, engine_dep_var, client_dep_var],
                         override_options : ['b_sanitize=' + s])
     test('integration_test' + suffix, i_test_var)
 
@@ -174,10 +175,7 @@ if gtest_dep.found()
 
   i_test = executable('integration_test',
                       ['tests/integration_test.cc'],
-                      dependencies : [gtest_dep, engine_dep, client_dep])
-  test('integration_test', i_test)
-
-  # Client Mode State Machine Test
+                      dependencies : [gtest_dep, gmock_dep, engine_dep, client_dep])
   # Client Mode State Machine Test
   cm_test = executable('client_mode_test',
                        ['tests/client_mode_test.cc'],
@@ -191,26 +189,30 @@ endif
 uv_prog = find_program('uv', required : true)
 if uv_prog.found()
   test('ui_test_quit', uv_prog,
-       args : ['run', meson.current_source_dir() / 'tests/ui_test_quit.py', meson.current_build_dir() / 'lotab_daemon'],
+       args : ['run', '--with', 'pytest', '--with', 'psutil', 'pytest', meson.current_source_dir() / 'tests/ui_test_quit.py'],
+       env : {'DAEMON_BIN': daemon_exe.full_path()},
+       depends : [daemon_exe],
+       timeout : 60,
        is_parallel : false)
   test('install_test', uv_prog,
        args : ['run', meson.current_source_dir() / 'tests/install_test.py'],
        is_parallel : false,
        timeout : 120)
+
+  test('extension_test', uv_prog,
+       args : ['run', '--with', 'playwright', '--with', 'pytest-asyncio', '--with', 'websockets', 'pytest', meson.current_source_dir() / 'tests/extension/test_integration.py'],
+       is_parallel : false,
+       timeout : 60)
+
+  test('e2e_test', uv_prog,
+       args : ['run', '--with', 'playwright', '--with', 'pytest-asyncio', '--with', 'psutil', 'pytest', '-v', '-s', meson.current_source_dir() / 'tests/e2e_test.py'],
+       env : ['DAEMON_BIN=' + daemon_exe.full_path()],
+       is_parallel : false,
+       timeout : 300)
 else
   message('uv not found, skipping python UI tests')
 endif
 
-npm_prog = find_program('npm', required : false)
-if npm_prog.found()
-  node_prog = find_program('node', required : false)
-  if node_prog.found()
-      test('extension_test', node_prog,
-           args : [meson.current_source_dir() / 'tests/extension/integration_test.js'],
-           workdir : meson.current_source_dir() / 'tests/extension',
-           timeout : 30)
-  endif
-endif
 
 # --- Install Scripts / Data ---
 # Configure com.mob.lotab.plist
