@@ -745,6 +745,10 @@ int engine_init(EngineContext** ectx, EngineCreationInfo cinfo) {
 
   lws_set_log_level(LLL_USER | LLL_ERR | LLL_WARN | LLL_NOTICE | LLL_INFO, lws_log_emit_cb);
 
+  if (cinfo.manifest_dir) {
+    ec->manifest_dir = strdup(cinfo.manifest_dir);
+  }
+
   if (cinfo.uds_path && strlen(cinfo.uds_path) > 0) {
     sc->uds_path = strdup(cinfo.uds_path);
   } else {
@@ -781,7 +785,15 @@ int engine_init(EngineContext** ectx, EngineCreationInfo cinfo) {
 
   char log_level_arg[16] = {0};
   snprintf(log_level_arg, sizeof(log_level_arg), "%d", engine_get_log_level());
-  char* spawn_args[] = {(char*)target_app_path, "--log-level", log_level_arg, NULL};
+
+  char* spawn_args[6] = {(char*)target_app_path, "--log-level", log_level_arg, NULL, NULL, NULL};
+  int arg_idx = 3;
+  if (ec->manifest_dir) {
+    spawn_args[arg_idx++] = "--manifest-dir";
+    spawn_args[arg_idx++] = ec->manifest_dir;
+  }
+  spawn_args[arg_idx] = NULL;
+
   int spawn_status = posix_spawn(&ec->app_pid, target_app_path, NULL, NULL, spawn_args, environ);
   if (spawn_status == 0) {
     vlog(LOG_LEVEL_INFO, ec, "Successfully spawned Lotab (PID: %d)\n", ec->app_pid);
@@ -831,6 +843,7 @@ static void sigint_handler(int sig) {
 
 void engine_run(EngineContext* ectx) {
   signal(SIGINT, sigint_handler);
+  signal(SIGTERM, sigint_handler);
   ectx->run_ctx = malloc(sizeof(StatusBarRunContext));
   if (!ectx->run_ctx) {
     vlog(LOG_LEVEL_ERROR, ectx, "Failed to allocate run context.\n");
@@ -846,10 +859,69 @@ void engine_run(EngineContext* ectx) {
   }
 }
 
+static void engine_dump_manifest(EngineContext* ectx) {
+  if (!ectx || !ectx->manifest_dir)
+    return;
+
+  cJSON* root = cJSON_CreateObject();
+
+  // Tabs
+  cJSON* tabs = cJSON_CreateArray();
+  cJSON_AddItemToObject(root, "tabs", tabs);
+  if (ectx->tab_state) {
+    TabInfo* t = ectx->tab_state->tabs;
+    while (t) {
+      cJSON* t_obj = cJSON_CreateObject();
+      cJSON_AddNumberToObject(t_obj, "id", (double)t->id);
+      cJSON_AddStringToObject(t_obj, "title", t->title ? t->title : "");
+      cJSON_AddBoolToObject(t_obj, "active", t->active);
+      cJSON_AddNumberToObject(t_obj, "task_id", (double)t->task_id);
+      cJSON_AddItemToArray(tabs, t_obj);
+      t = t->next;
+    }
+  }
+
+  // Tasks
+  cJSON* tasks = cJSON_CreateArray();
+  cJSON_AddItemToObject(root, "tasks", tasks);
+  if (ectx->task_state) {
+    TaskInfo* t = ectx->task_state->tasks;
+    while (t) {
+      cJSON* t_obj = cJSON_CreateObject();
+      cJSON_AddNumberToObject(t_obj, "task_id", (double)t->task_id);
+      cJSON_AddStringToObject(t_obj, "task_name", t->task_name ? t->task_name : "");
+      cJSON_AddStringToObject(t_obj, "color", t->color ? t->color : "");
+      cJSON_AddNumberToObject(t_obj, "external_id", (double)t->external_id);
+      cJSON_AddItemToArray(tasks, t_obj);
+      t = t->next;
+    }
+  }
+
+  char* json_str = cJSON_Print(root);
+
+  char path[1024];
+  snprintf(path, sizeof(path), "%s/daemon_manifest.json", ectx->manifest_dir);
+
+  FILE* f = fopen(path, "w");
+  if (f) {
+    fputs(json_str, f);
+    fclose(f);
+    vlog(LOG_LEVEL_INFO, ectx, "Dumped manifest to %s\n", path);
+  } else {
+    vlog(LOG_LEVEL_ERROR, ectx, "Failed to write manifest to %s\n", path);
+  }
+
+  free(json_str);
+  cJSON_Delete(root);
+}
+
 void engine_destroy(EngineContext* ectx) {
   assert(ectx);
   if (__atomic_exchange_n(&ectx->destroyed, 1, __ATOMIC_SEQ_CST))
     return;
+
+  engine_dump_manifest(ectx);
+
   if (ectx->app_pid >= 0) {
     kill_process(ectx->app_pid);
     ectx->app_pid = -1;
@@ -897,6 +969,10 @@ void engine_destroy(EngineContext* ectx) {
   if (ectx->ui_toggle_keybind) {
     free(ectx->ui_toggle_keybind);
     ectx->ui_toggle_keybind = NULL;
+  }
+  if (ectx->manifest_dir) {
+    free(ectx->manifest_dir);
+    ectx->manifest_dir = NULL;
   }
   ectx->destroyed = 1;
 }

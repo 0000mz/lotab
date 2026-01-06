@@ -22,7 +22,11 @@ def kill_processes_by_name(name):
             if name in proc.info["name"] or (
                 proc.info["cmdline"] and name in proc.info["cmdline"][0]
             ):
-                proc.kill()
+                proc.terminate()
+                try:
+                    proc.wait(timeout=2)
+                except psutil.TimeoutExpired:
+                    proc.kill()
         except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
             pass
 
@@ -80,15 +84,21 @@ def extension_path():
 
 
 @pytest.fixture(scope="function")
-def daemon_process(daemon_bin):
+def daemon_process(daemon_bin, tmp_path):
     print(f"\n[Fixture] Setting up daemon from {daemon_bin}...")
     bin_name = get_name_of_bin(daemon_bin)
     kill_processes_by_name(bin_name)
     kill_processes_by_name(APP_NAME)
     time.sleep(1)
 
+    manifest_dir = tmp_path / "manifests"
+    manifest_dir.mkdir()
+    print(f"[Fixture] Manifest dir: {manifest_dir}")
+
     proc = subprocess.Popen(
-        [daemon_bin], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+        [daemon_bin, "--manifest-dir", str(manifest_dir)],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
     )
     time.sleep(5)  # Wait for startup
 
@@ -102,11 +112,43 @@ def daemon_process(daemon_bin):
     if proc.poll() is None:
         proc.terminate()
         try:
-            proc.wait(timeout=2)
+            proc.wait(timeout=5)
         except subprocess.TimeoutExpired:
+            print("[Fixture] Daemon timed out, killing...")
             proc.kill()
 
+    # Give GUI a moment to write if it was triggered by daemon death
+    time.sleep(2)
     kill_processes_by_name(APP_NAME)
+
+    # Confirm State
+    import json
+
+    d_man = manifest_dir / "daemon_manifest.json"
+    if d_man.exists():
+        print(f"[Fixture] Daemon Manifest found: {d_man}")
+        try:
+            with open(d_man) as f:
+                data = json.load(f)
+                print(
+                    f"[Fixture] Daemon Manifest Content: {json.dumps(data, indent=2)}"
+                )
+        except Exception as e:
+            print(f"[Fixture] Failed to read daemon manifest: {e}")
+    else:
+        print("[Fixture] Daemon Manifest NOT found.")
+
+    g_man = manifest_dir / "gui_manifest.json"
+    if g_man.exists():
+        print(f"[Fixture] GUI Manifest found: {g_man}")
+        try:
+            with open(g_man) as f:
+                data = json.load(f)
+                print(f"[Fixture] GUI Manifest Content: {json.dumps(data, indent=2)}")
+        except Exception as e:
+            print(f"[Fixture] Failed to read GUI manifest: {e}")
+    else:
+        print("[Fixture] GUI Manifest NOT found.")
 
 
 @pytest_asyncio.fixture

@@ -23,15 +23,18 @@ void sigint_handler(int sig) {
 
 int main(int argc, const char** argv) {
   signal(SIGINT, sigint_handler);
+  signal(SIGTERM, sigint_handler);
 
   // Arg Parse
   const char* loglevel_str = NULL;
   const char* app_path = NULL;
+  const char* manifest_dir = NULL;
 
   struct argparse_option options[] = {
       OPT_HELP(),
       OPT_STRING('l', "loglevel", &loglevel_str, "info(default)|trace", NULL, 0, 0),
       OPT_STRING('a', "app-path", &app_path, "Path to the Lotab.app or executable", NULL, 0, 0),
+      OPT_STRING('m', "manifest-dir", &manifest_dir, "Directory to dump state manifests", NULL, 0, 0),
       OPT_END(),
   };
 
@@ -56,6 +59,7 @@ int main(int argc, const char** argv) {
       .port = 9001,
       .enable_statusbar = 1,
       .app_path = app_path,
+      .manifest_dir = manifest_dir,
   };
   engine_init(&ectx, create_info);
   engine_run(ectx);
