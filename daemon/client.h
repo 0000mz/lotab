@@ -14,14 +14,14 @@ typedef struct ClientContext ClientContext;
 
 // Data Structures
 typedef struct LotabTab {
-  int id;
+  int64_t id;
   char* title;
   bool active;
-  int task_id;
+  int64_t task_id;
 } LotabTab;
 
 typedef struct LotabTask {
-  int id;
+  int64_t id;
   char* name;
   char* color;
 } LotabTask;
@@ -57,10 +57,13 @@ void lotab_client_stop(ClientContext* ctx);
 void lotab_client_run_loop(ClientContext* ctx);
 
 // Send Actions
-void lotab_client_send_close_tabs(ClientContext* ctx, const int* tab_ids, size_t count);
-void lotab_client_send_tab_selected(ClientContext* ctx, int tab_id);
-void lotab_client_send_associate_tabs(ClientContext* ctx, const int* tab_ids, size_t count, int task_id);
-void lotab_client_send_create_task_and_associate(ClientContext* ctx, const char* name, const int* tab_ids, size_t count);
+void lotab_client_send_close_tabs(ClientContext* ctx, const int64_t* tab_ids, size_t count);
+void lotab_client_send_tab_selected(ClientContext* ctx, int64_t tab_id);
+void lotab_client_send_associate_tabs(ClientContext* ctx, const int64_t* tab_ids, size_t count, int64_t task_id);
+void lotab_client_send_create_task_and_associate(ClientContext* ctx,
+                                                 const char* name,
+                                                 const int64_t* tab_ids,
+                                                 size_t count);
 
 // Exposed for testing purposes
 void lotab_client_process_message(ClientContext* ctx, const char* json_str);

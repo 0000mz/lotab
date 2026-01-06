@@ -1,16 +1,16 @@
 import os
 import json
 import time
+import tempfile
 import asyncio
 import subprocess
 import psutil
 import pytest
+import shutil
 import pytest_asyncio
 from playwright.async_api import async_playwright
 
 APP_NAME = "Lotab"
-
-# --- Utilities ---
 
 
 def get_name_of_bin(path: str) -> str:
@@ -20,9 +20,17 @@ def get_name_of_bin(path: str) -> str:
 def kill_processes_by_name(name):
     for proc in psutil.process_iter(["pid", "name", "cmdline"]):
         try:
-            if name in proc.info["name"] or (
-                proc.info["cmdline"] and name in proc.info["cmdline"][0]
-            ):
+            pname = proc.info["name"]
+            cmdline = proc.info["cmdline"]
+
+            # Safety check: Do not kill Chrome/Playwright or this test runner
+            if "Chrome" in pname or "Playwright" in pname or "python" in pname:
+                continue
+
+            if name in pname or (cmdline and name in cmdline[0]):
+                print(
+                    f"Killing process: {pname} (PID: {proc.info['pid']}) Cmd: {cmdline}"
+                )
                 proc.terminate()
                 try:
                     proc.wait(timeout=2)
@@ -165,6 +173,146 @@ class DaemonContext:
                 print(f"[DaemonContext] Failed to parse GUI manifest: {e}")
 
 
+class BrowserContext:
+    def __init__(self, extension_path, headless=False):
+        self.extension_path = extension_path
+        self.headless = headless
+        self.playwright = None
+        self.context = None
+        self.user_data_dir = None
+
+    async def __aenter__(self):
+        self.user_data_dir = tempfile.mkdtemp()
+        self.playwright = await async_playwright().start()
+
+        args = [
+            f"--disable-extensions-except={self.extension_path}",
+            f"--load-extension={self.extension_path}",
+            "--no-sandbox",
+            "--disable-setuid-sandbox",
+        ]
+
+        self.context = await self.playwright.chromium.launch_persistent_context(
+            self.user_data_dir,
+            args=args,
+            headless=self.headless,
+        )
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        if self.context:
+            await self.context.close()
+        if self.playwright:
+            await self.playwright.stop()
+        if self.user_data_dir:
+            shutil.rmtree(self.user_data_dir, ignore_errors=True)
+
+    @property
+    def pages(self):
+        return self.context.pages if self.context else []
+
+    async def CreateNewPage(self):
+        return await self.context.new_page()
+
+    async def WaitForBackgroundPage(self):
+        for i in range(20):
+            if self.context.background_pages:
+                return self.context.background_pages[0]
+            if self.context.service_workers:
+                return self.context.service_workers[0]
+
+            # Wake up strategy: Open a dummy tab if SW is sleeping
+            if i == 10:  # After 5 seconds
+                print("[BrowserContext] Attempting to wake up Service Worker...")
+                try:
+                    page = await self.CreateNewPage()
+                    await page.close()
+                except Exception as e:
+                    print(f"[BrowserContext] Wake up failed: {e}")
+
+            if i % 5 == 0:
+                print(
+                    f"[BrowserContext] Waiting for background page... Pages: {len(self.context.pages)}, SWs: {len(self.context.service_workers)}"
+                )
+            await asyncio.sleep(0.5)
+        print(
+            f"FATAL: No background page or service worker found! Pages: {len(self.context.pages)}, SWs: {len(self.context.service_workers)}"
+        )
+        return None
+
+    async def GetActiveTabTitle(self):
+        bg = await self.WaitForBackgroundPage()
+        if not bg:
+            return None
+
+        return await bg.evaluate("""
+            () => new Promise(resolve => {
+                chrome.tabs.query({active: true, currentWindow: true}, (tabs) => {
+                    resolve(tabs[0] ? tabs[0].title : null);
+                });
+            })
+        """)
+
+    async def GetTabCount(self):
+        bg = await self.WaitForBackgroundPage()
+        if not bg:
+            return 0
+
+        return await bg.evaluate("""
+            () => new Promise(resolve => {
+                chrome.tabs.query({currentWindow: true}, (tabs) => {
+                    resolve(tabs.length);
+                });
+            })
+        """)
+
+    async def GetTabTitles(self):
+        bg = await self.WaitForBackgroundPage()
+        if not bg:
+            return []
+
+        return await bg.evaluate("""
+            () => new Promise(resolve => {
+                chrome.tabs.query({currentWindow: true}, (tabs) => {
+                    resolve(tabs.map(t => t.title));
+                });
+            })
+        """)
+
+    async def GetTabGroups(self):
+        bg = await self.WaitForBackgroundPage()
+        if not bg:
+            return []
+
+        return await bg.evaluate("""
+            () => new Promise(resolve => {
+                chrome.tabGroups.query({}, (groups) => {
+                    const result = [];
+                    let processed = 0;
+                    if (groups.length === 0) {
+                        resolve([]);
+                        return;
+                    }
+
+                    groups.forEach(g => {
+                        chrome.tabs.query({groupId: g.id}, (tabs) => {
+                            result.push({
+                                title: g.title,
+                                color: g.color,
+                                id: g.id,
+                                tabCount: tabs.length
+                            });
+                            processed++;
+                            if (processed === groups.length) {
+                                 resolve(result);
+                            }
+                        });
+                    });
+                });
+            })
+        """)
+
+
 @pytest.fixture(scope="function")
 def daemon_controller(daemon_bin):
     # Just a helper to return the constructor, or use the class directly in tests
@@ -183,312 +331,204 @@ def daemon_process(daemon_bin):
 
 @pytest_asyncio.fixture
 async def browser_context(extension_path):
-    import tempfile
-    import shutil
-
-    # ... existing implementation ...
-    user_data_dir = tempfile.mkdtemp()
-    async with async_playwright() as p:
-        args = [
-            f"--disable-extensions-except={extension_path}",
-            f"--load-extension={extension_path}",
-            "--no-sandbox",
-            "--disable-setuid-sandbox",
-        ]
-        try:
-            context = await p.chromium.launch_persistent_context(
-                user_data_dir,
-                args=args,
-                headless=False,
-            )
-            yield context
-            await context.close()
-        finally:
-            shutil.rmtree(user_data_dir, ignore_errors=True)
+    async with BrowserContext(extension_path) as browser:
+        yield browser
 
 
 # ... helpers ...
 
 
 @pytest.mark.asyncio
-async def test_incremental_group_assignment(daemon_bin, browser_context):
+async def test_incremental_group_assignment(daemon_bin, extension_path):
     """
     E2E Test: Incremental Group Assignment
     Uses explicit DaemonContext to verify manifests.
     """
-    import tempfile
+    async with BrowserContext(extension_path) as browser_context:
+        # Custom setup for 2 tabs
+        page1 = browser_context.pages[0]
+        await page1.goto("http://example.com")
+        await page1.evaluate("document.title = 'Tab 1'")
 
-    # Custom setup for 2 tabs
-    page1 = browser_context.pages[0]
-    await page1.goto("http://example.com")
-    await page1.evaluate("document.title = 'Tab 1'")
+        page2 = await browser_context.CreateNewPage()
+        await page2.goto("http://example.org")
+        await page2.evaluate("document.title = 'Tab 2'")
 
-    page2 = await browser_context.new_page()
-    await page2.goto("http://example.org")
-    await page2.evaluate("document.title = 'Tab 2'")
+        await asyncio.sleep(2)
 
-    await asyncio.sleep(2)
+        # Wait for tab count = 2
+        for _ in range(20):
+            count = await browser_context.GetTabCount()
+            if count == 2:
+                break
+            await asyncio.sleep(0.5)
 
-    # Wait for tab count = 2
-    for _ in range(20):
-        count = await get_tab_count(browser_context)
-        if count == 2:
-            break
-        await asyncio.sleep(0.5)
+        with (
+            tempfile.NamedTemporaryFile(suffix=".json", delete=False) as d_man_file,
+            tempfile.NamedTemporaryFile(suffix=".json", delete=False) as g_man_file,
+        ):
+            d_man_path = d_man_file.name
+            g_man_path = g_man_file.name
 
-    with (
-        tempfile.NamedTemporaryFile(suffix=".json", delete=False) as d_man_file,
-        tempfile.NamedTemporaryFile(suffix=".json", delete=False) as g_man_file,
-    ):
-        d_man_path = d_man_file.name
-        g_man_path = g_man_file.name
+            print(f"Daemon Manifest Path: {d_man_path}")
+            print(f"GUI Manifest Path: {g_man_path}")
 
-        print(f"Daemon Manifest Path: {d_man_path}")
-        print(f"GUI Manifest Path: {g_man_path}")
+            try:
+                with DaemonContext(daemon_bin, d_man_path, g_man_path) as daemon:
+                    # --- Part 1 ---
+                    await toggle_gui()
 
-        try:
-            with DaemonContext(daemon_bin, d_man_path, g_man_path) as daemon:
-                # --- Part 1 ---
-                await toggle_gui()
+                    # Select first tab (Tab 2, active)
+                    print("Part 1: Selecting first tab...")
+                    send_hotkey("space")
+                    await asyncio.sleep(0.5)
 
-                # Select first tab (Tab 2, active)
-                print("Part 1: Selecting first tab...")
-                send_hotkey("space")
-                await asyncio.sleep(0.5)
+                    print("Pressing M (Mark)...")
+                    send_hotkey("m")
+                    await asyncio.sleep(1.0)
 
-                print("Pressing M (Mark)...")
-                send_hotkey("m")
-                await asyncio.sleep(1.0)
+                    # Select "Create New Task" (default selection is 0)
+                    print("Selecting 'Create New Task'...")
+                    send_hotkey("return")
+                    await asyncio.sleep(0.5)
 
-                # Select "Create New Task" (default selection is 0)
-                print("Selecting 'Create New Task'...")
-                send_hotkey("return")
-                await asyncio.sleep(0.5)
+                    # Type "new-group"
+                    print("Typing 'new-group'...")
+                    for char in "new-group":
+                        send_hotkey(char)
+                        await asyncio.sleep(0.1)
 
-                # Type "new-group"
-                print("Typing 'new-group'...")
-                for char in "new-group":
-                    send_hotkey(char)
-                    await asyncio.sleep(0.1)
+                    print("Committing group...")
+                    send_hotkey("return")
+                    await asyncio.sleep(2.0)
 
-                print("Committing group...")
-                send_hotkey("return")
-                await asyncio.sleep(2.0)
+                    print("Pressing ESC to close...")
+                    send_hotkey("escape")
+                    await asyncio.sleep(1.0)
 
-                print("Pressing ESC to close...")
-                send_hotkey("escape")
-                await asyncio.sleep(1.0)
+                    # Verify Part 1
+                    groups = await browser_context.GetTabGroups()
+                    print(f"Groups Part 1: {groups}")
+                    assert len(groups) == 1
+                    assert groups[0]["title"] == "new-group"
+                    assert groups[0]["tabCount"] == 1
 
-                # Verify Part 1
-                groups = await get_tab_groups(browser_context)
-                print(f"Groups Part 1: {groups}")
-                assert len(groups) == 1
-                assert groups[0]["title"] == "new-group"
-                assert groups[0]["tabCount"] == 1
+                    # Check unassociated
+                    bg = await browser_context.WaitForBackgroundPage()
+                    ungrouped_count = await bg.evaluate("""
+                        () => new Promise(resolve => {
+                            chrome.tabs.query({groupId: chrome.tabGroups.TAB_GROUP_ID_NONE}, (tabs) => {
+                                resolve(tabs.length);
+                            });
+                        })
+                    """)
+                    print(f"Ungrouped count: {ungrouped_count}")
+                    assert ungrouped_count == 1
 
-                # Check unassociated
-                bg = await wait_for_background_page(browser_context)
-                ungrouped_count = await bg.evaluate("""
-                    () => new Promise(resolve => {
-                        chrome.tabs.query({groupId: chrome.tabGroups.TAB_GROUP_ID_NONE}, (tabs) => {
-                            resolve(tabs.length);
-                        });
-                    })
-                """)
-                print(f"Ungrouped count: {ungrouped_count}")
-                assert ungrouped_count == 1
+                    # --- Part 2 ---
+                    print("Part 2: Reopening GUI...")
+                    await toggle_gui()
 
-                # --- Part 2 ---
-                print("Part 2: Reopening GUI...")
-                await toggle_gui()
+                    # Navigate to unassociated tab.
+                    print("Navigating to unassociated tab (Second item)...")
+                    send_hotkey("down")
+                    await asyncio.sleep(0.5)
 
-                # Navigate to unassociated tab.
-                print("Navigating to unassociated tab (Second item)...")
-                send_hotkey("down")
-                await asyncio.sleep(0.5)
+                    print("Selecting tab (Space)...")
+                    send_hotkey("space")
+                    await asyncio.sleep(0.5)
 
-                print("Selecting tab (Space)...")
-                send_hotkey("space")
-                await asyncio.sleep(0.5)
+                    print("Pressing M...")
+                    send_hotkey("m")
+                    await asyncio.sleep(1.0)
 
-                print("Pressing M...")
-                send_hotkey("m")
-                await asyncio.sleep(1.0)
+                    # List of tasks: [Create New, new-group]
+                    print("Navigating to 'new-group' (Down)...")
+                    send_hotkey("down")
+                    await asyncio.sleep(0.5)
 
-                # List of tasks: [Create New, new-group]
-                print("Navigating to 'new-group' (Down)...")
-                send_hotkey("down")
-                await asyncio.sleep(0.5)
+                    print("Committing...")
+                    send_hotkey("return")
+                    await asyncio.sleep(2.0)
 
-                print("Committing...")
-                send_hotkey("return")
-                await asyncio.sleep(2.0)
+                    print("Pressing ESC to close...")
+                    send_hotkey("escape")
+                    await asyncio.sleep(1.0)
 
-                print("Pressing ESC to close...")
-                send_hotkey("escape")
-                await asyncio.sleep(1.0)
+                    # Verify Part 2
+                    groups = await browser_context.GetTabGroups()
+                    print(f"Groups Part 2: {groups}")
+                    assert len(groups) == 1
+                    assert groups[0]["title"] == "new-group"
+                    assert groups[0]["tabCount"] == 2
 
-                # Verify Part 2
-                groups = await get_tab_groups(browser_context)
-                print(f"Groups Part 2: {groups}")
-                assert len(groups) == 1
-                assert groups[0]["title"] == "new-group"
-                assert groups[0]["tabCount"] == 2
+                    ungrouped_count_2 = await bg.evaluate("""
+                        () => new Promise(resolve => {
+                            chrome.tabs.query({groupId: chrome.tabGroups.TAB_GROUP_ID_NONE}, (tabs) => {
+                                resolve(tabs.length);
+                            });
+                        })
+                    """)
+                    print(f"Ungrouped count: {ungrouped_count_2}")
+                    assert ungrouped_count_2 == 0
 
-                ungrouped_count_2 = await bg.evaluate("""
-                    () => new Promise(resolve => {
-                        chrome.tabs.query({groupId: chrome.tabGroups.TAB_GROUP_ID_NONE}, (tabs) => {
-                            resolve(tabs.length);
-                        });
-                    })
-                """)
-                print(f"Ungrouped count: {ungrouped_count_2}")
-                assert ungrouped_count_2 == 0
+                # --- Context Manager Exited: Daemon Terminated ---
 
-            # --- Context Manager Exited: Daemon Terminated ---
+                # Verify Manifests (Loaded by DaemonContext)
+                print("\n[Test] Verifying Manifests...")
 
-            # Verify Manifests (Loaded by DaemonContext)
-            print("\n[Test] Verifying Manifests...")
+                # Daemon Manifest
+                if daemon.daemon_manifest:
+                    print(
+                        f"[Test] Daemon Manifest Content: {json.dumps(daemon.daemon_manifest, indent=2)}"
+                    )
+                else:
+                    print("[Test] Daemon Manifest NOT found or empty.")
 
-            # Daemon Manifest
-            if daemon.daemon_manifest:
-                print(
-                    f"[Test] Daemon Manifest Content: {json.dumps(daemon.daemon_manifest, indent=2)}"
-                )
-            else:
-                print("[Test] Daemon Manifest NOT found or empty.")
+                # GUI Manifest
+                if daemon.gui_manifest:
+                    print(
+                        f"[Test] GUI Manifest Content: {json.dumps(daemon.gui_manifest, indent=2)}"
+                    )
+                    assert (
+                        len(daemon.gui_manifest.get("tasks", [])) == 1
+                    )  # Correct behavior: 1 task
+                    # Check for 'new-group'
+                    names = [t["name"] for t in daemon.gui_manifest["tasks"]]
+                    assert "new-group" in names
+                else:
+                    print("[Test] GUI Manifest NOT found or empty.")
 
-            # GUI Manifest
-            if daemon.gui_manifest:
-                print(
-                    f"[Test] GUI Manifest Content: {json.dumps(daemon.gui_manifest, indent=2)}"
-                )
-                assert (
-                    len(daemon.gui_manifest.get("tasks", [])) == 1
-                )  # Correct behavior: 1 task
-                # Check for 'new-group'
-                names = [t["name"] for t in daemon.gui_manifest["tasks"]]
-                assert "new-group" in names
-            else:
-                print("[Test] GUI Manifest NOT found or empty.")
-
-        finally:
-            if os.path.exists(d_man_path):
-                os.remove(d_man_path)
-            if os.path.exists(g_man_path):
-                os.remove(g_man_path)
+            finally:
+                if os.path.exists(d_man_path):
+                    os.remove(d_man_path)
+                if os.path.exists(g_man_path):
+                    os.remove(g_man_path)
 
 
 # --- Helpers ---
 
 
-async def wait_for_background_page(browser_context):
-    for i in range(20):
-        if browser_context.background_pages:
-            return browser_context.background_pages[0]
-        if browser_context.service_workers:
-            return browser_context.service_workers[0]
-        await asyncio.sleep(0.5)
-    print("FATAL: No background page or service worker found!")
-    return None
-
-
-async def get_active_tab_title(browser_context):
-    bg = await wait_for_background_page(browser_context)
-    if not bg:
-        return None
-
-    return await bg.evaluate("""
-        () => new Promise(resolve => {
-            chrome.tabs.query({active: true, currentWindow: true}, (tabs) => {
-                resolve(tabs[0] ? tabs[0].title : null);
-            });
-        })
-    """)
-
-
-async def get_tab_count(browser_context):
-    bg = await wait_for_background_page(browser_context)
-    if not bg:
-        return 0
-
-    return await bg.evaluate("""
-        () => new Promise(resolve => {
-            chrome.tabs.query({currentWindow: true}, (tabs) => {
-                resolve(tabs.length);
-            });
-        })
-    """)
-
-
-async def get_tab_titles(browser_context):
-    bg = await wait_for_background_page(browser_context)
-    if not bg:
-        return []
-
-    return await bg.evaluate("""
-        () => new Promise(resolve => {
-            chrome.tabs.query({currentWindow: true}, (tabs) => {
-                resolve(tabs.map(t => t.title));
-            });
-        })
-    """)
-
-
-async def get_tab_groups(browser_context):
-    bg = await wait_for_background_page(browser_context)
-    if not bg:
-        return []
-
-    return await bg.evaluate("""
-        () => new Promise(resolve => {
-            chrome.tabGroups.query({}, (groups) => {
-                const result = [];
-                let processed = 0;
-                if (groups.length === 0) {
-                    resolve([]);
-                    return;
-                }
-
-                groups.forEach(g => {
-                    chrome.tabs.query({groupId: g.id}, (tabs) => {
-                        result.push({
-                            title: g.title,
-                            color: g.color,
-                            id: g.id,
-                            tabCount: tabs.length
-                        });
-                        processed++;
-                        if (processed === groups.length) {
-                             resolve(result);
-                        }
-                    });
-                });
-            });
-        })
-    """)
-
-
-async def setup_tabs(browser_context):
-    page1 = browser_context.pages[0]
+async def setup_tabs(browser):
+    page1 = browser.pages[0]
     await page1.goto("http://example.com")
     await page1.evaluate("document.title = 'Tab 1'")
 
-    page2 = await browser_context.new_page()
+    page2 = await browser.CreateNewPage()
     await page2.goto("http://example.org")
     await page2.evaluate("document.title = 'Tab 2'")
 
-    page3 = await browser_context.new_page()
+    page3 = await browser.CreateNewPage()
     await page3.goto("http://example.net")
     await page3.evaluate("document.title = 'Tab 3'")
 
     await asyncio.sleep(2)
 
     # Wait for extension to know about these tabs
-    # We can query get_tab_count until it is 3
+    # We can query GetTabCount until it is 3
     count = 0
     for _ in range(20):
-        count = await get_tab_count(browser_context)
+        count = await browser.GetTabCount()
         if count == 3:
             break
         await asyncio.sleep(0.5)
@@ -528,7 +568,7 @@ async def test_navigation(daemon_process, browser_context):
     send_hotkey("return")
     await asyncio.sleep(1)
 
-    active_title = await get_active_tab_title(browser_context)
+    active_title = await browser_context.GetActiveTabTitle()
     print(f"Active: {active_title}")
     assert active_title in ["Tab 1", "Tab 2", "Tab 3"]
 
@@ -541,7 +581,7 @@ async def test_navigation(daemon_process, browser_context):
     send_hotkey("return")
     await asyncio.sleep(1)
 
-    active_title = await get_active_tab_title(browser_context)
+    active_title = await browser_context.GetActiveTabTitle()
     print(f"Active: {active_title}")
 
 
@@ -566,11 +606,11 @@ async def test_close_via_navigate(daemon_process, browser_context):
     await asyncio.sleep(1)  # Wait for IPC
 
     # Check tab count
-    count = await get_tab_count(browser_context)
+    count = await browser_context.GetTabCount()
     print(f"Tab Count: {count}")
     assert count == 2, f"Expected 2 tabs, got {count}"
 
-    titles = await get_tab_titles(browser_context)
+    titles = await browser_context.GetTabTitles()
     print(f"Remaining Tabs: {titles}")
 
 
@@ -606,11 +646,11 @@ async def test_close_via_search(daemon_process, browser_context):
     send_hotkey("x")
     await asyncio.sleep(2.0)
 
-    count = await get_tab_count(browser_context)
+    count = await browser_context.GetTabCount()
     print(f"Tab Count: {count}")
     assert count == 2
 
-    titles = await get_tab_titles(browser_context)
+    titles = await browser_context.GetTabTitles()
     assert "Tab 2" not in titles
 
 
@@ -648,7 +688,7 @@ async def test_close_via_select_space(daemon_process, browser_context):
     send_hotkey("x")
     await asyncio.sleep(1)
 
-    count = await get_tab_count(browser_context)
+    count = await browser_context.GetTabCount()
     print(f"Tab Count: {count}")
     assert count <= 2
 
@@ -674,7 +714,7 @@ async def test_create_tab_group(daemon_process, browser_context):
     await setup_tabs(browser_context)
 
     # Ensure no groups initially
-    groups = await get_tab_groups(browser_context)
+    groups = await browser_context.GetTabGroups()
     assert len(groups) == 0, "Expected 0 tab groups initially"
 
     await toggle_gui()
@@ -726,7 +766,7 @@ async def test_create_tab_group(daemon_process, browser_context):
     await asyncio.sleep(2.0)  # Wait for extension to process
 
     # Verify
-    groups = await get_tab_groups(browser_context)
+    groups = await browser_context.GetTabGroups()
     print(f"Tab Groups Found: {groups}")
 
     assert len(groups) == 1, f"Expected 1 tab group, found {len(groups)}"
@@ -755,7 +795,7 @@ async def test_assign_all_tabs_to_existing_group(daemon_process, browser_context
     page1, page2, page3 = await setup_tabs(browser_context)
 
     # 2. Programmatically create 'tab group 1' with the first tab
-    bg = await wait_for_background_page(browser_context)
+    bg = await browser_context.WaitForBackgroundPage()
     await bg.evaluate("""
         () => new Promise(resolve => {
             chrome.tabs.query({title: 'Tab 1'}, (tabs) => {
@@ -797,7 +837,7 @@ async def test_assign_all_tabs_to_existing_group(daemon_process, browser_context
     await asyncio.sleep(2.0)
 
     # 8. Verify
-    groups = await get_tab_groups(browser_context)
+    groups = await browser_context.GetTabGroups()
     print(f"Tab Groups Found: {groups}")
 
     assert len(groups) == 1, f"Expected 1 tab group, found {len(groups)}"

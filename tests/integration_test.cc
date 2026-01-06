@@ -13,15 +13,15 @@
 
 // Helper to make callbacks testable
 struct TabData {
-  int id;
+  int64_t id;
   std::string title;
-  int task_id;
+  int64_t task_id;
   bool operator==(const TabData& other) const {
     return id == other.id && title == other.title && task_id == other.task_id;
   }
 };
 
-TabData MakeTab(int id, std::string title, int task_id = -1) {
+TabData MakeTab(int64_t id, std::string title, int64_t task_id = -1) {
   return {id, title, task_id};
 }
 

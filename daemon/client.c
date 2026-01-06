@@ -141,10 +141,10 @@ void lotab_client_process_message(ClientContext* ctx, const char* json_str) {
         cJSON* active = cJSON_GetObjectItem(item, "active");
         cJSON* task_id = cJSON_GetObjectItem(item, "task_id");
 
-        list.tabs[i].id = cJSON_IsNumber(id) ? (int)id->valuedouble : 0;
+        list.tabs[i].id = cJSON_IsNumber(id) ? (int64_t)id->valuedouble : 0;
         list.tabs[i].title = (cJSON_IsString(title) && title->valuestring) ? strdup(title->valuestring) : strdup("");
         list.tabs[i].active = cJSON_IsBool(active) ? cJSON_IsTrue(active) : false;
-        list.tabs[i].task_id = cJSON_IsNumber(task_id) ? (int)task_id->valuedouble : -1;
+        list.tabs[i].task_id = cJSON_IsNumber(task_id) ? (int64_t)task_id->valuedouble : -1;
       }
 
       if (ctx->callbacks.on_tabs_update) {
@@ -172,7 +172,7 @@ void lotab_client_process_message(ClientContext* ctx, const char* json_str) {
         cJSON* name = cJSON_GetObjectItem(item, "name");
         cJSON* color = cJSON_GetObjectItem(item, "color");
 
-        list.tasks[i].id = cJSON_IsNumber(id) ? (int)id->valuedouble : 0;
+        list.tasks[i].id = cJSON_IsNumber(id) ? (int64_t)id->valuedouble : 0;
         list.tasks[i].name = (cJSON_IsString(name) && name->valuestring) ? strdup(name->valuestring) : strdup("");
         list.tasks[i].color =
             (cJSON_IsString(color) && color->valuestring) ? strdup(color->valuestring) : strdup("grey");
@@ -342,7 +342,7 @@ static void send_json_message(ClientContext* ctx, cJSON* json) {
   free(json_str);
 }
 
-void lotab_client_send_close_tabs(ClientContext* ctx, const int* tab_ids, size_t count) {
+void lotab_client_send_close_tabs(ClientContext* ctx, const int64_t* tab_ids, size_t count) {
   if (!ctx || count == 0)
     return;
 
@@ -356,14 +356,14 @@ void lotab_client_send_close_tabs(ClientContext* ctx, const int* tab_ids, size_t
   cJSON_AddItemToObject(data, "tabIds", ids);
 
   for (size_t i = 0; i < count; i++) {
-    cJSON_AddItemToArray(ids, cJSON_CreateNumber(tab_ids[i]));
+    cJSON_AddItemToArray(ids, cJSON_CreateNumber((double)tab_ids[i]));
   }
 
   send_json_message(ctx, root);
   cJSON_Delete(root);
 }
 
-void lotab_client_send_tab_selected(ClientContext* ctx, int tab_id) {
+void lotab_client_send_tab_selected(ClientContext* ctx, int64_t tab_id) {
   if (!ctx)
     return;
 
@@ -373,7 +373,7 @@ void lotab_client_send_tab_selected(ClientContext* ctx, int tab_id) {
   cJSON* data = cJSON_CreateObject();
   cJSON_AddItemToObject(root, "data", data);
 
-  cJSON_AddNumberToObject(data, "tabId", tab_id);
+  cJSON_AddNumberToObject(data, "tabId", (double)tab_id);
 
   send_json_message(ctx, root);
   cJSON_Delete(root);
@@ -1050,19 +1050,19 @@ void lm_mode_task_creation__process_key(void* data,
   }
 }
 
-void lotab_client_send_associate_tabs(ClientContext* ctx, const int* tab_ids, size_t count, int task_id) {
+void lotab_client_send_associate_tabs(ClientContext* ctx, const int64_t* tab_ids, size_t count, int64_t task_id) {
   if (!ctx || count == 0)
     return;
   cJSON* root = cJSON_CreateObject();
   cJSON_AddStringToObject(root, "event", "GUI::UDS::AssociateTabs");
   cJSON* data = cJSON_CreateObject();
   cJSON_AddItemToObject(root, "data", data);
-  cJSON_AddNumberToObject(data, "taskId", task_id);
+  cJSON_AddNumberToObject(data, "taskId", (double)task_id);
   cJSON_AddNumberToObject(data, "count", count);
   cJSON* ids = cJSON_CreateArray();
   cJSON_AddItemToObject(data, "tabIds", ids);
   for (size_t i = 0; i < count; i++) {
-    cJSON_AddItemToArray(ids, cJSON_CreateNumber(tab_ids[i]));
+    cJSON_AddItemToArray(ids, cJSON_CreateNumber((double)tab_ids[i]));
   }
   send_json_message(ctx, root);
   cJSON_Delete(root);
@@ -1070,7 +1070,7 @@ void lotab_client_send_associate_tabs(ClientContext* ctx, const int* tab_ids, si
 
 void lotab_client_send_create_task_and_associate(ClientContext* ctx,
                                                  const char* name,
-                                                 const int* tab_ids,
+                                                 const int64_t* tab_ids,
                                                  size_t count) {
   if (!ctx || !name)
     return;
@@ -1084,7 +1084,7 @@ void lotab_client_send_create_task_and_associate(ClientContext* ctx,
     cJSON* ids = cJSON_CreateArray();
     cJSON_AddItemToObject(data, "associateTabIds", ids);
     for (size_t i = 0; i < count; i++) {
-      cJSON_AddItemToArray(ids, cJSON_CreateNumber(tab_ids[i]));
+      cJSON_AddItemToArray(ids, cJSON_CreateNumber((double)tab_ids[i]));
     }
   }
   send_json_message(ctx, root);
