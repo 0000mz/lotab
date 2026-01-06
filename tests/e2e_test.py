@@ -560,3 +560,129 @@ async def test_assign_all_tabs_to_existing_group(daemon_process, browser_context
     assert groups[0]["tabCount"] == 3, (
         f"Expected 3 tabs in group, got {groups[0]['tabCount']}"
     )
+
+
+@pytest.mark.asyncio
+async def test_incremental_group_assignment(daemon_process, browser_context):
+    """
+    E2E Test: Incremental Group Assignment
+    Part 1: create 2 tabs. Select first tab. Create new task 'new-group'.
+    Verify 1 group (1 tab) and 1 unassociated tab.
+    Part 2: Open GUI. Navigate to unassociated tab. Add to 'new-group'.
+    Verify 1 group (2 tabs) and 0 unassociated.
+    """
+    # Custom setup for 2 tabs
+    page1 = browser_context.pages[0]
+    await page1.goto("http://example.com")
+    await page1.evaluate("document.title = 'Tab 1'")
+
+    page2 = await browser_context.new_page()
+    await page2.goto("http://example.org")
+    await page2.evaluate("document.title = 'Tab 2'")
+
+    await asyncio.sleep(2)
+
+    # Wait for tab count = 2
+    for _ in range(20):
+        count = await get_tab_count(browser_context)
+        if count == 2:
+            break
+        await asyncio.sleep(0.5)
+
+    # --- Part 1 ---
+    await toggle_gui()
+
+    # Select first tab (Tab 2, active)
+    print("Part 1: Selecting first tab...")
+    send_hotkey("space")
+    await asyncio.sleep(0.5)
+
+    print("Pressing M (Mark)...")
+    send_hotkey("m")
+    await asyncio.sleep(1.0)
+
+    # Select "Create New Task" (default selection is 0)
+    print("Selecting 'Create New Task'...")
+    send_hotkey("return")
+    await asyncio.sleep(0.5)
+
+    # Type "new-group"
+    print("Typing 'new-group'...")
+    for char in "new-group":
+        send_hotkey(char)
+        await asyncio.sleep(0.1)
+
+    print("Committing group...")
+    send_hotkey("return")
+    await asyncio.sleep(2.0)
+
+    print("Pressing ESC to close...")
+    send_hotkey("escape")
+    await asyncio.sleep(1.0)
+
+    # Verify Part 1
+    groups = await get_tab_groups(browser_context)
+    print(f"Groups Part 1: {groups}")
+    assert len(groups) == 1
+    assert groups[0]["title"] == "new-group"
+    assert groups[0]["tabCount"] == 1
+
+    # Check unassociated
+    bg = await wait_for_background_page(browser_context)
+    ungrouped_count = await bg.evaluate("""
+        () => new Promise(resolve => {
+            chrome.tabs.query({groupId: chrome.tabGroups.TAB_GROUP_ID_NONE}, (tabs) => {
+                resolve(tabs.length);
+            });
+        })
+    """)
+    print(f"Ungrouped count: {ungrouped_count}")
+    assert ungrouped_count == 1
+
+    # --- Part 2 ---
+    print("Part 2: Reopening GUI...")
+    await toggle_gui()
+
+    # Navigate to unassociated tab.
+    # List order: [Tab 2 (Linked), Tab 1 (Unlinked)]
+    print("Navigating to unassociated tab (Second item)...")
+    send_hotkey("down")
+    await asyncio.sleep(0.5)
+
+    print("Selecting tab (Space)...")
+    send_hotkey("space")
+    await asyncio.sleep(0.5)
+
+    print("Pressing M...")
+    send_hotkey("m")
+    await asyncio.sleep(1.0)
+
+    # List of tasks: [Create New, new-group]
+    print("Navigating to 'new-group' (Down)...")
+    send_hotkey("down")
+    await asyncio.sleep(0.5)
+
+    print("Committing...")
+    send_hotkey("return")
+    await asyncio.sleep(2.0)
+
+    print("Pressing ESC to close...")
+    send_hotkey("escape")
+    await asyncio.sleep(1.0)
+
+    # Verify Part 2
+    groups = await get_tab_groups(browser_context)
+    print(f"Groups Part 2: {groups}")
+    assert len(groups) == 1
+    assert groups[0]["title"] == "new-group"
+    assert groups[0]["tabCount"] == 2
+
+    ungrouped_count_2 = await bg.evaluate("""
+        () => new Promise(resolve => {
+            chrome.tabs.query({groupId: chrome.tabGroups.TAB_GROUP_ID_NONE}, (tabs) => {
+                resolve(tabs.length);
+            });
+        })
+    """)
+    print(f"Ungrouped count: {ungrouped_count_2}")
+    assert ungrouped_count_2 == 0
