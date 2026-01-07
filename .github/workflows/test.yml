@@ -1,0 +1,23 @@
+name: Test
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  build:
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+      - name: install-mv
+        run: brew install uv
+      - name: build
+        run: ./build.sh
+      - name: client-test (asan)
+        run: ./build/debug/client_test_asan
+      - name: engine-test (asan)
+        run: ./build/debug/engine_test_asan
+      - name: integration-test (asan)
+        run: ./build/debug/integration_test_asan
+      - name: client-mode-test (asan)
+        run: ./build/debug/client_mode_test_asan
