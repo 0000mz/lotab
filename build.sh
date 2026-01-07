@@ -1,6 +1,15 @@
 #!/bin/bash
 
+set -e
 MESON=${MESON:-meson}
+
+REQUIRED_VERSION="1.10.0"
+CURRENT_VERSION=$("$MESON" --version)
+
+if [ "$CURRENT_VERSION" != "$REQUIRED_VERSION" ]; then
+    echo "Error: Meson version $REQUIRED_VERSION is required, but found $CURRENT_VERSION"
+    exit 1
+fi
 
 BUILD_DIR="build/debug"
 BUILD_TYPE="debug"
