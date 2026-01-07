@@ -62,8 +62,12 @@ void vlog(LogLevel level, void* cls, const char* fmt, ...) {
   }
   uint64_t tid;
   pthread_threadid_np(NULL, &tid);
-  fprintf(f, "%s%c %d:%llu [%s @ %p]%s %s", color, l_prefix, getpid(), tid, ecls ? ecls->name : "null", (void*)ecls,
-          reset, buf);
+  if (isatty(fileno(f))) {
+    fprintf(f, "%s%c %d:%llu [%s @ %p]%s %s", color, l_prefix, getpid(), tid, ecls ? ecls->name : "null", (void*)ecls,
+            reset, buf);
+  } else {
+    fprintf(f, "%c %d:%llu [%s @ %p] %s", l_prefix, getpid(), tid, ecls ? ecls->name : "null", (void*)ecls, buf);
+  }
 }
 
 void vlog_s(int level, struct EngClass* cls, const char* msg) {
