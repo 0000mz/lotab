@@ -5,7 +5,8 @@
   "description": "Manage tabs like you manage your tasks.",
   "permissions": [
     "tabs",
-    "tabGroups"
+    "tabGroups",
+    "storage"
   ],
   "background": {
     "service_worker": "background.js"

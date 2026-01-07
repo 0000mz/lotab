@@ -11,6 +11,7 @@ import pytest_asyncio
 from playwright.async_api import async_playwright
 
 APP_NAME = "Lotab"
+DAEMON_LOG_LEVEL = "--verbose"
 
 
 def get_name_of_bin(path: str) -> str:
@@ -93,10 +94,17 @@ def extension_path():
 
 
 class DaemonContext:
-    def __init__(self, daemon_bin, daemon_manifest_path=None, gui_manifest_path=None):
+    def __init__(
+        self,
+        daemon_bin,
+        daemon_manifest_path=None,
+        gui_manifest_path=None,
+        allowed_browser_id=None,
+    ):
         self.daemon_bin = daemon_bin
         self.daemon_manifest_path = daemon_manifest_path
         self.gui_manifest_path = gui_manifest_path
+        self.allowed_browser_id = allowed_browser_id
         self.proc = None
         self.daemon_manifest = None
         self.gui_manifest = None
@@ -113,6 +121,8 @@ class DaemonContext:
             args.extend(["--daemon-manifest-path", self.daemon_manifest_path])
         if self.gui_manifest_path:
             args.extend(["--gui-manifest-path", self.gui_manifest_path])
+        if self.allowed_browser_id:
+            args.extend(["--allowed-browser-id", self.allowed_browser_id])
 
         print(f"[DaemonContext] Args: {args}")
 
@@ -174,9 +184,10 @@ class DaemonContext:
 
 
 class BrowserContext:
-    def __init__(self, extension_path, headless=False):
+    def __init__(self, extension_path, headless=False, browser_id=None):
         self.extension_path = extension_path
         self.headless = headless
+        self.browser_id = browser_id
         self.playwright = None
         self.context = None
         self.user_data_dir = None
@@ -197,6 +208,21 @@ class BrowserContext:
             args=args,
             headless=self.headless,
         )
+
+        if self.browser_id:
+            # Wait for background page to ensure we can inject storage
+            bg = await self.WaitForBackgroundPage()
+            if bg:
+                print(f"[BrowserContext] Injecting browserSessionId: {self.browser_id}")
+                await bg.evaluate(f"""
+                   () => chrome.storage.session.set({{ browserSessionId: '{self.browser_id}' }})
+               """)
+                # Reload extension to pick up the ID immediately
+                # We can reload via chrome.runtime.reload() but that might kill the context?
+                # Actually, our background script checks storage on connect.
+                # We just need to force a reconnect or reload.
+                # Since logEvent reads storage dynamically, we don't need to force reload.
+
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
@@ -316,22 +342,29 @@ class BrowserContext:
 @pytest.fixture(scope="function")
 def daemon_controller(daemon_bin):
     # Just a helper to return the constructor, or use the class directly in tests
-    return lambda d_path=None, g_path=None: DaemonContext(daemon_bin, d_path, g_path)
+    return lambda d_path=None, g_path=None, allowed_id=None: DaemonContext(
+        daemon_bin, d_path, g_path, allowed_id
+    )
 
 
 @pytest.fixture(scope="function")
 def daemon_process(daemon_bin):
     # BACKWARD COMPATIBILITY for other tests
-    # This fixture starts the daemon without manifest paths
-    ctx = DaemonContext(daemon_bin)
+    # This fixture starts the daemon without manifest paths, but WITH a generated browser ID
+    import uuid
+
+    test_browser_id = str(uuid.uuid4())
+    ctx = DaemonContext(daemon_bin, allowed_browser_id=test_browser_id)
     ctx.__enter__()
-    yield ctx.proc
+    yield ctx.proc, test_browser_id
     ctx.__exit__(None, None, None)
 
 
 @pytest_asyncio.fixture
-async def browser_context(extension_path):
-    async with BrowserContext(extension_path) as browser:
+async def browser_context(extension_path, daemon_process):
+    # Unpack the tuple from daemon_process (proc, browser_id)
+    _, browser_id = daemon_process
+    async with BrowserContext(extension_path, browser_id=browser_id) as browser:
         yield browser
 
 
@@ -374,7 +407,28 @@ async def test_incremental_group_assignment(daemon_bin, extension_path):
             print(f"GUI Manifest Path: {g_man_path}")
 
             try:
-                with DaemonContext(daemon_bin, d_man_path, g_man_path) as daemon:
+                # Use a specific browser ID for this manual test too
+                # We need to restart browser with this ID?
+                # Actually, browser_context is already running with the ID from the fixture 'daemon_process'.
+                # But here we are starting a NEW daemon instance.
+                # We should use the SAME ID that the browser was configured with.
+                # The browser_context fixture used 'daemon_process' to get the ID.
+                # We need to access that ID here.
+                # Hack: inspect the browser context? Or just pass it?
+                # Ideally, we should reuse the existing daemon if possible, but this test explicitly starts a new one
+                # to monitor manifests.
+                # Let's retrieve the ID from the browser context if possible, or re-inject.
+
+                # Retrieve ID from browser (it was injected)
+                bg = await browser_context.WaitForBackgroundPage()
+                current_id = await bg.evaluate(
+                    "() => chrome.storage.session.get('browserSessionId').then(s => s.browserSessionId)"
+                )
+                print(f"Using existing browser ID: {current_id}")
+
+                with DaemonContext(
+                    daemon_bin, d_man_path, g_man_path, allowed_browser_id=current_id
+                ) as daemon:
                     # --- Part 1 ---
                     await toggle_gui()
 
@@ -598,7 +652,7 @@ async def test_close_via_navigate(daemon_process, browser_context):
     # Navigate Down (to select 2nd item).
     print("Navigating Down...")
     send_hotkey("down")
-    await asyncio.sleep(0.2)
+    await asyncio.sleep(1)
 
     # Press x to close
     print("Pressing x...")

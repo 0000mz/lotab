@@ -3,6 +3,7 @@
 #ifndef DAEMON_ENGINE_H_
 #define DAEMON_ENGINE_H_
 
+#include <stddef.h>
 #include <stdint.h>
 
 #include "util.h"
@@ -28,6 +29,7 @@ typedef enum {
   TAB_EVENT_GROUP_UPDATED,
   TAB_EVENT_GROUP_CREATED,
   TAB_EVENT_GROUP_REMOVED,
+  TAB_EVENT_REGISTER_BROWSER,
   TAB_EVENT_UNKNOWN
 } TabEventType;
 
@@ -38,6 +40,7 @@ typedef struct TabInfo {
   char* title;
   int active;
   int64_t task_ext_id;
+  char* browser_id;
   struct TabInfo* next;
 } TabInfo;
 
@@ -75,6 +78,7 @@ typedef struct EngineContext {
   char* ui_toggle_keybind;
   char* daemon_manifest_path;
   char* gui_manifest_path;
+  char* allowed_browser_id;
 } EngineContext;
 
 typedef struct EngineCreationInfo {
@@ -85,7 +89,15 @@ typedef struct EngineCreationInfo {
   const char* config_path;
   const char* daemon_manifest_path;
   const char* gui_manifest_path;
+  const char* allowed_browser_id;
 } EngineCreationInfo;
+
+typedef struct PerWebsocketSessionData {
+  char* msg;
+  size_t len;
+  char* browser_id;
+  int should_close;
+} PerSessionData;
 
 // Initializes the daemon engine.
 // @param ectx (out) - Will be allocated if engine initialization is successful.
@@ -94,7 +106,9 @@ typedef struct EngineCreationInfo {
 int engine_init(OUT EngineContext** ectx, EngineCreationInfo cinfo);
 void engine_run(EngineContext* ectx);
 void engine_destroy(EngineContext* ectx);
-void engine_handle_event(EngineContext* ectx, DaemonEvent event, void* data);
+// @param data - The event data. For WebSocket events, this is likely a JSON string or struct.
+// @param per_session_data - For WebSocket events, this is the PerSessionData*. CAN BE NULL for other events.
+void engine_handle_event(EngineContext* ectx, DaemonEvent event, void* data, void* per_session_data);
 
 // State helpers (exposed for testing)
 TabInfo* tab_state_find_tab(TabState* ts, const uint64_t id);
