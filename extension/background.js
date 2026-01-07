@@ -54,14 +54,15 @@ async function handleSafeClose(idsToClose) {
 // Helper to send all tabs
 function sendAllTabs() {
     chrome.tabs.query({}, (tabs) => {
-        chrome.tabGroups.query({}, (groups) => {
-            const reduced_tabs = tabs.map(t => ({
+        chrome.tabGroups.query({}, async (groups) => {
+            const reduced_tabs = await Promise.all(tabs.map(async t => ({
                 title: t.title,
                 id: t.id,
                 url: t.url,
                 active: t.active,
                 groupId: t.groupId,
-            }));
+                browserId: (chrome.storage.session ? (await chrome.storage.session.get('browserSessionId')).browserSessionId : null)
+            })));
             const reduced_groups = groups.map(g => ({
                 id: g.id,
                 title: g.title,
@@ -78,8 +79,25 @@ function sendAllTabs() {
 
 function connectToDaemon() {
     socket = new WebSocket(DAEMON_URL);
-    socket.onopen = () => {
+    socket.onopen = async () => {
         console.log(`[${new Date().toISOString()}] Connected to Daemon WebSocket`);
+
+        // Get or create Browser Session ID
+        // We use session storage so it persists across SW restarts but clears on browser exit
+        let { browserSessionId } = await chrome.storage.session.get('browserSessionId');
+        if (!browserSessionId) {
+            browserSessionId = crypto.randomUUID();
+            await chrome.storage.session.set({ browserSessionId });
+        }
+
+        console.log(`Registering browser session: ${browserSessionId}`);
+        socket.send(JSON.stringify({
+            event: 'Extension::WS::RegisterBrowser',
+            data: {
+                browserId: browserSessionId,
+                userAgent: navigator.userAgent
+            }
+        }));
 
         // Flush queue
         while (event_queue.length > 0 && socket.readyState === WebSocket.OPEN) {

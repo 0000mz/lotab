@@ -48,6 +48,8 @@ class EngineTest : public ::testing::Test {
         .app_path = nullptr,
         .uds_path = nullptr,
         .config_path = nullptr,
+        .daemon_manifest_path = nullptr,
+        .gui_manifest_path = nullptr,
     };
     if (!config_uds_path_.empty()) {
       create_info.uds_path = config_uds_path_.c_str();
@@ -350,7 +352,11 @@ TEST_F(EngineTest, ConfigCreated) {
   EngineCreationInfo cinfo = {
       .port = NextPort(),
       .enable_statusbar = 0,
+      .app_path = nullptr,
+      .uds_path = nullptr,
       .config_path = tmp_dir,
+      .daemon_manifest_path = nullptr,
+      .gui_manifest_path = nullptr,
   };
 
   EngineContext* ec = nullptr;
@@ -425,6 +431,47 @@ TEST_F(EngineTest, ConfigKeybindInvalid) {
   // Cleanup
   std::string cmd = std::string("rm -rf ") + tmp_dir;
   system(cmd.c_str());
+}
+
+TEST_F(EngineTest, BrowserRegistration) {
+  ASSERT_TRUE(ectx_ != nullptr);
+
+  TestWebSocketClient client;
+  client.Connect(GetPort());
+  ASSERT_TRUE(client.IsConnected());
+  ASSERT_TRUE(client.WaitForEvent("Daemon::WS::AllTabsInfoRequest", 2000));
+
+  // Send RegisterBrowser
+  const char* reg_event =
+      R"pb({
+             "event": "Extension::WS::RegisterBrowser",
+             "data": { "browserId": "test-uuid-1234", "userAgent": "Mozilla/5.0 (Test)" }
+           })pb";
+  client.Send(reg_event);
+  sleep(1);
+
+  // Send a subsequent regular event to verify session is healthy
+  const char* create_event =
+      R"pb({
+             "event": "Extension::WS::TabCreated",
+             "data": {
+               "id": 901,
+               "title": "Tab After Reg",
+               "url": "http://example.com",
+               "active": true,
+               "groupId": -1,
+               "browserId": "test-uuid-1234"
+             }
+           })pb";
+  client.Send(create_event);
+  sleep(1);
+
+  ASSERT_NE(ectx_->tab_state, nullptr);
+  EXPECT_EQ(ectx_->tab_state->nb_tabs, 1);
+  TabInfo* tab = ectx_->tab_state->tabs;
+  ASSERT_NE(tab, nullptr);
+  EXPECT_EQ(tab->id, 901ul);
+  EXPECT_STREQ(tab->browser_id, "test-uuid-1234");
 }
 
 int main(int argc, char** argv) {

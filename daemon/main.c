@@ -64,7 +64,10 @@ int main(int argc, const char** argv) {
       .daemon_manifest_path = daemon_manifest_path,
       .gui_manifest_path = gui_manifest_path,
   };
-  engine_init(&ectx, create_info);
+  if (engine_init(&ectx, create_info) != 0) {
+    fprintf(stderr, "Failed to initialize engine.\n");
+    return 1;
+  }
   engine_run(ectx);
   printf("Daemon: Exiting\n");
   if (ectx != NULL) {

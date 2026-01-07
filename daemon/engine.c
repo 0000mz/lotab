@@ -48,6 +48,7 @@ typedef struct ServerContext {
 typedef struct PerSessionData {
   char* msg;
   size_t len;
+  char* browser_id;
 } PerSessionData;
 
 static struct EngClass TAB_STATE_CLASS = {
@@ -452,6 +453,10 @@ static int callback_minimal(struct lws* wsi, enum lws_callback_reasons reason, v
       if (sc->client_wsi == wsi) {
         sc->client_wsi = NULL;
       }
+      if (pss && pss->browser_id) {
+        free(pss->browser_id);
+        pss->browser_id = NULL;
+      }
       if (pss && pss->msg) {
         pss_clear_message(pss, 1);
       }
@@ -527,6 +532,27 @@ static int callback_minimal(struct lws* wsi, enum lws_callback_reasons reason, v
 
       if (is_final && remaining == 0) {
         pss->msg[pss->len] = '\0';
+
+        // Check for RegisterBrowser event
+        cJSON* json = cJSON_Parse(pss->msg);
+        if (json) {
+          cJSON* event = cJSON_GetObjectItem(json, "event");
+          if (cJSON_IsString(event) && event->valuestring &&
+              strcmp(event->valuestring, "Extension::WS::RegisterBrowser") == 0) {
+            cJSON* data = cJSON_GetObjectItem(json, "data");
+            if (data) {
+              cJSON* bId = cJSON_GetObjectItem(data, "browserId");
+              if (cJSON_IsString(bId) && bId->valuestring) {
+                if (pss->browser_id)
+                  free(pss->browser_id);
+                pss->browser_id = strdup(bId->valuestring);
+                vlog(LOG_LEVEL_INFO, sc, "Registered browser session: %s\n", pss->browser_id);
+              }
+            }
+          }
+          cJSON_Delete(json);
+        }
+
         engine_handle_event(ec, EVENT_WS_MESSAGE_RECEIVED, pss->msg);
         pss_clear_message(pss, 1);
       }
@@ -992,7 +1018,7 @@ TabInfo* tab_state_find_tab(TabState* ts, const uint64_t id) {
   return NULL;
 }
 
-void tab_state_update_tab(TabState* ts, const char* title, const uint64_t id, int64_t task_id) {
+void tab_state_update_tab(TabState* ts, const char* title, const uint64_t id, int64_t task_id, const char* browser_id) {
   TabInfo* ti = tab_state_find_tab(ts, id);
   if (ti) {
     if (ti->title && strcmp(title, ti->title) != 0) {
@@ -1000,16 +1026,22 @@ void tab_state_update_tab(TabState* ts, const char* title, const uint64_t id, in
       ti->title = strdup(title);
     }
     ti->task_ext_id = task_id;
+    if (browser_id) {
+      if (ti->browser_id)
+        free(ti->browser_id);
+      ti->browser_id = strdup(browser_id);
+    }
   }
 }
 
-void tab_state_add_tab(TabState* ts, const char* title, const uint64_t id, int64_t task_id) {
+void tab_state_add_tab(TabState* ts, const char* title, const uint64_t id, int64_t task_id, const char* browser_id) {
   TabInfo* new_tab = malloc(sizeof(TabInfo));
   if (new_tab) {
     new_tab->id = id;
     new_tab->title = strdup(title);
     new_tab->active = 0;
     new_tab->task_ext_id = task_id;
+    new_tab->browser_id = browser_id ? strdup(browser_id) : NULL;
     new_tab->next = ts->tabs;
     ts->tabs = new_tab;
     ts->nb_tabs++;
@@ -1028,6 +1060,8 @@ void tab_state_remove_tab(TabState* ts, const uint64_t id) {
       }
       if (current->title)
         free(current->title);
+      if (current->browser_id)
+        free(current->browser_id);
       free(current);
       ts->nb_tabs--;
       return;
@@ -1260,10 +1294,12 @@ void tab_event__handle_all_tabs(EngineContext* ec, const cJSON* json_data) {
       cJSON* title_json = cJSON_GetObjectItemCaseSensitive(item, "title");
       cJSON* id_json = cJSON_GetObjectItemCaseSensitive(item, "id");
       cJSON* gid_json = cJSON_GetObjectItemCaseSensitive(item, "groupId");
+      cJSON* bid_json = cJSON_GetObjectItemCaseSensitive(item, "browserId");
 
       char* tab_title = NULL;
       uint64_t tab_id = 0;
       int64_t task_id = -1;
+      const char* browser_id = NULL;
 
       if (cJSON_IsString(title_json) && (title_json->valuestring != NULL)) {
         tab_title = title_json->valuestring;
@@ -1278,12 +1314,15 @@ void tab_event__handle_all_tabs(EngineContext* ec, const cJSON* json_data) {
           task_id = task->external_id;
         }
       }
+      if (cJSON_IsString(bid_json) && bid_json->valuestring) {
+        browser_id = bid_json->valuestring;
+      }
 
       if (tab_state_find_tab(ts, tab_id) != NULL) {
-        tab_state_update_tab(ts, tab_title ? tab_title : "Unknown", tab_id, task_id);
+        tab_state_update_tab(ts, tab_title ? tab_title : "Unknown", tab_id, task_id, browser_id);
         ++tabs_updated;
       } else {
-        tab_state_add_tab(ts, tab_title ? tab_title : "Unknown", tab_id, task_id);
+        tab_state_add_tab(ts, tab_title ? tab_title : "Unknown", tab_id, task_id, browser_id);
         ++tabs_added;
       }
     }
@@ -1364,6 +1403,7 @@ void tab_event__handle_created(EngineContext* ec, const cJSON* json_data) {
   if (data) {
     cJSON* id_json = cJSON_GetObjectItem(data, "id");
     cJSON* title_json = cJSON_GetObjectItem(data, "title");
+    cJSON* bid_json = cJSON_GetObjectItem(data, "browserId");
 
     if (cJSON_IsNumber(id_json)) {
       uint64_t id = (uint64_t)id_json->valuedouble;
@@ -1371,7 +1411,11 @@ void tab_event__handle_created(EngineContext* ec, const cJSON* json_data) {
       if (cJSON_IsString(title_json) && title_json->valuestring) {
         title = title_json->valuestring;
       }
-      tab_state_add_tab(ts, title, id, -1);
+      const char* browser_id = NULL;
+      if (cJSON_IsString(bid_json) && bid_json->valuestring) {
+        browser_id = bid_json->valuestring;
+      }
+      tab_state_add_tab(ts, title, id, -1, browser_id);
       vlog(LOG_LEVEL_INFO, ts, "Tab Created: %llu, Title: %s\n", id, title);
     } else {
       vlog(LOG_LEVEL_WARN, ts, "onCreated: id missing or invalid\n");
@@ -1397,6 +1441,7 @@ void tab_event__handle_updated(EngineContext* ec, const cJSON* json_data) {
     return;
   cJSON* id_json = cJSON_GetObjectItem(tab_json, "id");
   cJSON* title_json = cJSON_GetObjectItem(tab_json, "title");
+  cJSON* bid_json = cJSON_GetObjectItem(tab_json, "browserId");
 
   if (!cJSON_IsNumber(id_json))
     return;
@@ -1405,11 +1450,16 @@ void tab_event__handle_updated(EngineContext* ec, const cJSON* json_data) {
   if (cJSON_IsString(title_json) && title_json->valuestring) {
     title = title_json->valuestring;
   }
+  const char* browser_id = NULL;
+  if (cJSON_IsString(bid_json) && bid_json->valuestring) {
+    browser_id = bid_json->valuestring;
+  }
+
   if (tab_state_find_tab(ts, id)) {
-    tab_state_update_tab(ts, title, id, -1);
+    tab_state_update_tab(ts, title, id, -1, browser_id);
     vlog(LOG_LEVEL_INFO, ts, "Tab Updated: %llu, Title: %s\n", id, title);
   } else {
-    tab_state_add_tab(ts, title, id, -1);
+    tab_state_add_tab(ts, title, id, -1, browser_id);
     vlog(LOG_LEVEL_INFO, ts, "Tab Updated (New): %llu, Title: %s\n", id, title);
   }
   tab_state_update_active(ts, json_data);

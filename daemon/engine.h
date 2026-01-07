@@ -38,6 +38,7 @@ typedef struct TabInfo {
   char* title;
   int active;
   int64_t task_ext_id;
+  char* browser_id;
   struct TabInfo* next;
 } TabInfo;
 
