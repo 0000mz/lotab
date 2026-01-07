@@ -10,6 +10,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install uv
-        run: pip3 install uv
+        run: brew install uv
       - name: Run Build Script
         run: ./build.sh
