@@ -50,6 +50,7 @@ class EngineTest : public ::testing::Test {
         .config_path = nullptr,
         .daemon_manifest_path = nullptr,
         .gui_manifest_path = nullptr,
+        .allowed_browser_id = nullptr,
     };
     if (!config_uds_path_.empty()) {
       create_info.uds_path = config_uds_path_.c_str();
@@ -357,6 +358,7 @@ TEST_F(EngineTest, ConfigCreated) {
       .config_path = tmp_dir,
       .daemon_manifest_path = nullptr,
       .gui_manifest_path = nullptr,
+      .allowed_browser_id = nullptr,
   };
 
   EngineContext* ec = nullptr;

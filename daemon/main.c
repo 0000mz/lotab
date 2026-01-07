@@ -30,6 +30,7 @@ int main(int argc, const char** argv) {
   const char* app_path = NULL;
   const char* daemon_manifest_path = NULL;
   const char* gui_manifest_path = NULL;
+  const char* allowed_browser_id = NULL;
 
   struct argparse_option options[] = {
       OPT_HELP(),
@@ -37,6 +38,7 @@ int main(int argc, const char** argv) {
       OPT_STRING('a', "app-path", &app_path, "Path to the Lotab.app or executable", NULL, 0, 0),
       OPT_STRING('d', "daemon-manifest-path", &daemon_manifest_path, "Path to dump daemon manifest", NULL, 0, 0),
       OPT_STRING('g', "gui-manifest-path", &gui_manifest_path, "Path to dump GUI manifest", NULL, 0, 0),
+      OPT_STRING(0, "allowed-browser-id", &allowed_browser_id, "Restrict to specific browser ID", NULL, 0, 0),
       OPT_END(),
   };
 
@@ -63,6 +65,7 @@ int main(int argc, const char** argv) {
       .app_path = app_path,
       .daemon_manifest_path = daemon_manifest_path,
       .gui_manifest_path = gui_manifest_path,
+      .allowed_browser_id = allowed_browser_id,
   };
   if (engine_init(&ectx, create_info) != 0) {
     fprintf(stderr, "Failed to initialize engine.\n");

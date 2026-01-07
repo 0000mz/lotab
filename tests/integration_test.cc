@@ -292,13 +292,13 @@ TEST_F(IntegrationTest, ExtensionsTabUpdatePropagatesToClient) {
         }
     })json";
 
-  engine_handle_event(ec_, EVENT_WS_MESSAGE_RECEIVED, (void*)ws_msg);
+  engine_handle_event(ec_, EVENT_WS_MESSAGE_RECEIVED, (void*)ws_msg, nullptr);
   ASSERT_TRUE(client_driver_->WaitForTabsUpdate(1, "Test Tab"));
 }
 
 TEST_F(IntegrationTest, HotkeyTogglePropagatesToClient) {
   ASSERT_FALSE(client_driver_->IsUIToggled());
-  engine_handle_event(ec_, EVENT_HOTKEY_TOGGLE, nullptr);
+  engine_handle_event(ec_, EVENT_HOTKEY_TOGGLE, nullptr, nullptr);
   ASSERT_TRUE(client_driver_->WaitForUIToggle());
   EXPECT_TRUE(client_driver_->IsUIToggled());
 
@@ -318,7 +318,7 @@ TEST_F(IntegrationTest, ExtensionsTabCreatedPropagatesToClient) {
         }
     })json";
 
-  engine_handle_event(ec_, EVENT_WS_MESSAGE_RECEIVED, (void*)ws_msg);
+  engine_handle_event(ec_, EVENT_WS_MESSAGE_RECEIVED, (void*)ws_msg, nullptr);
   ASSERT_TRUE(client_driver_->WaitForTabs({MakeTab(999, "Created Tab")}));
 }
 
@@ -334,7 +334,7 @@ TEST_F(IntegrationTest, ExtensionsAllTabsPropagatesToClient) {
         },
         "activeTabIds": [2]
     })json";
-  engine_handle_event(ec_, EVENT_WS_MESSAGE_RECEIVED, (void*)ws_msg_full);
+  engine_handle_event(ec_, EVENT_WS_MESSAGE_RECEIVED, (void*)ws_msg_full, nullptr);
   ASSERT_TRUE(client_driver_->WaitForTabsUpdate(2, "Tab Two"));
   ASSERT_TRUE(client_driver_->WaitForTabs({MakeTab(1, "Tab One", -1), MakeTab(2, "Tab Two", -1)}));
 }
@@ -352,7 +352,7 @@ TEST_F(IntegrationTest, TabGroupsPropagateToClient) {
         }
     })json";
 
-  engine_handle_event(ec_, EVENT_WS_MESSAGE_RECEIVED, (void*)ws_msg);
+  engine_handle_event(ec_, EVENT_WS_MESSAGE_RECEIVED, (void*)ws_msg, nullptr);
 
   // 1. Verify Task was created
   // Engine DOES NOT start with a placeholder task when initialized via engine_init.
@@ -389,7 +389,7 @@ TEST_F(IntegrationTest, ExtensionsTabActivatedPropagatesToClient) {
         ],
         "activeTabIds": [20]
     })json";
-  engine_handle_event(ec_, EVENT_WS_MESSAGE_RECEIVED, (void*)setup_msg);
+  engine_handle_event(ec_, EVENT_WS_MESSAGE_RECEIVED, (void*)setup_msg, nullptr);
   ASSERT_TRUE(client_driver_->WaitForTabsUpdate(2, "Tab Twenty"));
 
   // Now activate Tab 10
@@ -399,7 +399,7 @@ TEST_F(IntegrationTest, ExtensionsTabActivatedPropagatesToClient) {
         "activeTabIds": [10]
     })json";
 
-  engine_handle_event(ec_, EVENT_WS_MESSAGE_RECEIVED, (void*)activate_msg);
+  engine_handle_event(ec_, EVENT_WS_MESSAGE_RECEIVED, (void*)activate_msg, nullptr);
   ASSERT_TRUE(client_driver_->WaitForActiveTab("Tab Ten"));
 }
 
@@ -409,7 +409,7 @@ TEST_F(IntegrationTest, ExtensionsTabRemovedPropagatesToClient) {
         "event": "Extension::WS::TabCreated",
         "data": { "id": 55, "title": "To Be Removed" }
     })json";
-  engine_handle_event(ec_, EVENT_WS_MESSAGE_RECEIVED, (void*)setup_msg);
+  engine_handle_event(ec_, EVENT_WS_MESSAGE_RECEIVED, (void*)setup_msg, nullptr);
   ASSERT_TRUE(client_driver_->WaitForTabsUpdate(1, "To Be Removed"));
 
   // Remove it
@@ -417,7 +417,7 @@ TEST_F(IntegrationTest, ExtensionsTabRemovedPropagatesToClient) {
         "event": "Extension::WS::TabRemoved",
         "data": { "tabId": 55 }
     })json";
-  engine_handle_event(ec_, EVENT_WS_MESSAGE_RECEIVED, (void*)remove_msg);
+  engine_handle_event(ec_, EVENT_WS_MESSAGE_RECEIVED, (void*)remove_msg, nullptr);
 
   // Should be empty list
   ASSERT_TRUE(client_driver_->WaitForTabs({}));
@@ -433,7 +433,7 @@ TEST_F(IntegrationTest, ExtensionsTabGroupCreatedPropagatesToClient) {
           }
       })json";
 
-  engine_handle_event(ec_, EVENT_WS_MESSAGE_RECEIVED, (void*)ws_msg);
+  engine_handle_event(ec_, EVENT_WS_MESSAGE_RECEIVED, (void*)ws_msg, nullptr);
   // Engine starts with 0 tasks (in test env), so now we have 1.
   ASSERT_TRUE(client_driver_->WaitForTasksUpdate(1, "New Group"));
 }
@@ -444,7 +444,7 @@ TEST_F(IntegrationTest, ExtensionsTabGroupUpdatedPropagatesToClient) {
           "event": "Extension::WS::TabGroupCreated",
           "data": { "id": 102, "title": "Old Title", "color": "red" }
       })json";
-  engine_handle_event(ec_, EVENT_WS_MESSAGE_RECEIVED, (void*)create_msg);
+  engine_handle_event(ec_, EVENT_WS_MESSAGE_RECEIVED, (void*)create_msg, nullptr);
   ASSERT_TRUE(client_driver_->WaitForTasksUpdate(1, "Old Title"));
 
   // Update it
@@ -452,7 +452,7 @@ TEST_F(IntegrationTest, ExtensionsTabGroupUpdatedPropagatesToClient) {
           "event": "Extension::WS::TabGroupUpdated",
           "data": { "id": 102, "title": "New Title", "color": "green" }
       })json";
-  engine_handle_event(ec_, EVENT_WS_MESSAGE_RECEIVED, (void*)update_msg);
+  engine_handle_event(ec_, EVENT_WS_MESSAGE_RECEIVED, (void*)update_msg, nullptr);
   ASSERT_TRUE(client_driver_->WaitForTasksUpdate(1, "New Title"));
 }
 
@@ -462,7 +462,7 @@ TEST_F(IntegrationTest, ExtensionsTabGroupRemovedPropagatesToClient) {
           "event": "Extension::WS::TabGroupCreated",
           "data": { "id": 103, "title": "To Delete", "color": "yellow" }
       })json";
-  engine_handle_event(ec_, EVENT_WS_MESSAGE_RECEIVED, (void*)create_msg);
+  engine_handle_event(ec_, EVENT_WS_MESSAGE_RECEIVED, (void*)create_msg, nullptr);
   ASSERT_TRUE(client_driver_->WaitForTasksUpdate(1, "To Delete"));
 
   // Remove it
@@ -470,8 +470,69 @@ TEST_F(IntegrationTest, ExtensionsTabGroupRemovedPropagatesToClient) {
           "event": "Extension::WS::TabGroupRemoved",
           "data": { "id": 103 }
       })json";
-  engine_handle_event(ec_, EVENT_WS_MESSAGE_RECEIVED, (void*)remove_msg);
+  engine_handle_event(ec_, EVENT_WS_MESSAGE_RECEIVED, (void*)remove_msg, nullptr);
 
   // Back to 0 tasks
   ASSERT_TRUE(client_driver_->WaitForTasksUpdate(0, ""));
+}
+
+TEST_F(IntegrationTest, ExtensionsBrowserIdIsolation) {
+  // Case 1: Initialize Engine with allowed_browser_id
+  if (ec_) {
+    engine_destroy(ec_);
+    ec_ = nullptr;
+  }
+
+  // Set up new engine with allowed_browser_id
+  const char* allowed_id = "allowed-id-123";
+  EngineCreationInfo info{};
+  info.port = 0;
+  info.enable_statusbar = 0;
+  info.app_path = "/usr/bin/true";
+  info.uds_path = socket_path_.c_str();  // Reuse same socket path so client reconnects
+  info.port = 9991 + (::testing::UnitTest::GetInstance()->random_seed() % 100);  // Different port
+  info.allowed_browser_id = allowed_id;
+
+  ASSERT_EQ(engine_init(&ec_, info), 0);
+
+  // Case 2: Register with MATCHING ID -> Messages processed
+  PerSessionData pss_valid{};
+  pss_valid.browser_id = strdup(allowed_id);
+  pss_valid.should_close = 0;
+
+  const char* valid_msg = R"json({
+        "event": "Extension::WS::TabCreated",
+        "data": { "id": 777, "title": "Valid Tab" }
+    })json";
+
+  engine_handle_event(ec_, EVENT_WS_MESSAGE_RECEIVED, (void*)valid_msg, &pss_valid);
+  ASSERT_TRUE(client_driver_->WaitForTabsUpdate(1, "Valid Tab"));
+
+  ASSERT_EQ(pss_valid.should_close, 0);
+
+  // Case 3: Register with MISMATCHING ID -> Messages dropped
+  PerSessionData pss_invalid{};
+  pss_invalid.browser_id = strdup("INVALID-ID");
+  pss_invalid.should_close = 0;
+
+  const char* invalid_msg = R"json({
+        "event": "Extension::WS::TabCreated",
+        "data": { "id": 888, "title": "Invalid Tab" }
+    })json";
+
+  // Engine currently has 1 tab. If this message is processed, it would have 2.
+  engine_handle_event(ec_, EVENT_WS_MESSAGE_RECEIVED, (void*)invalid_msg, &pss_invalid);
+
+  // We expect NO update.
+  // WaitForTabsUpdate waiting for 2 tabs should TIMEOUT.
+  ASSERT_FALSE(client_driver_->WaitForTabsUpdate(2, "Invalid Tab", 500));
+
+  // Verify we still have only 1 tab
+  auto tabs = client_driver_->GetTabs();
+  ASSERT_EQ(tabs.size(), 1);
+  ASSERT_EQ(tabs[0].id, 777);
+
+  // Cleanup
+  free(pss_valid.browser_id);
+  free(pss_invalid.browser_id);
 }

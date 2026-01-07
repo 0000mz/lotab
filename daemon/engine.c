@@ -45,12 +45,6 @@ typedef struct ServerContext {
   char* uds_path;
 } ServerContext;
 
-typedef struct PerSessionData {
-  char* msg;
-  size_t len;
-  char* browser_id;
-} PerSessionData;
-
 static struct EngClass TAB_STATE_CLASS = {
     .name = "tab",
 };
@@ -533,27 +527,16 @@ static int callback_minimal(struct lws* wsi, enum lws_callback_reasons reason, v
       if (is_final && remaining == 0) {
         pss->msg[pss->len] = '\0';
 
-        // Check for RegisterBrowser event
-        cJSON* json = cJSON_Parse(pss->msg);
-        if (json) {
-          cJSON* event = cJSON_GetObjectItem(json, "event");
-          if (cJSON_IsString(event) && event->valuestring &&
-              strcmp(event->valuestring, "Extension::WS::RegisterBrowser") == 0) {
-            cJSON* data = cJSON_GetObjectItem(json, "data");
-            if (data) {
-              cJSON* bId = cJSON_GetObjectItem(data, "browserId");
-              if (cJSON_IsString(bId) && bId->valuestring) {
-                if (pss->browser_id)
-                  free(pss->browser_id);
-                pss->browser_id = strdup(bId->valuestring);
-                vlog(LOG_LEVEL_INFO, sc, "Registered browser session: %s\n", pss->browser_id);
-              }
-            }
-          }
-          cJSON_Delete(json);
+        // Delegate parsing and handling to engine_handle_event
+        // Pass pss so it can be updated (e.g. browser_id, should_close)
+        engine_handle_event(ec, EVENT_WS_MESSAGE_RECEIVED, pss->msg, pss);
+
+        if (pss->should_close) {
+          vlog(LOG_LEVEL_WARN, sc, "Closing connection due to policy violation.\n");
+          pss_clear_message(pss, 1);
+          return -1;
         }
 
-        engine_handle_event(ec, EVENT_WS_MESSAGE_RECEIVED, pss->msg);
         pss_clear_message(pss, 1);
       }
     } break;
@@ -586,7 +569,7 @@ static void kill_process(const int pid) {
 // GUI Callbacks
 static void on_status_toggle(void* priv) {
   EngineContext* ectx = (EngineContext*)priv;
-  engine_handle_event(ectx, EVENT_HOTKEY_TOGGLE, NULL);
+  engine_handle_event(ectx, EVENT_HOTKEY_TOGGLE, NULL, NULL);
 }
 
 static void on_status_quit(void* priv) {
@@ -776,6 +759,10 @@ int engine_init(EngineContext** ectx, EngineCreationInfo cinfo) {
   }
   if (cinfo.gui_manifest_path) {
     ec->gui_manifest_path = strdup(cinfo.gui_manifest_path);
+  }
+  if (cinfo.allowed_browser_id) {
+    ec->allowed_browser_id = strdup(cinfo.allowed_browser_id);
+    vlog(LOG_LEVEL_INFO, ec, "Configured to only allow browser ID: %s\n", ec->allowed_browser_id);
   }
 
   if (cinfo.uds_path && strlen(cinfo.uds_path) > 0) {
@@ -969,7 +956,6 @@ void engine_destroy(EngineContext* ectx) {
         shutdown(ectx->serv_ctx->uds_fd, SHUT_RDWR);
         close(ectx->serv_ctx->uds_fd);
         ectx->serv_ctx->uds_fd = -1;
-        unlink(ectx->serv_ctx->uds_path);
       }
       pthread_join(ectx->serv_ctx->uds_read_thread, NULL);
     }
@@ -1003,6 +989,10 @@ void engine_destroy(EngineContext* ectx) {
   if (ectx->gui_manifest_path) {
     free(ectx->gui_manifest_path);
     ectx->gui_manifest_path = NULL;
+  }
+  if (ectx->allowed_browser_id) {
+    free(ectx->allowed_browser_id);
+    ectx->allowed_browser_id = NULL;
   }
   ectx->destroyed = 1;
 }
@@ -1194,7 +1184,8 @@ void task_state_remove(TaskState* ts, int64_t external_id) {
   }
 }
 
-void tab_event__handle_all_tabs(EngineContext* ec, const cJSON* json_data) {
+void tab_event__handle_all_tabs(EngineContext* ec, const cJSON* json_data, void* per_session_data) {
+  (void)per_session_data;
   TabState* ts = ec->tab_state;
   TaskState* tks = ec->task_state;
   cJSON* data = cJSON_GetObjectItem(json_data, "data");
@@ -1363,7 +1354,8 @@ void tab_state_update_active(TabState* ts, const cJSON* json_data) {
   }
 }
 
-void tab_event__handle_remove_tab(EngineContext* ec, const cJSON* json_data) {
+void tab_event__handle_remove_tab(EngineContext* ec, const cJSON* json_data, void* per_session_data) {
+  (void)per_session_data;
   TabState* ts = ec->tab_state;
   // {"event": "tabs.onRemoved", "data": {"tabId": 123, "removeInfo": {...}}}
   cJSON* data = cJSON_GetObjectItem(json_data, "data");
@@ -1380,7 +1372,8 @@ void tab_event__handle_remove_tab(EngineContext* ec, const cJSON* json_data) {
   tab_state_update_active(ts, json_data);
 }
 
-void tab_event__handle_activated(EngineContext* ec, const cJSON* json_data) {
+void tab_event__handle_activated(EngineContext* ec, const cJSON* json_data, void* per_session_data) {
+  (void)per_session_data;
   TabState* ts = ec->tab_state;
   // {"event": "tabs.onActivated", "data": {"tabId": 123, "windowId": 456}}
   cJSON* data = cJSON_GetObjectItem(json_data, "data");
@@ -1396,7 +1389,8 @@ void tab_event__handle_activated(EngineContext* ec, const cJSON* json_data) {
   tab_state_update_active(ts, json_data);
 }
 
-void tab_event__handle_created(EngineContext* ec, const cJSON* json_data) {
+void tab_event__handle_created(EngineContext* ec, const cJSON* json_data, void* per_session_data) {
+  (void)per_session_data;
   TabState* ts = ec->tab_state;
   // {"event": "tabs.onCreated", "data": {"id": 123, "title": "New Tab", ...}}
   cJSON* data = cJSON_GetObjectItem(json_data, "data");
@@ -1424,13 +1418,15 @@ void tab_event__handle_created(EngineContext* ec, const cJSON* json_data) {
   tab_state_update_active(ts, json_data);
 }
 
-void tab_event__do_nothing(EngineContext* ec, const cJSON* json_data) {
+void tab_event__do_nothing(EngineContext* ec, const cJSON* json_data, void* per_session_data) {
+  (void)per_session_data;
   (void)ec;
   (void)json_data;
   vlog(LOG_LEVEL_TRACE, ec, "tab_event -- do nothing\n");
 }
 
-void tab_event__handle_updated(EngineContext* ec, const cJSON* json_data) {
+void tab_event__handle_updated(EngineContext* ec, const cJSON* json_data, void* per_session_data) {
+  (void)per_session_data;
   TabState* ts = ec->tab_state;
   // {"event": "tabs.onUpdated", "data": {"tabId": 123, "changeInfo": {...}, "tab": {"id": 123, "title": "..."}}}
   cJSON* data = cJSON_GetObjectItem(json_data, "data");
@@ -1465,7 +1461,8 @@ void tab_event__handle_updated(EngineContext* ec, const cJSON* json_data) {
   tab_state_update_active(ts, json_data);
 }
 
-void tab_event__handle_group_updated(EngineContext* ec, const cJSON* json_data) {
+void tab_event__handle_group_updated(EngineContext* ec, const cJSON* json_data, void* per_session_data) {
+  (void)per_session_data;
   // {"event": "...", "data": {"id": 123, "title": "...", "color": "..."}}
   TaskState* ts = ec->task_state;
   cJSON* data = cJSON_GetObjectItem(json_data, "data");
@@ -1503,7 +1500,8 @@ void tab_event__handle_group_updated(EngineContext* ec, const cJSON* json_data) 
   }
 }
 
-void tab_event__handle_group_created(EngineContext* ec, const cJSON* json_data) {
+void tab_event__handle_group_created(EngineContext* ec, const cJSON* json_data, void* per_session_data) {
+  (void)per_session_data;
   TaskState* ts = ec->task_state;
   cJSON* data = cJSON_GetObjectItem(json_data, "data");
   if (!data)
@@ -1539,7 +1537,8 @@ void tab_event__handle_group_created(EngineContext* ec, const cJSON* json_data) 
   }
 }
 
-void tab_event__handle_group_removed(EngineContext* ec, const cJSON* json_data) {
+void tab_event__handle_group_removed(EngineContext* ec, const cJSON* json_data, void* per_session_data) {
+  (void)per_session_data;
   TaskState* ts = ec->task_state;
   cJSON* data = cJSON_GetObjectItem(json_data, "data");
   if (!data)
@@ -1551,6 +1550,31 @@ void tab_event__handle_group_removed(EngineContext* ec, const cJSON* json_data) 
     task_state_remove(ts, external_id);
     vlog(LOG_LEVEL_INFO, ec->tab_state, "Task Removed: %lld\n", external_id);
     send_tasks_update_to_uds(ec);
+  }
+}
+
+void tab_event__handle_register_browser(EngineContext* ec, const cJSON* json_data, void* per_session_data) {
+  ServerContext* sc = ec->serv_ctx;
+  PerSessionData* pss = (PerSessionData*)per_session_data;
+  if (!pss)
+    return;
+
+  // Expected payload: {"event": "...", "data": {"browserId": "...", "userAgent": "..."}}
+  cJSON* data = cJSON_GetObjectItem(json_data, "data");
+  if (data) {
+    cJSON* bId = cJSON_GetObjectItem(data, "browserId");
+    if (cJSON_IsString(bId) && bId->valuestring) {
+      if (pss->browser_id)
+        free(pss->browser_id);
+      pss->browser_id = strdup(bId->valuestring);
+      vlog(LOG_LEVEL_INFO, sc, "Registered browser session: %s\n", pss->browser_id);
+
+      if (ec->allowed_browser_id && strcmp(pss->browser_id, ec->allowed_browser_id) != 0) {
+        vlog(LOG_LEVEL_WARN, sc, "Rejected unauthorized browser session: %s (Expected: %s)\n", pss->browser_id,
+             ec->allowed_browser_id);
+        pss->should_close = 1;
+      }
+    }
   }
 }
 
@@ -1570,12 +1594,13 @@ static const struct TabEventMapEntry TAB_EVENT_MAP[] = {
     {"Extension::WS::TabGroupUpdated", TAB_EVENT_GROUP_UPDATED},
     {"Extension::WS::TabGroupCreated", TAB_EVENT_GROUP_CREATED},
     {"Extension::WS::TabGroupRemoved", TAB_EVENT_GROUP_REMOVED},
+    {"Extension::WS::RegisterBrowser", TAB_EVENT_REGISTER_BROWSER},
     {NULL, TAB_EVENT_UNKNOWN},
 };
 
 static struct {
   TabEventType type;
-  void (*event_handler)(EngineContext* ec, const cJSON* json_data);
+  void (*event_handler)(EngineContext* ec, const cJSON* json_data, void* per_session_data);
 } TAB_EVENT_HANDLERS[] = {
     {TAB_EVENT_ALL_TABS, tab_event__handle_all_tabs},
     {TAB_EVENT_TAB_REMOVED, tab_event__handle_remove_tab},
@@ -1585,6 +1610,7 @@ static struct {
     {TAB_EVENT_GROUP_UPDATED, tab_event__handle_group_updated},
     {TAB_EVENT_GROUP_CREATED, tab_event__handle_group_created},
     {TAB_EVENT_GROUP_REMOVED, tab_event__handle_group_removed},
+    {TAB_EVENT_REGISTER_BROWSER, tab_event__handle_register_browser},
     {TAB_EVENT_HIGHLIGHTED, tab_event__do_nothing},
     {TAB_EVENT_ZOOM_CHANGE, tab_event__do_nothing},
     {TAB_EVENT_UNKNOWN, NULL},
@@ -1612,21 +1638,7 @@ static TabEventType parse_event_type(cJSON* json) {
   return type;
 }
 
-void tab_event_handle(EngineContext* ec, TabEventType type, cJSON* json_data) {
-  int event_handled = 0;
-  for (int i = 0; TAB_EVENT_HANDLERS[i].type != TAB_EVENT_UNKNOWN; ++i) {
-    if (TAB_EVENT_HANDLERS[i].type == type) {
-      if (TAB_EVENT_HANDLERS[i].event_handler) {
-        TAB_EVENT_HANDLERS[i].event_handler(ec, json_data);
-      }
-      event_handled = 1;
-      break;
-    }
-  }
-  if (!event_handled) {
-    vlog(LOG_LEVEL_WARN, ec->tab_state, "Unhandled tab event type: %d\n", type);
-  }
-}
+// tab_event_handle removed, logic inlined in engine_handle_event
 
 static void send_tabs_update_to_uds(EngineContext* ectx) {
   if (!ectx->serv_ctx || ectx->serv_ctx->uds_fd < 0)
@@ -1685,50 +1697,84 @@ static void send_tasks_update_to_uds(EngineContext* ectx) {
   cJSON_Delete(task_update_msg);
 }
 
-void engine_handle_event(EngineContext* ectx, DaemonEvent event, void* data) {
+void engine_handle_event(EngineContext* ectx, DaemonEvent event, void* data, void* per_session_data) {
   assert(ectx != NULL);
 
+  cJSON* json = NULL;
   switch (event) {
     case EVENT_HOTKEY_TOGGLE: {
       send_tabs_update_to_uds(ectx);
       send_tasks_update_to_uds(ectx);
 
       // 3. Send Toggle
-      cJSON* toggle_msg = cJSON_CreateObject();
-      cJSON_AddStringToObject(toggle_msg, "event", "Daemon::UDS::ToggleGuiRequest");
-      cJSON_AddStringToObject(toggle_msg, "data", "toggle");
-      send_uds(ectx->serv_ctx->uds_fd, toggle_msg);
-      cJSON_Delete(toggle_msg);
+      if (ectx->serv_ctx && ectx->serv_ctx->uds_fd >= 0) {
+        cJSON* toggle_msg = cJSON_CreateObject();
+        cJSON_AddStringToObject(toggle_msg, "event", "Daemon::UDS::ToggleGuiRequest");
+        cJSON_AddStringToObject(toggle_msg, "data", "toggle");
+        send_uds(ectx->serv_ctx->uds_fd, toggle_msg);
+        cJSON_Delete(toggle_msg);
+      }
     } break;
 
     case EVENT_WS_MESSAGE_RECEIVED:
-      if (data) {
-        vlog(LOG_LEVEL_TRACE, ectx->serv_ctx, "raw message: %s\n", (const char*)data);
-        const char* json_msg = (const char*)data;
-        cJSON* json = cJSON_Parse(json_msg);
-        if (json) {
-          vlog(LOG_LEVEL_TRACE, ectx->serv_ctx, "json parsed message: %s\n", cJSON_Print(json));
-          TabEventType type = parse_event_type(json);
-          if (type != TAB_EVENT_UNKNOWN) {
-            tab_event_handle(ectx, type, json);
-            switch (type) {
-              case TAB_EVENT_ACTIVATED:
-              case TAB_EVENT_ALL_TABS:
-              case TAB_EVENT_TAB_REMOVED:
-              case TAB_EVENT_CREATED:
-              case TAB_EVENT_UPDATED:
-                send_tabs_update_to_uds(ectx);
-                send_tasks_update_to_uds(ectx);
-                break;
-              default:
-                vlog(LOG_LEVEL_TRACE, ectx->serv_ctx, "ignoring tab event type: %d\n", type);
-            }
-          }
-          cJSON_Delete(json);
-        } else {
-          vlog(LOG_LEVEL_ERROR, ectx, "Failed to parse json from websocket message.\n");
+      if (!data)
+        break;
+      vlog(LOG_LEVEL_TRACE, ectx->serv_ctx, "raw message: %s\n", (const char*)data);
+      const char* json_msg = (const char*)data;
+      json = cJSON_Parse(json_msg);
+      if (!json) {
+        vlog(LOG_LEVEL_ERROR, ectx, "Failed to parse json from websocket message.\n");
+        break;
+      }
+      vlog(LOG_LEVEL_TRACE, ectx->serv_ctx, "json parsed message: %s\n", cJSON_Print(json));
+      TabEventType type = parse_event_type(json);
+
+      if (type == TAB_EVENT_UNKNOWN) {
+        vlog(LOG_LEVEL_WARN, ectx->serv_ctx, "ignoring unknown tab event\n");
+        break;
+      }
+      // Check filtering for non-registration events
+      int allowed = 1;
+      if (ectx->allowed_browser_id != NULL && type != TAB_EVENT_REGISTER_BROWSER) {
+        PerSessionData* pss = (PerSessionData*)per_session_data;
+        if (!pss || !pss->browser_id || strcmp(pss->browser_id, ectx->allowed_browser_id) != 0) {
+          allowed = 0;
         }
       }
+      if (!allowed) {
+        vlog(LOG_LEVEL_TRACE, ectx, "Dropped message from unauthorized session.\n");
+        break;
+      }
+
+      int handled = 0;
+      for (int i = 0; TAB_EVENT_HANDLERS[i].type != TAB_EVENT_UNKNOWN; ++i) {
+        if (TAB_EVENT_HANDLERS[i].type == type) {
+          TAB_EVENT_HANDLERS[i].event_handler(ectx, json, per_session_data);
+          handled = 1;
+          break;
+        }
+      }
+      if (!handled) {
+        vlog(LOG_LEVEL_WARN, ectx->tab_state, "Unhandled tab event type: %d\n", type);
+      }
+
+      // Post-handling updates
+      switch (type) {
+        case TAB_EVENT_ACTIVATED:
+        case TAB_EVENT_ALL_TABS:
+        case TAB_EVENT_TAB_REMOVED:
+        case TAB_EVENT_CREATED:
+        case TAB_EVENT_UPDATED:
+          // TODO: just move this inside of TAB_EVENT_UPDATE
+          send_tabs_update_to_uds(ectx);
+          send_tasks_update_to_uds(ectx);
+          break;
+        default:
+          break;
+      }
       break;
+  }
+  if (json) {
+    cJSON_Delete(json);
   }
 }

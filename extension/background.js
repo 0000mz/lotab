@@ -207,17 +207,24 @@ const logEvent = (eventName, data) => {
     const timestamp = new Date().toISOString();
 
     // Query for all active tabs (across all windows)
-    chrome.tabs.query({ active: true }, (activeTabs) => {
+    chrome.tabs.query({ active: true }, async (activeTabs) => {
         const activeTabIds = activeTabs ? activeTabs.map(t => t.id) : [];
+
+        let browserSessionId = null;
+        if (chrome.storage && chrome.storage.session) {
+            const stored = await chrome.storage.session.get('browserSessionId');
+            browserSessionId = stored.browserSessionId;
+        }
 
         const eventPayload = {
             event: eventName,
             timestamp,
             data,
-            activeTabIds
+            activeTabIds,
+            browserId: browserSessionId
         };
 
-        console.log(`[${timestamp}] ${eventName}`, data, "Active Tabs:", activeTabIds);
+        console.log(`[${timestamp}] ${eventName}`, data, "Active Tabs:", activeTabIds, "BrowserID:", browserSessionId);
 
         if (socket && socket.readyState === WebSocket.OPEN) {
             socket.send(JSON.stringify(eventPayload));
@@ -295,8 +302,24 @@ if (chrome.tabGroups) {
     chrome.tabGroups.onMoved.addListener((group) => {
         logEvent('Extension::WS::TabGroupMoved', group);
     });
+    chrome.tabGroups.onMoved.addListener((group) => {
+        logEvent('Extension::WS::TabGroupMoved', group);
+    });
 } else {
     console.log('chrome.tabGroups API not available');
 }
+
+// Watch for browserSessionId changes (e.g. from E2E tests)
+chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === 'session' && changes.browserSessionId) {
+        console.log('browserSessionId changed, reconnecting...');
+        if (socket) {
+            socket.close();
+        }
+        // TODO: Test if this is still necessary.
+        reconnect_interval_ms = 10; // Speed up next reconnect
+        if (socket) socket.close();
+    }
+});
 
 console.log('Tab Monitor Extension Loaded');
