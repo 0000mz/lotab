@@ -11,6 +11,8 @@ jobs:
       - uses: actions/checkout@v4
       - name: install-mv
         run: brew install uv
+      - name: install-playwright
+        run: uvx playwright install
       - name: build
         run: |
           ./build.sh 2>&1 | \
