@@ -36,6 +36,16 @@ jobs:
           ./build/debug/client_mode_test_asan 2>&1 | \
             tee >(.github/scripts/push-to-loki.sh \
             "https://loki.bmo.land/loki/api/v1/push" "${{ github.run_id }}" "client-mode-test-asan")
+      - name: e2e-test
+        run: |
+          for i in {1..3}; do
+            echo "Attempt $i of 3"
+            if meson test -C build/debug -v e2e_test; then
+              exit 0
+            fi
+            sleep 5
+          done
+          exit 1
       - name: grafana-link
         if: always()
         run: |
