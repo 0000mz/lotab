@@ -56,18 +56,16 @@ def send_hotkey(key, modifiers=[]):
         # Assume key code if numeric or specialized
         pass
 
-    # Handle special keys
-    if key == "down":
-        script = f'tell application "System Events" to key code 125{using_str}'
-    elif key == "up":
-        script = f'tell application "System Events" to key code 126{using_str}'
-    elif key == "return":
-        script = f'tell application "System Events" to key code 36{using_str}'
-    elif key == "space":
-        script = f'tell application "System Events" to key code 49{using_str}'
-    elif key == "/":
-        script = f'tell application "System Events" to key code 44{using_str}'
-
+    d = {
+        "down": 125,
+        "up": 126,
+        "return": 36,
+        "space": 49,
+        "/": 44,
+        "ESC": 53,
+    }
+    if key in d:
+        script = f'tell application "System Events" to key code {d[key]}{using_str}'
     subprocess.run(["osascript", "-e", script], check=True)
 
 
@@ -100,11 +98,13 @@ class DaemonContext:
         daemon_manifest_path=None,
         gui_manifest_path=None,
         allowed_browser_id=None,
+        stream_logs=False,
     ):
         self.daemon_bin = daemon_bin
         self.daemon_manifest_path = daemon_manifest_path
         self.gui_manifest_path = gui_manifest_path
         self.allowed_browser_id = allowed_browser_id
+        self.stream_logs = stream_logs or os.environ.get("STREAM_DAEMON_LOGS") == "1"
         self.proc = None
         self.daemon_manifest = None
         self.gui_manifest = None
@@ -126,10 +126,15 @@ class DaemonContext:
 
         print(f"[DaemonContext] Args: {args}")
 
+        stdio_mode = subprocess.DEVNULL
+        if self.stream_logs:
+            print("[DaemonContext] Streaming daemon logs to stdout/stderr...")
+            stdio_mode = None  # Inherit from parent
+
         self.proc = subprocess.Popen(
             args,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            stdout=stdio_mode,
+            stderr=stdio_mode,
         )
         time.sleep(1)  # Wait for startup
 
@@ -457,7 +462,7 @@ async def test_incremental_group_assignment(daemon_bin, extension_path):
                     await asyncio.sleep(1.0)
 
                     print("Pressing ESC to close...")
-                    send_hotkey("escape")
+                    send_hotkey("ESC")
                     await asyncio.sleep(1.0)
 
                     # Verify Part 1
@@ -506,7 +511,7 @@ async def test_incremental_group_assignment(daemon_bin, extension_path):
                     await asyncio.sleep(1.0)
 
                     print("Pressing ESC to close...")
-                    send_hotkey("escape")
+                    send_hotkey("ESC")
                     await asyncio.sleep(1.0)
 
                     # Verify Part 2

@@ -190,7 +190,7 @@ uv_prog = find_program('uv', required : true)
 if uv_prog.found()
   test('ui_test_quit', uv_prog,
        args : ['run', '--with', 'pytest', '--with', 'psutil', 'pytest', meson.current_source_dir() / 'tests/ui_test_quit.py'],
-       env : {'DAEMON_BIN': daemon_exe.full_path()},
+       env : {'DAEMON_BIN': daemon_exe.full_path(), 'PYTHONUNBUFFERED': '1'},
        depends : [daemon_exe],
        timeout : 60,
        is_parallel : false)
@@ -201,12 +201,13 @@ if uv_prog.found()
 
   test('extension_test', uv_prog,
        args : ['run', '--with', 'playwright', '--with', 'pytest-asyncio', '--with', 'websockets', 'pytest', meson.current_source_dir() / 'tests/extension/test_integration.py'],
+       env : {'PYTHONUNBUFFERED': '1'},
        is_parallel : false,
        timeout : 60)
 
   test('e2e_test', uv_prog,
        args : ['run', '--with', 'playwright', '--with', 'pytest-asyncio', '--with', 'psutil', 'pytest', '-v', '-s', meson.current_source_dir() / 'tests/e2e_test.py'],
-       env : ['DAEMON_BIN=' + daemon_exe.full_path()],
+       env : ['DAEMON_BIN=' + daemon_exe.full_path(), 'PYTHONUNBUFFERED=1'],
        is_parallel : false,
        timeout : 300)
 else
