@@ -56,18 +56,16 @@ def send_hotkey(key, modifiers=[]):
         # Assume key code if numeric or specialized
         pass
 
-    # Handle special keys
-    if key == "down":
-        script = f'tell application "System Events" to key code 125{using_str}'
-    elif key == "up":
-        script = f'tell application "System Events" to key code 126{using_str}'
-    elif key == "return":
-        script = f'tell application "System Events" to key code 36{using_str}'
-    elif key == "space":
-        script = f'tell application "System Events" to key code 49{using_str}'
-    elif key == "/":
-        script = f'tell application "System Events" to key code 44{using_str}'
-
+    d = {
+        "down": 125,
+        "up": 126,
+        "return": 36,
+        "space": 49,
+        "/": 44,
+        "ESC": 53,
+    }
+    if key in d:
+        script = f'tell application "System Events" to key code {d[key]}{using_str}'
     subprocess.run(["osascript", "-e", script], check=True)
 
 
@@ -457,7 +455,7 @@ async def test_incremental_group_assignment(daemon_bin, extension_path):
                     await asyncio.sleep(1.0)
 
                     print("Pressing ESC to close...")
-                    send_hotkey("escape")
+                    send_hotkey("ESC")
                     await asyncio.sleep(1.0)
 
                     # Verify Part 1
@@ -506,7 +504,7 @@ async def test_incremental_group_assignment(daemon_bin, extension_path):
                     await asyncio.sleep(1.0)
 
                     print("Pressing ESC to close...")
-                    send_hotkey("escape")
+                    send_hotkey("ESC")
                     await asyncio.sleep(1.0)
 
                     # Verify Part 2
