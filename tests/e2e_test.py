@@ -98,11 +98,13 @@ class DaemonContext:
         daemon_manifest_path=None,
         gui_manifest_path=None,
         allowed_browser_id=None,
+        stream_logs=False,
     ):
         self.daemon_bin = daemon_bin
         self.daemon_manifest_path = daemon_manifest_path
         self.gui_manifest_path = gui_manifest_path
         self.allowed_browser_id = allowed_browser_id
+        self.stream_logs = stream_logs or os.environ.get("STREAM_DAEMON_LOGS") == "1"
         self.proc = None
         self.daemon_manifest = None
         self.gui_manifest = None
@@ -124,10 +126,15 @@ class DaemonContext:
 
         print(f"[DaemonContext] Args: {args}")
 
+        stdio_mode = subprocess.DEVNULL
+        if self.stream_logs:
+            print("[DaemonContext] Streaming daemon logs to stdout/stderr...")
+            stdio_mode = None  # Inherit from parent
+
         self.proc = subprocess.Popen(
             args,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            stdout=stdio_mode,
+            stderr=stdio_mode,
         )
         time.sleep(1)  # Wait for startup
 
