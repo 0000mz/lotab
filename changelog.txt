@@ -71,3 +71,4 @@ TODO:
 - Websocket+UDS: Add confirmation response to each message.
 - Add browser id to allow app to be used for multiple browser instances.
 - Create ASAN and TSAN versions of the integration test.
+- Add Loki log streaming support to GTest runner.
